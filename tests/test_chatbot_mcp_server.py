@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from src.chatbot_mcp_server import ChatbotMCPServer, JSONRPCMCPAdapter
+from src.chatbot_mcp_server import ChatbotMCPServer, JSONRPCMCPAdapter, build_server_from_env
 
 
 class FakeLLMClient:
@@ -59,6 +60,13 @@ class JSONRPCMCPAdapterTests(unittest.TestCase):
         self.assertEqual(response["id"], 1)
         self.assertIn("result", response)
         self.assertEqual(response["result"]["content"][0]["text"], "Mocked answer")
+
+
+class BuildServerFromEnvTests(unittest.TestCase):
+    def test_missing_api_key_raises(self):
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(RuntimeError):
+                build_server_from_env()
 
 
 if __name__ == "__main__":

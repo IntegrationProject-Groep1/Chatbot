@@ -48,7 +48,7 @@ class NvidiaLLMClient:
         )
 
         try:
-            with request.urlopen(req, timeout=60) as response:
+            with request.urlopen(req, timeout=30) as response:
                 body = response.read().decode("utf-8")
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="ignore")

@@ -2,6 +2,8 @@
 
 Minimal MCP server base for the integration project chatbot, using NVIDIA's free API-compatible endpoint as the LLM backend.
 
+Default API endpoint: `https://integrate.api.nvidia.com/v1/chat/completions` (NVIDIA OpenAI-compatible endpoint).
+
 ## What it supports
 
 - MCP JSON-RPC over stdio
