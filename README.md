@@ -26,11 +26,11 @@ Minimal MCP server base for the integration project chatbot, using NVIDIA's free
 3. Run:
 
    ```bash
-   python /home/runner/work/Chatbot/Chatbot/src/chatbot_mcp_server.py
+   python src/chatbot_mcp_server.py
    ```
 
 ## Test
 
 ```bash
-python -m unittest discover -s /home/runner/work/Chatbot/Chatbot/tests -v
+python -m unittest discover -s tests -v
 ```
