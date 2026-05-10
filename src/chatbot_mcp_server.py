@@ -6,7 +6,7 @@ from typing import Any
 from urllib import error, request
 
 
-API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+DEFAULT_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 DEFAULT_MODEL = "meta/llama-3.1-8b-instruct"
 
 
@@ -14,7 +14,7 @@ DEFAULT_MODEL = "meta/llama-3.1-8b-instruct"
 class NvidiaLLMClient:
     api_key: str
     model: str = DEFAULT_MODEL
-    api_url: str = API_URL
+    api_url: str = DEFAULT_API_URL
 
     def answer_question(self, question: str, event_context: str | None = None) -> str:
         system_prompt = (
@@ -23,7 +23,7 @@ class NvidiaLLMClient:
         )
         user_prompt = question.strip()
         if event_context:
-            user_prompt = f"Event context: {event_context.strip()}\\n\\nQuestion: {user_prompt}"
+            user_prompt = f"Event context: {event_context.strip()}\n\nQuestion: {user_prompt}"
 
         payload = {
             "model": self.model,
@@ -165,7 +165,8 @@ def build_server_from_env() -> JSONRPCMCPAdapter:
         raise RuntimeError("Set NVIDIA_API_KEY to use this MCP server.")
 
     model = os.getenv("NVIDIA_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
-    llm_client = NvidiaLLMClient(api_key=api_key, model=model)
+    api_url = os.getenv("NVIDIA_API_URL", DEFAULT_API_URL).strip() or DEFAULT_API_URL
+    llm_client = NvidiaLLMClient(api_key=api_key, model=model, api_url=api_url)
     return JSONRPCMCPAdapter(ChatbotMCPServer(llm_client))
 
 

@@ -23,6 +23,12 @@ Minimal MCP server base for the integration project chatbot, using NVIDIA's free
    export NVIDIA_MODEL="meta/llama-3.1-8b-instruct"
    ```
 
+   Optional API URL override:
+
+   ```bash
+   export NVIDIA_API_URL="https://integrate.api.nvidia.com/v1/chat/completions"
+   ```
+
 3. Run:
 
    ```bash
