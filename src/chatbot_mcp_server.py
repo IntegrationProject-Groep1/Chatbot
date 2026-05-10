@@ -155,7 +155,7 @@ class JSONRPCMCPAdapter:
             return self._error(request_id, -32601, f"Method not found: {method}")
         except ValueError as exc:
             return self._error(request_id, -32602, str(exc))
-        except Exception as exc:  # pragma: no cover
+        except RuntimeError as exc:
             return self._error(request_id, -32000, str(exc))
 
 
