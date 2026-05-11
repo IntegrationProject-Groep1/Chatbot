@@ -67,6 +67,3 @@ python test_integration.py
 - [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md): Detailed instructions for Planning and Facturatie teams.
 - [XML_XSD_CHATBOT_CONTRACTS.md](XML_XSD_CHATBOT_CONTRACTS.md): Formal XML/XSD specifications.
 - [DEVELOPER_NOTES.md](DEVELOPER_NOTES.md): Internal implementation details.
-
-## 👥 Contributors
-- **Integration Project 2026 - Groep 2**
