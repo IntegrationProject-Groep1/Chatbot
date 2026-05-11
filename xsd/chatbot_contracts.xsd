@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+
+  <!-- ===== PLANNING SERVICE CONTRACTS ===== -->
+
+  <!-- Sessions List Request -->
+  <xs:element name="sessions_list_request">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="master_uuid" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>User's master UUID (resolved via identity-service)</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Sessions List Response -->
+  <xs:element name="sessions_list_response">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="status" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>ok | error</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="error_code" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="message" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="session" type="SessionType" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- User Enrollments Request -->
+  <xs:element name="user_enrollments_request">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="master_uuid" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>User's master UUID (resolved via identity-service)</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- User Enrollments Response (same structure as sessions_list_response) -->
+  <xs:element name="user_enrollments_response">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="status" type="xs:string" minOccurs="1" maxOccurs="1"/>
+        <xs:element name="error_code" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="message" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="session" type="SessionType" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Session Type Definition -->
+  <xs:complexType name="SessionType">
+    <xs:sequence>
+      <xs:element name="session_id" type="xs:string" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Unique session identifier</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="name" type="xs:string" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Session name/title</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="date" type="xs:string" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>ISO 8601 date (YYYY-MM-DD)</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="location" type="xs:string" minOccurs="0" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Session location/room</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+
+  <!-- ===== FACTURATIE SERVICE CONTRACTS ===== -->
+
+  <!-- Invoices List Request -->
+  <xs:element name="invoices_list_request">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="master_uuid" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>User's master UUID (resolved via identity-service)</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Invoices List Response -->
+  <xs:element name="invoices_list_response">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="status" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>ok | error</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="error_code" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="message" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="invoice" type="InvoiceType" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Invoices Total Request -->
+  <xs:element name="invoices_total_request">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="master_uuid" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>User's master UUID (resolved via identity-service)</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Invoices Total Response -->
+  <xs:element name="invoices_total_response">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="status" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>ok | error</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="error_code" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="message" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="total_amount" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>Numeric string, e.g., "123.45"</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="currency" type="xs:string" minOccurs="0" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>Currency code, e.g., "EUR" (default: EUR)</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="invoice_count" type="xs:integer" minOccurs="0" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>Number of invoices summed</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Invoice Type Definition -->
+  <xs:complexType name="InvoiceType">
+    <xs:sequence>
+      <xs:element name="invoice_id" type="xs:string" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Unique invoice identifier</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="amount" type="xs:string" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Numeric string, e.g., "50.00"</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="date" type="xs:string" minOccurs="0" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>ISO 8601 date (YYYY-MM-DD)</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="status" type="xs:string" minOccurs="0" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>paid | pending | overdue | cancelled</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+</xs:schema>
