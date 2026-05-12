@@ -184,4 +184,69 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- ===== MULTI-AGENT AI CONTRACTS (v2.0) ===== -->
+
+  <!-- AI Query Request (Common for all teams) -->
+  <xs:element name="ai_query">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="identity_uuid" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>User's master UUID for context/filtering</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="scope" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>public | personal</xs:documentation>
+          </xs:annotation>
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="public"/>
+              <xs:enumeration value="personal"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="query" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>Natural language question for the team AI</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- AI Response (Common for all teams) -->
+  <xs:element name="ai_response">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="status" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>ok | error</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="response" type="xs:string" minOccurs="1" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>Natural language answer from the team AI</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="data" minOccurs="0" maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>Structured data found by the AI (sessions, invoices, etc.)</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="session" type="SessionType" minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="invoice" type="InvoiceType" minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="total_amount" type="xs:string" minOccurs="0" maxOccurs="1"/>
+              <xs:element name="currency" type="xs:string" minOccurs="0" maxOccurs="1"/>
+              <xs:element name="invoice_count" type="xs:integer" minOccurs="0" maxOccurs="1"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="error_code" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="error_message" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
 </xs:schema>

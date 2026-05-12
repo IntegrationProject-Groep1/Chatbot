@@ -460,7 +460,71 @@ Both planning requests (`sessions_list_request` and `user_enrollments_request`) 
 
 ---
 
-## 5. Error Handling
+---
+
+## 5. Multi-Agent AI Contracts (v2.0)
+
+These contracts support the "AI in each team" architecture, where the main Chatbot orchestrates queries to team-specific AIs.
+
+### 5.1 `ai_query` — Request to Team AI
+
+**Sent by:** Chatbot (Orchestrator)  
+**Sent to:** Team Queue (e.g., `planning.exchange`, `facturatie.rpc`)  
+**Purpose:** Ask a natural language question to a team's specialized AI.
+
+#### XML Example
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+  <header>
+    <type>ai_query</type>
+    <source>chatbot</source>
+    <!-- standard header fields -->
+  </header>
+  <body>
+    <identity_uuid>e8b27c1d-4f2a-4b3e-9c5f-123456789abc</identity_uuid>
+    <scope>personal</scope>
+    <query>Welke sessies heb ik gepland voor morgen?</query>
+  </body>
+</message>
+```
+
+---
+
+### 5.2 `ai_response` — Response from Team AI
+
+**Sent by:** Team AI  
+**Purpose:** Provide a natural language answer PLUS structured data found in the team's database.
+
+#### XML Example
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+  <header>
+    <type>ai_response</type>
+    <source>planning</source>
+    <!-- standard header fields -->
+  </header>
+  <body>
+    <status>ok</status>
+    <response>Je hebt morgen één sessie gepland: Docker &amp; Microservices Workshop om 09:00.</response>
+    <data>
+      <session>
+        <session_id>sess-001</session_id>
+        <name>Docker &amp; Microservices Workshop</name>
+        <date>2026-05-20T09:00:00Z</date>
+        <location>Room A</location>
+      </session>
+    </data>
+  </body>
+</message>
+```
+
+---
+
+## 6. Error Handling
 
 All error responses conform to the global `system_error` format (Contract §2.6). These error codes are used:
 

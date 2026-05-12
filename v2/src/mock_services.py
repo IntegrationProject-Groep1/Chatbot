@@ -14,8 +14,42 @@ import xml.etree.ElementTree as ET
 import pika
 
 
+import sqlite3
+import threading
+import time
+import xml.etree.ElementTree as ET
+import pika
+import os
+
+def _db_conn(db_path: str):
+    return sqlite3.connect(db_path)
+
+def _get_planning_data(identity_uuid: str, scope: str):
+    conn = _db_conn("v2/planning.db")
+    cursor = conn.cursor()
+    if scope == "personal":
+        cursor.execute("""
+            SELECT s.session_id, s.name, s.date, s.location, s.description 
+            FROM sessions s
+            JOIN enrollments e ON s.session_id = e.session_id
+            WHERE e.master_uuid = ?
+        """, (identity_uuid,))
+    else:
+        cursor.execute("SELECT session_id, name, date, location, description FROM sessions")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"session_id": r[0], "name": r[1], "date": r[2], "location": r[3], "description": r[4]} for r in rows]
+
+def _get_facturatie_data(identity_uuid: str):
+    conn = _db_conn("v2/facturatie.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT invoice_id, amount, currency, date, status FROM invoices WHERE master_uuid = ?", (identity_uuid,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"invoice_id": r[0], "amount": r[1], "currency": r[2], "date": r[3], "status": r[4]} for r in rows]
+
+
 def _connection():
-    import os
     host = os.getenv("RABBITMQ_HOST", "localhost")
     for attempt in range(10):
         try:
@@ -90,7 +124,7 @@ def run_identity_mock():
             email = "unknown@example.com"
 
         uuid_val = "mock-uuid-12345"
-        # Bare XML response — no envelope (Identity is the contract exception)
+        # Bare XML response — no envelope
         response = f"""<identity_response>
   <status>ok</status>
   <user>
@@ -110,26 +144,6 @@ def run_identity_mock():
 
 # ─── Planning Team AI Mock ────────────────────────────────────────────────────
 
-ALL_SESSIONS = [
-    {"session_id": "sess-001", "name": "Docker &amp; Microservices Workshop", "date": "2026-05-20T09:00:00Z", "location": "Room A — Tech Hub"},
-    {"session_id": "sess-002", "name": "API Design Best Practices", "date": "2026-05-21T14:00:00Z", "location": "Room B — Innovation Lab"},
-    {"session_id": "sess-003", "name": "Integration Patterns with RabbitMQ", "date": "2026-05-22T10:00:00Z", "location": "Auditorium"},
-]
-ENROLLED_SESSIONS = ALL_SESSIONS[:2]
-
-
-def _sessions_xml(sessions: list) -> str:
-    blocks = []
-    for s in sessions:
-        blocks.append(f"""      <session>
-        <session_id>{s['session_id']}</session_id>
-        <name>{s['name']}</name>
-        <date>{s['date']}</date>
-        <location>{s['location']}</location>
-      </session>""")
-    return "\n".join(blocks)
-
-
 def run_planning_mock():
     conn = _connection()
     ch = conn.channel()
@@ -141,23 +155,33 @@ def run_planning_mock():
         identity_uuid, scope, query = _parse_ai_query(body)
         corr = props.correlation_id or ""
 
-        if scope == "personal":
-            sessions = ENROLLED_SESSIONS
-            response_text = (
-                f"The user (UUID: {identity_uuid}) is enrolled in {len(sessions)} sessions: "
-                + ", ".join(s["name"] for s in sessions) + "."
-            )
-        else:
-            sessions = ALL_SESSIONS
-            response_text = (
-                f"There are {len(sessions)} available sessions: "
-                + ", ".join(s["name"] for s in sessions) + "."
-            )
+        # Simulated AI reasoning:
+        # 1. AI identifies the query intent (e.g. "what sessions?")
+        # 2. AI uses its "MCP Tool" (SQLite query) to fetch data
+        sessions = _get_planning_data(identity_uuid, scope)
 
-        data_xml = _sessions_xml(sessions)
+        if scope == "personal":
+            response_text = f"You are enrolled in {len(sessions)} session(s)."
+            if sessions:
+                response_text += " Specifically: " + ", ".join(s["name"] for s in sessions)
+        else:
+            response_text = f"There are {len(sessions)} sessions available in the catalog."
+
+        # 3. AI generates structured XML data block
+        blocks = []
+        for s in sessions:
+            blocks.append(f"""      <session>
+        <session_id>{s['session_id']}</session_id>
+        <name>{s['name']}</name>
+        <date>{s['date']}</date>
+        <location>{s['location']}</location>
+        <description>{s['description']}</description>
+      </session>""")
+        data_xml = "\n".join(blocks)
+
         xml = _wrap_response("planning", corr, response_text, data_xml)
         _reply(ch, props, xml)
-        print(f"[Planning Mock] Answered '{query[:60]}' (scope={scope}) with {len(sessions)} sessions")
+        print(f"[Planning Mock] Processed query: '{query[:40]}...' -> Found {len(sessions)} sessions")
 
     ch.basic_consume("planning.exchange", on_message)
     ch.basic_consume("planning.rpc", on_message)
@@ -166,13 +190,6 @@ def run_planning_mock():
 
 
 # ─── Facturatie Team AI Mock ──────────────────────────────────────────────────
-
-MOCK_INVOICES = [
-    {"invoice_id": "inv-001", "amount": "49.99", "currency": "eur", "date": "2026-04-01", "status": "paid"},
-    {"invoice_id": "inv-002", "amount": "50.00", "currency": "eur", "date": "2026-05-01", "status": "pending"},
-    {"invoice_id": "inv-003", "amount": "50.00", "currency": "eur", "date": "2026-05-10", "status": "overdue"},
-]
-
 
 def run_facturatie_mock():
     conn = _connection()
@@ -185,13 +202,11 @@ def run_facturatie_mock():
         identity_uuid, scope, query = _parse_ai_query(body)
         corr = props.correlation_id or ""
 
-        total = sum(float(i["amount"]) for i in MOCK_INVOICES)
-        response_text = (
-            f"The user (UUID: {identity_uuid}) has {len(MOCK_INVOICES)} invoices "
-            f"totalling €{total:.2f}. "
-            f"Status breakdown: "
-            + ", ".join(f"{i['invoice_id']} ({i['status']})" for i in MOCK_INVOICES) + "."
-        )
+        # Simulated AI reasoning:
+        invoices = _get_facturatie_data(identity_uuid)
+        total = sum(float(i["amount"]) for i in invoices)
+        
+        response_text = f"I found {len(invoices)} invoices for you, totalling {total:.2f} EUR."
 
         invoice_blocks = "\n".join(
             f"""      <invoice>
@@ -200,15 +215,15 @@ def run_facturatie_mock():
         <date>{i['date']}</date>
         <status>{i['status']}</status>
       </invoice>"""
-            for i in MOCK_INVOICES
+            for i in invoices
         )
         total_block = f"""      <total_amount currency="eur">{total:.2f}</total_amount>
-      <invoice_count>{len(MOCK_INVOICES)}</invoice_count>"""
+      <invoice_count>{len(invoices)}</invoice_count>"""
 
         data_xml = invoice_blocks + "\n" + total_block
         xml = _wrap_response("facturatie", corr, response_text, data_xml)
         _reply(ch, props, xml)
-        print(f"[Facturatie Mock] Answered '{query[:60]}' with {len(MOCK_INVOICES)} invoices")
+        print(f"[Facturatie Mock] Processed query: '{query[:40]}...' -> Found {len(invoices)} invoices")
 
     ch.basic_consume("facturatie.rpc", on_message)
     ch.basic_consume("facturatie.incoming", on_message)
@@ -226,9 +241,10 @@ if __name__ == "__main__":
     ]
     for t in threads:
         t.start()
-    print("[Mocks] All team AI services running. Press Ctrl+C to stop.")
+    print("[Mocks] All team AI services running (SQLite + Simulated Reasoning).")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         print("[Mocks] Shutting down.")
+

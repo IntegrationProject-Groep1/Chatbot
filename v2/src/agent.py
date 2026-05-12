@@ -104,7 +104,13 @@ def _dispatch_tool(name: str, args: dict, identity_uuid: str, cfg: DownstreamCon
         out: dict = {"response": result.response}
         if result.sessions:
             out["sessions"] = [
-                {"session_id": s.session_id, "name": s.name, "date": s.date, "location": s.location}
+                {
+                    "session_id": s.session_id, 
+                    "name": s.name, 
+                    "date": s.date, 
+                    "location": s.location,
+                    "description": s.description
+                }
                 for s in result.sessions
             ]
         if result.invoices:
