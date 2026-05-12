@@ -3,7 +3,7 @@ import os
 
 def setup_databases():
     # Planning DB
-    plan_db = "v2/planning.db"
+    plan_db = "planning.db"
     if os.path.exists(plan_db): os.remove(plan_db)
     conn = sqlite3.connect(plan_db)
     conn.execute("CREATE TABLE sessions (session_id TEXT PRIMARY KEY, name TEXT, date TEXT, location TEXT, description TEXT)")
@@ -16,7 +16,7 @@ def setup_databases():
     print(f"Created {plan_db}")
 
     # Facturatie DB
-    fact_db = "v2/facturatie.db"
+    fact_db = "facturatie.db"
     if os.path.exists(fact_db): os.remove(fact_db)
     conn = sqlite3.connect(fact_db)
     conn.execute("CREATE TABLE invoices (invoice_id TEXT PRIMARY KEY, master_uuid TEXT, amount DECIMAL, currency TEXT, date TEXT, status TEXT)")

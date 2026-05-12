@@ -25,7 +25,7 @@ def _db_conn(db_path: str):
     return sqlite3.connect(db_path)
 
 def _get_planning_data(identity_uuid: str, scope: str):
-    conn = _db_conn("v2/planning.db")
+    conn = _db_conn("planning.db")
     cursor = conn.cursor()
     if scope == "personal":
         cursor.execute("""
@@ -41,7 +41,7 @@ def _get_planning_data(identity_uuid: str, scope: str):
     return [{"session_id": r[0], "name": r[1], "date": r[2], "location": r[3], "description": r[4]} for r in rows]
 
 def _get_facturatie_data(identity_uuid: str):
-    conn = _db_conn("v2/facturatie.db")
+    conn = _db_conn("facturatie.db")
     cursor = conn.cursor()
     cursor.execute("SELECT invoice_id, amount, currency, date, status FROM invoices WHERE master_uuid = ?", (identity_uuid,))
     rows = cursor.fetchall()
