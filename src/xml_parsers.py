@@ -1,11 +1,11 @@
-from dataclasses import dataclass
 import xml.etree.ElementTree as ET
-from typing import Optional, List
+from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
 class IdentityUser:
-    master_uuid: str
+    identity_uuid: str
     email: str
 
 
@@ -34,12 +34,21 @@ class InvoiceTotal:
     count: int
 
 
+@dataclass
+class AIResponse:
+    """Response from a downstream team AI."""
+    response: str                        # natural language answer from the team AI
+    sessions: list[Session] = field(default_factory=list)
+    invoices: list[Invoice] = field(default_factory=list)
+    total: Optional[InvoiceTotal] = None
+
+
 def _get_body(xml_text: str) -> ET.Element:
-    """Helper to extract the <body> element from a <message> wrapper, or return the root if no wrapper."""
+    """Extract <body> from <message> wrapper, or return root if no wrapper."""
     try:
         root = ET.fromstring(xml_text)
-    except ET.ParseError as e:
-        raise RuntimeError(f"Invalid XML received: {e}")
+    except ET.ParseError as exc:
+        raise RuntimeError(f"Invalid XML: {exc}")
 
     if root.tag == "message":
         body = root.find("body")
@@ -49,112 +58,116 @@ def _get_body(xml_text: str) -> ET.Element:
     return root
 
 
-def parse_identity_response(xml_text: str) -> IdentityUser:
-    body = _get_body(xml_text)
-    status = (body.findtext("status") or "").strip().lower()
-    
-    if status != "ok" and status != "":
-        code = (body.findtext("error_code") or "UNKNOWN").strip()
-        msg = (body.findtext("error_description") or body.findtext("error_message") or body.findtext("message") or "Identity RPC error").strip()
-        raise RuntimeError(f"identity-service error {code}: {msg}")
-
-    # Fallback for system_error which might not have status=error but is a different root
-    if body.tag == "system_error" or body.find("error_code") is not None:
-        if status != "ok":
-            code = (body.findtext("error_code") or "UNKNOWN").strip()
-            msg = (body.findtext("error_description") or "System error").strip()
-            raise RuntimeError(f"system error {code}: {msg}")
-
-    user = body.find("user")
-    if user is None:
-        # Some systems might put master_uuid directly in body
-        master_uuid = (body.findtext("master_uuid") or "").strip()
-        email = (body.findtext("email") or "").strip()
-    else:
-        master_uuid = (user.findtext("master_uuid") or "").strip()
-        email = (user.findtext("email") or "").strip()
-
-    if not master_uuid:
-        raise RuntimeError("identity-service response missing master_uuid")
-
-    return IdentityUser(master_uuid=master_uuid, email=email or "unknown")
+def _text(el: ET.Element, *tags: str) -> str:
+    """Try multiple tag names, return first match stripped, or empty string."""
+    for tag in tags:
+        val = el.findtext(tag)
+        if val is not None:
+            return val.strip()
+    return ""
 
 
-def parse_sessions_list_response(xml_text: str) -> List[Session]:
-    body = _get_body(xml_text)
-    status = (body.findtext("status") or "").strip().lower()
-    
-    if status != "ok":
-        code = (body.findtext("error_code") or "UNKNOWN").strip()
-        msg = (body.findtext("error_message") or body.findtext("message") or "Planning error").strip()
-        raise RuntimeError(f"planning-service error {code}: {msg}")
-
+def _parse_sessions_from(parent: ET.Element) -> list[Session]:
     sessions = []
-    for session_elem in body.findall("session"):
-        session_id = (session_elem.findtext("session_id") or "").strip()
-        name = (session_elem.findtext("name") or "").strip()
-        date = (session_elem.findtext("date") or "").strip()
-        location = (session_elem.findtext("location") or "").strip()
-        description = (session_elem.findtext("description") or "").strip()
-        
+    # Support both <session> directly and <sessions><session>
+    els = parent.findall("session") or parent.findall("sessions/session")
+    for el in els:
+        session_id = _text(el, "session_id")
+        name = _text(el, "name", "title")
+        date = _text(el, "date", "start_time")
+        location = _text(el, "location")
+        description = _text(el, "description") or None
         if session_id and name:
             sessions.append(Session(session_id, name, date, location, description))
     return sessions
 
 
-def parse_user_enrollments_response(xml_text: str) -> List[Session]:
-    # Documentation shows same structure for both session responses
-    return parse_sessions_list_response(xml_text)
-
-
-def parse_invoices_list_response(xml_text: str) -> List[Invoice]:
-    body = _get_body(xml_text)
-    status = (body.findtext("status") or "").strip().lower()
-    
-    if status != "ok":
-        code = (body.findtext("error_code") or "UNKNOWN").strip()
-        msg = (body.findtext("error_message") or body.findtext("message") or "Facturatie error").strip()
-        raise RuntimeError(f"facturatie-service error {code}: {msg}")
-
+def _parse_invoices_from(parent: ET.Element) -> list[Invoice]:
     invoices = []
-    for invoice_elem in body.findall("invoice"):
-        invoice_id = (invoice_elem.findtext("invoice_id") or "").strip()
-        amount_elem = invoice_elem.find("amount")
-        if amount_elem is not None:
-            amount = (amount_elem.text or "0").strip()
-        else:
-            amount = (invoice_elem.findtext("amount") or "0").strip()
-            
-        date = (invoice_elem.findtext("date") or "").strip()
-        inv_status = (invoice_elem.findtext("status") or "unknown").strip()
-        description = (invoice_elem.findtext("description") or "").strip()
-        
+    els = parent.findall("invoice") or parent.findall("invoices/invoice")
+    for el in els:
+        invoice_id = _text(el, "invoice_id")
+        amount_el = el.find("amount")
+        amount = (amount_el.text or "0").strip() if amount_el is not None else _text(el, "amount")
+        date = _text(el, "date")
+        status = _text(el, "status") or "unknown"
+        description = _text(el, "description") or None
         if invoice_id:
-            invoices.append(Invoice(invoice_id, amount, date, inv_status, description))
+            invoices.append(Invoice(invoice_id, amount, date, status, description))
     return invoices
 
 
-def parse_invoices_total_response(xml_text: str) -> InvoiceTotal:
-    body = _get_body(xml_text)
-    status = (body.findtext("status") or "").strip().lower()
-    
-    if status != "ok":
-        code = (body.findtext("error_code") or "UNKNOWN").strip()
-        msg = (body.findtext("error_message") or body.findtext("message") or "Facturatie error").strip()
-        raise RuntimeError(f"facturatie-service error {code}: {msg}")
-
-    total_amount_elem = body.find("total_amount")
-    if total_amount_elem is not None:
-        total_amount = (total_amount_elem.text or "0").strip()
-        currency = total_amount_elem.get("currency") or (body.findtext("currency") or "EUR").strip()
+def _parse_total_from(parent: ET.Element) -> Optional[InvoiceTotal]:
+    amount_el = parent.find("total_amount")
+    if amount_el is not None:
+        total_amount = (amount_el.text or "0").strip()
+        currency = (amount_el.get("currency") or _text(parent, "currency") or "EUR").upper()
     else:
-        total_amount = (body.findtext("total_amount") or "0").strip()
-        currency = (body.findtext("currency") or "EUR").strip()
-        
-    count_str = (body.findtext("invoice_count") or "0").strip()
+        total_amount = _text(parent, "total_amount")
+        currency = (_text(parent, "currency") or "EUR").upper()
+
+    if not total_amount:
+        return None
+
+    count_str = _text(parent, "invoice_count", "count") or "0"
     try:
         count = int(count_str)
     except ValueError:
         count = 0
-
     return InvoiceTotal(total_amount, currency, count)
+
+
+# --- Identity parser (unchanged — bare XML, no envelope) ---
+
+def parse_identity_response(xml_text: str) -> IdentityUser:
+    body = _get_body(xml_text)
+    status = _text(body, "status").lower()
+
+    if status not in ("ok", "success", ""):
+        code = _text(body, "error_code") or "UNKNOWN"
+        msg = _text(body, "error_description", "error_message", "message") or "Identity error"
+        raise RuntimeError(f"identity-service error {code}: {msg}")
+
+    user_el = body.find("user")
+    src = user_el if user_el is not None else body
+    identity_uuid = _text(src, "identity_uuid", "master_uuid")
+    email = _text(src, "email")
+
+    if not identity_uuid:
+        raise RuntimeError("identity-service response missing UUID")
+
+    return IdentityUser(identity_uuid=identity_uuid, email=email or "unknown")
+
+
+# --- Multi-agent AI response parser ---
+
+def parse_ai_response(xml_text: str) -> AIResponse:
+    """
+    Parse an ai_response from a downstream team AI.
+
+    Expected body:
+      <status>ok</status>
+      <response>Natural language answer...</response>
+      <data>
+        <!-- optional structured data: sessions, invoices, totals -->
+      </data>
+    """
+    body = _get_body(xml_text)
+    status = _text(body, "status").lower()
+
+    if status not in ("ok", ""):
+        code = _text(body, "error_code") or "UNKNOWN"
+        msg = _text(body, "error_message", "error_description", "message") or "Service error"
+        raise RuntimeError(f"Team AI error {code}: {msg}")
+
+    response_text = _text(body, "response", "answer", "message") or ""
+
+    # Extract structured data from <data> element (optional)
+    data_el = body.find("data")
+    search_in = data_el if data_el is not None else body
+
+    sessions = _parse_sessions_from(search_in)
+    invoices = _parse_invoices_from(search_in)
+    total = _parse_total_from(search_in)
+
+    return AIResponse(response=response_text, sessions=sessions, invoices=invoices, total=total)

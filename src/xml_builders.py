@@ -1,6 +1,14 @@
-import xml.etree.ElementTree as ET
 import uuid
-from datetime import datetime
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+
+
+def _uuid() -> str:
+    return str(uuid.uuid4())
+
+
+def _timestamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _xml_text(parent: ET.Element, tag: str, value: str) -> None:
@@ -8,40 +16,51 @@ def _xml_text(parent: ET.Element, tag: str, value: str) -> None:
     child.text = str(value)
 
 
+def _build_envelope(message_type: str, correlation_id: str) -> tuple[ET.Element, ET.Element]:
+    """Standard <message><header><body> envelope (v2.0 contract)."""
+    root = ET.Element("message")
+    header = ET.SubElement(root, "header")
+    _xml_text(header, "message_id", _uuid())
+    _xml_text(header, "timestamp", _timestamp())
+    _xml_text(header, "source", "chatbot")
+    _xml_text(header, "type", message_type)
+    _xml_text(header, "version", "2.0")
+    _xml_text(header, "correlation_id", correlation_id)
+    body = ET.SubElement(root, "body")
+    return root, body
+
+
+# --- Identity Service (exception: bare XML, no envelope) ---
+
 def build_identity_lookup_by_email_request(email: str) -> str:
-    """Request user identity by email."""
     root = ET.Element("identity_request")
     _xml_text(root, "email", email)
     return ET.tostring(root, encoding="unicode")
 
 
-# --- Planning service requests (via planning.exchange) ---
-
-def build_sessions_list_request(master_uuid: str) -> str:
-    """Request all available sessions from Planning service."""
-    root = ET.Element("sessions_list_request")
-    _xml_text(root, "master_uuid", master_uuid)
+def build_identity_lookup_by_uuid_request(identity_uuid: str) -> str:
+    root = ET.Element("identity_request")
+    _xml_text(root, "master_uuid", identity_uuid)
     return ET.tostring(root, encoding="unicode")
 
 
-def build_user_enrollments_request(master_uuid: str) -> str:
-    """Request all sessions the user is enrolled in."""
-    root = ET.Element("user_enrollments_request")
-    _xml_text(root, "master_uuid", master_uuid)
-    return ET.tostring(root, encoding="unicode")
+# --- Multi-agent query (Planning + Facturatie) ---
 
+def build_ai_query_request(
+    identity_uuid: str,
+    scope: str,
+    query: str,
+    correlation_id: str | None = None,
+) -> str:
+    """
+    Build an ai_query message for a downstream team AI.
 
-# --- Facturatie service requests ---
-
-def build_invoices_list_request(master_uuid: str) -> str:
-    """Request all invoices for a user."""
-    root = ET.Element("invoices_list_request")
-    _xml_text(root, "master_uuid", master_uuid)
-    return ET.tostring(root, encoding="unicode")
-
-
-def build_invoices_total_request(master_uuid: str) -> str:
-    """Request the total amount of all invoices for a user."""
-    root = ET.Element("invoices_total_request")
-    _xml_text(root, "master_uuid", master_uuid)
+    scope = "public"   → data available to everyone (e.g. all sessions)
+    scope = "personal" → data specific to this user only (UUID filter enforced by receiver)
+    """
+    corr = correlation_id or _uuid()
+    root, body = _build_envelope("ai_query", corr)
+    _xml_text(body, "identity_uuid", identity_uuid)
+    _xml_text(body, "scope", scope)
+    _xml_text(body, "query", query)
     return ET.tostring(root, encoding="unicode")
