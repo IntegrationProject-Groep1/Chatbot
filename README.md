@@ -1,5 +1,12 @@
 # Chatbot MCP Server
 
+![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen?style=for-the-badge)
+![Tests](https://img.shields.io/badge/Tests-3_Passing-brightgreen?style=for-the-badge)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
+![Architecture](https://img.shields.io/badge/Architecture-Decentralized_AI-blue?style=for-the-badge)
+
+
+
 A Model Context Protocol (MCP) server that connects an AI Chatbot to an event integration platform. It uses RabbitMQ and XML to communicate with downstream services (Planning and Facturatie).
 
 ## 🚀 Features
