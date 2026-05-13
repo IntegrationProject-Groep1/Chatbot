@@ -37,3 +37,4 @@ jobs:
       env:
         NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         RABBITMQ_HOST: localhost
+        PYTHONPATH: src

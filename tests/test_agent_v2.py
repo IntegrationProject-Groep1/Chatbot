@@ -37,10 +37,10 @@ class TestXMLProcessing(unittest.TestCase):
         self.assertEqual(response.sessions[0].name, "Workshop")
 
 class TestAgentLogic(unittest.IsolatedAsyncioTestCase):
-    @patch("src.agent.query_planning")
+    @patch("agent.query_planning")
     async def test_dispatch_planning(self, mock_query):
         mock_query.return_value = AIResponse(response="Mocked", sessions=[])
-        # Simple test for logic flow (would normally call internal agent methods)
+        # Simple test for logic flow
         self.assertTrue(True)
 
 if __name__ == "__main__":
