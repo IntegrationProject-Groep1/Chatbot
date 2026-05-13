@@ -27,5 +27,6 @@ def setup_databases():
     conn.close()
     print(f"Created {fact_db}")
 
+
 if __name__ == "__main__":
     setup_databases()
