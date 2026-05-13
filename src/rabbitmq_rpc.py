@@ -109,6 +109,42 @@ class PersistentRabbitMQClient:
             self._connection.process_data_events(time_limit=0.2)
         raise TimeoutError(f"RPC timeout waiting for response from '{request_queue}'")
 
+    def publish_event(
+        self,
+        exchange_name: str,
+        routing_key: str,
+        event_data: dict,
+        *,
+        content_type: str = "application/json",
+    ) -> None:
+        """Publishes a fire-and-forget event (Audit/Logging)."""
+        import json
+        # Ensure exchange exists
+        self._channel.exchange_declare(exchange=exchange_name, exchange_type="topic", durable=True)
+        
+        body = json.dumps(event_data, ensure_ascii=False).encode("utf-8")
+        props = pika.BasicProperties(
+            content_type=content_type,
+            delivery_mode=2,
+            timestamp=int(time.time()),
+        )
+        self._channel.basic_publish(
+            exchange=exchange_name,
+            routing_key=routing_key,
+            body=body,
+            properties=props,
+        )
+
+
+def publish_audit_event(routing_key: str, event_data: dict) -> None:
+    """Helper to publish to the central audit exchange."""
+    try:
+        client = get_thread_client()
+        client.publish_event("ai.events", routing_key, event_data)
+    except Exception as e:
+        # Don't crash the main loop if logging fails
+        print(f"[Audit] Failed to publish event: {e}")
+
 
 _thread_local = threading.local()
 
@@ -183,3 +219,39 @@ class RabbitMQRpcClient:
                 )
             self._connection.process_data_events(time_limit=0.2)
         raise TimeoutError(f"RPC timeout waiting for response from '{request_queue}'")
+
+    def publish_event(
+        self,
+        exchange_name: str,
+        routing_key: str,
+        event_data: dict,
+        *,
+        content_type: str = "application/json",
+    ) -> None:
+        """Publishes a fire-and-forget event (Audit/Logging)."""
+        import json
+        # Ensure exchange exists
+        self._channel.exchange_declare(exchange=exchange_name, exchange_type="topic", durable=True)
+        
+        body = json.dumps(event_data, ensure_ascii=False).encode("utf-8")
+        props = pika.BasicProperties(
+            content_type=content_type,
+            delivery_mode=2,
+            timestamp=int(time.time()),
+        )
+        self._channel.basic_publish(
+            exchange=exchange_name,
+            routing_key=routing_key,
+            body=body,
+            properties=props,
+        )
+
+
+def publish_audit_event(routing_key: str, event_data: dict) -> None:
+    """Helper to publish to the central audit exchange."""
+    try:
+        client = get_thread_client()
+        client.publish_event("ai.events", routing_key, event_data)
+    except Exception as e:
+        # Don't crash the main loop if logging fails
+        print(f"[Audit] Failed to publish event: {e}")
