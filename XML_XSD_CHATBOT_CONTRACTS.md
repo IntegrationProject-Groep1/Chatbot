@@ -1,5 +1,10 @@
 # Chatbot MCP Server — XML/XSD Contracts v2.0
 
+![XML Standard](https://img.shields.io/badge/XML-v1.0-orange?style=for-the-badge&logo=xml)
+![XSD Validation](https://img.shields.io/badge/XSD-v2.3-blue?style=for-the-badge)
+![Protocol](https://img.shields.io/badge/Protocol-RabbitMQ_RPC-red?style=for-the-badge&logo=rabbitmq)
+![Version](https://img.shields.io/badge/Contract-v2.0-green?style=for-the-badge)
+
 Deze pagina definieert alle XML contracts voor de Chatbot MCP Server die communiceert met downstream services via RabbitMQ RPC.
 
 **Basis:** Compleet conform Integration Project XML/XSD Contract v2.3 (centrale contract-repo).

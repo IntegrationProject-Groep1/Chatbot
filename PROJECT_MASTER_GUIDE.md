@@ -1,5 +1,11 @@
 # Project Documentation Master Guide
 
+![Project Status](https://img.shields.io/badge/Status-Complete-success?style=for-the-badge)
+![Tech Stack](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
+![Framework](https://img.shields.io/badge/FastAPI-0.111.0-009688?style=for-the-badge&logo=fastapi)
+![AI Model](https://img.shields.io/badge/LLM-Llama--3.1--8b-blueviolet?style=for-the-badge&logo=meta)
+![Architecture](https://img.shields.io/badge/Architecture-Decentralized_AI-blue?style=for-the-badge)
+
 Dit bestand bevat de geconsolideerde inhoud van de projectstatus, de integratiehandleiding en de technische aantekeningen voor developers.
 
 ---
