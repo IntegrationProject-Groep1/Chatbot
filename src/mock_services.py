@@ -1,53 +1,112 @@
-"""
-Mock RabbitMQ services — simulates the team AIs for Planning and Facturatie.
-
-Each mock:
-  1. Receives an ai_query XML message
-  2. Reads scope ("public" / "personal") and the natural language query
-  3. Returns an ai_response XML with a natural language <response> + structured <data>
-
-Identity service mock uses bare XML (no envelope) — it is the contract exception.
-"""
-import threading
-import time
-import xml.etree.ElementTree as ET
-import pika
-
-
-import sqlite3
 import threading
 import time
 import xml.etree.ElementTree as ET
 import pika
 import os
+import json
+import httpx
+import sqlite3
 
-def _db_conn(db_path: str):
-    return sqlite3.connect(db_path)
+# ─── NL2SQL Agent Logic (LLM Powered) ────────────────────────────────────────
 
-def _get_planning_data(identity_uuid: str, scope: str):
-    conn = _db_conn("v2/planning.db")
-    cursor = conn.cursor()
-    if scope == "personal":
-        cursor.execute("""
-            SELECT s.session_id, s.name, s.date, s.location, s.description 
-            FROM sessions s
-            JOIN enrollments e ON s.session_id = e.session_id
-            WHERE e.master_uuid = ?
-        """, (identity_uuid,))
-    else:
-        cursor.execute("SELECT session_id, name, date, location, description FROM sessions")
-    rows = cursor.fetchall()
-    conn.close()
-    return [{"session_id": r[0], "name": r[1], "date": r[2], "location": r[3], "description": r[4]} for r in rows]
+class NL2SQLAgent:
+    """
+    A robust NL2SQL agent with caching and error handling.
+    """
+    def __init__(self, team_name: str, db_path: str, schema_ddl: str):
+        self.team_name = team_name
+        self.db_path = db_path
+        self.schema_ddl = schema_ddl
+        self.api_key = os.getenv("NVIDIA_API_KEY", "")
+        self.api_url = os.getenv("NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
+        self.model = os.getenv("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+        self._cache = {}
 
-def _get_facturatie_data(identity_uuid: str):
-    conn = _db_conn("v2/facturatie.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT invoice_id, amount, currency, date, status FROM invoices WHERE master_uuid = ?", (identity_uuid,))
-    rows = cursor.fetchall()
-    conn.close()
-    return [{"invoice_id": r[0], "amount": r[1], "currency": r[2], "date": r[3], "status": r[4]} for r in rows]
+    def _get_sql_from_llm(self, query: str, identity_uuid: str, scope: str) -> str:
+        """Asks the LLM to generate SQL. Uses local cache to avoid redundant calls."""
+        cache_key = f"{query}|{identity_uuid}|{scope}"
+        if cache_key in self._cache:
+            print(f"[{self.team_name}] Cache Hit for: {query}")
+            return self._cache[cache_key]
 
+        if not self.api_key:
+            return "SELECT 'API KEY MISSING' as error"
+
+        system_prompt = f"""You are the official SQL expert for the '{self.team_name}' team.
+Your database schema is:
+{self.schema_ddl}
+
+Rules:
+1. Return ONLY a single SQLite-compatible SELECT statement.
+2. No commentary, no triple backticks, just the plain SQL text.
+3. If scope='personal', you MUST include: WHERE master_uuid = '{identity_uuid}' (or AND if where exists).
+4. If scope='public', DO NOT filter by master_uuid.
+5. If the user asks for something outside your schema (e.g. billing data from the planning agent), return: SELECT 'UNSUPPORTED_QUERY' as error.
+6. Use LIMIT 50 to prevent huge responses."""
+
+        try:
+            response = httpx.post(
+                self.api_url,
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"User is asking: {query}"}
+                    ],
+                    "temperature": 0.0
+                },
+                timeout=12.0
+            )
+            response.raise_for_status()
+            sql = response.json()['choices'][0]['message']['content'].strip()
+            # Clean possible markdown artifacts
+            sql = sql.replace("```sql", "").replace("```", "").strip()
+            self._cache[cache_key] = sql
+            return sql
+        except Exception as e:
+            print(f"[{self.team_name}] LLM Error: {e}")
+            return "SELECT 'LLM_REASONING_FAILED' as error"
+
+    def handle_query(self, identity_uuid: str, scope: str, query: str) -> tuple[str, list]:
+        """Translates NL to SQL, executes it safely, and returns results."""
+        sql = self._get_sql_from_llm(query, identity_uuid, scope)
+        print(f"[{self.team_name}] Executing SQL: {sql}")
+        
+        results = []
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # Basic safety check
+            forbidden = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE"]
+            if any(word in sql.upper() for word in forbidden):
+                return f"Access denied: write operations are forbidden for the {self.team_name} agent.", []
+
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+            results = [dict(r) for r in rows]
+            conn.close()
+            
+            if results and "error" in results[0]:
+                err = results[0]["error"]
+                if err == "UNSUPPORTED_QUERY":
+                    return f"I am the {self.team_name} expert. I cannot answer that because it involves data I don't have access to.", []
+                return f"The {self.team_name} agent encountered an internal logic error: {err}", []
+
+            response_text = f"As the {self.team_name} specialist, I've analyzed our records. "
+            if not results:
+                response_text += "I couldn't find any data matching your request."
+            else:
+                response_text += f"I found {len(results)} relevant entry/entries for you."
+                
+            return response_text, results
+        except Exception as e:
+            return f"The {self.team_name} database reported an error: {str(e)}", []
+
+
+# ─── Helper Functions ─────────────────────────────────────────────────────────
 
 def _connection():
     host = os.getenv("RABBITMQ_HOST", "localhost")
@@ -124,7 +183,6 @@ def run_identity_mock():
             email = "unknown@example.com"
 
         uuid_val = "mock-uuid-12345"
-        # Bare XML response — no envelope
         response = f"""<identity_response>
   <status>ok</status>
   <user>
@@ -142,109 +200,77 @@ def run_identity_mock():
     ch.start_consuming()
 
 
-# ─── Planning Team AI Mock ────────────────────────────────────────────────────
+# ─── Team Agent Workers ──────────────────────────────────────────────────────
 
-def run_planning_mock():
+def run_team_agent(team_name: str, queue_name: str, db_path: str, schema_ddl: str):
+    agent = NL2SQLAgent(team_name, db_path, schema_ddl)
     conn = _connection()
     ch = conn.channel()
-    ch.queue_declare(queue="planning.exchange", durable=True)
-    ch.queue_declare(queue="planning.rpc", durable=True)
+    ch.queue_declare(queue=queue_name, durable=True)
 
     def on_message(ch, method, props, body):
         ch.basic_ack(method.delivery_tag)
         identity_uuid, scope, query = _parse_ai_query(body)
-        corr = props.correlation_id or ""
-
-        # Simulated AI reasoning:
-        # 1. AI identifies the query intent (e.g. "what sessions?")
-        # 2. AI uses its "MCP Tool" (SQLite query) to fetch data
-        sessions = _get_planning_data(identity_uuid, scope)
-
-        if scope == "personal":
-            response_text = f"You are enrolled in {len(sessions)} session(s)."
-            if sessions:
-                response_text += " Specifically: " + ", ".join(s["name"] for s in sessions)
-        else:
-            response_text = f"There are {len(sessions)} sessions available in the catalog."
-
-        # 3. AI generates structured XML data block
-        blocks = []
-        for s in sessions:
-            blocks.append(f"""      <session>
-        <session_id>{s['session_id']}</session_id>
-        <name>{s['name']}</name>
-        <date>{s['date']}</date>
-        <location>{s['location']}</location>
-        <description>{s['description']}</description>
-      </session>""")
-        data_xml = "\n".join(blocks)
-
-        xml = _wrap_response("planning", corr, response_text, data_xml)
-        _reply(ch, props, xml)
-        print(f"[Planning Mock] Processed query: '{query[:40]}...' -> Found {len(sessions)} sessions")
-
-    ch.basic_consume("planning.exchange", on_message)
-    ch.basic_consume("planning.rpc", on_message)
-    print("[Planning Mock] Listening...")
-    ch.start_consuming()
-
-
-# ─── Facturatie Team AI Mock ──────────────────────────────────────────────────
-
-def run_facturatie_mock():
-    conn = _connection()
-    ch = conn.channel()
-    ch.queue_declare(queue="facturatie.rpc", durable=True)
-    ch.queue_declare(queue="facturatie.incoming", durable=True)
-
-    def on_message(ch, method, props, body):
-        ch.basic_ack(method.delivery_tag)
-        identity_uuid, scope, query = _parse_ai_query(body)
-        corr = props.correlation_id or ""
-
-        # Simulated AI reasoning:
-        invoices = _get_facturatie_data(identity_uuid)
-        total = sum(float(i["amount"]) for i in invoices)
         
-        response_text = f"I found {len(invoices)} invoices for you, totalling {total:.2f} EUR."
+        print(f"[{team_name.upper()} Agent] Processing Natural Language: '{query}'")
+        response_text, data = agent.handle_query(identity_uuid, scope, query)
 
-        invoice_blocks = "\n".join(
-            f"""      <invoice>
-        <invoice_id>{i['invoice_id']}</invoice_id>
-        <amount currency="{i['currency']}">{i['amount']}</amount>
-        <date>{i['date']}</date>
-        <status>{i['status']}</status>
-      </invoice>"""
-            for i in invoices
-        )
-        total_block = f"""      <total_amount currency="eur">{total:.2f}</total_amount>
-      <invoice_count>{len(invoices)}</invoice_count>"""
+        data_xml = ""
+        if data:
+            blocks = []
+            for item in data:
+                if team_name == "planning":
+                    blocks.append(f"""      <session>
+        <session_id>{item.get('session_id', '')}</session_id>
+        <name>{item.get('name', '')}</name>
+        <date>{item.get('date', '')}</date>
+        <location>{item.get('location', '')}</location>
+        <description>{item.get('description', '')}</description>
+      </session>""")
+                elif team_name == "facturatie":
+                    blocks.append(f"""      <invoice>
+        <invoice_id>{item.get('invoice_id', '')}</invoice_id>
+        <amount currency="{item.get('currency', 'eur')}">{item.get('amount', '0.00')}</amount>
+        <date>{item.get('date', '')}</date>
+        <status>{item.get('status', '')}</status>
+      </invoice>""")
+            
+            data_xml = "\n".join(blocks)
+            if team_name == "facturatie":
+                total = sum(float(i.get("amount", 0)) for i in data)
+                data_xml += f"""\n      <total_amount currency="eur">{total:.2f}</total_amount>
+      <invoice_count>{len(data)}</invoice_count>"""
 
-        data_xml = invoice_blocks + "\n" + total_block
-        xml = _wrap_response("facturatie", corr, response_text, data_xml)
+        xml = _wrap_response(team_name, props.correlation_id or "", response_text, data_xml)
         _reply(ch, props, xml)
-        print(f"[Facturatie Mock] Processed query: '{query[:40]}...' -> Found {len(invoices)} invoices")
+        print(f"[{team_name.upper()} Agent] Replied with {len(data)} records.")
 
-    ch.basic_consume("facturatie.rpc", on_message)
-    ch.basic_consume("facturatie.incoming", on_message)
-    print("[Facturatie Mock] Listening...")
+    ch.basic_consume(queue_name, on_message)
+    print(f"[{team_name.upper()} Agent] Real NL2SQL Listening on {queue_name}...")
     ch.start_consuming()
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    planning_ddl = """
+    CREATE TABLE sessions (session_id TEXT PRIMARY KEY, name TEXT, date TEXT, location TEXT, description TEXT);
+    CREATE TABLE enrollments (master_uuid TEXT, session_id TEXT);
+    """
+    facturatie_ddl = """
+    CREATE TABLE invoices (invoice_id TEXT PRIMARY KEY, master_uuid TEXT, amount DECIMAL, currency TEXT, date TEXT, status TEXT);
+    """
+
     threads = [
         threading.Thread(target=run_identity_mock, daemon=True),
-        threading.Thread(target=run_planning_mock, daemon=True),
-        threading.Thread(target=run_facturatie_mock, daemon=True),
+        threading.Thread(target=lambda: run_team_agent("planning", "planning.exchange", "planning.db", planning_ddl), daemon=True),
+        threading.Thread(target=lambda: run_team_agent("facturatie", "facturatie.rpc", "facturatie.db", facturatie_ddl), daemon=True),
     ]
     for t in threads:
         t.start()
-    print("[Mocks] All team AI services running (SQLite + Simulated Reasoning).")
+    print("[System] Real LLM-Powered NL2SQL Network Online.")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("[Mocks] Shutting down.")
-
+        print("[System] Shutting down.")

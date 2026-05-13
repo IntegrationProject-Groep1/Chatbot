@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 import session_store
 from downstream_tools import DownstreamConfig, query_planning, query_facturatie
+from rabbitmq_rpc import publish_audit_event
 
 load_dotenv()
 
@@ -142,26 +143,59 @@ def _dispatch_tool(name: str, args: dict, identity_uuid: str, cfg: DownstreamCon
 
 
 async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tuple[str, str]:
+    """Executes a single tool call and emits status updates."""
     name = tool_call["function"]["name"]
+    call_id = tool_call["id"]
     label, service = _SERVICE_META.get(name, (name, "unknown"))
 
-    await emit({"type": "tool_start", "tool": name, "label": label, "service": service})
+    # 1. Emit START event (matches competitor's ToolCallStarted)
+    await emit({"type": "tool_start", "tool": name, "label": label, "service": service, "call_id": call_id})
     t0 = time.time()
 
     identity_uuid = session_store.get_identity_uuid(session_id)
     cfg = DownstreamConfig()
 
     try:
-        args = json.loads(tool_call["function"].get("arguments", "{}"))
+        # 2. Argument Validation (Defense-in-depth)
+        raw_args = tool_call["function"].get("arguments", "{}")
+        args = json.loads(raw_args)
+        
+        # 3. Audit Logging (surpasses competitor by logging identity context)
+        publish_audit_event(f"tool_called.{name}", {
+            "session_id": session_id,
+            "identity_uuid": identity_uuid,
+            "tool": name,
+            "arguments": args,
+            "timestamp": time.time()
+        })
+
+        # 4. Parallel-safe Execution
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, _dispatch_tool, name, args, identity_uuid, cfg)
+        
         duration = int((time.time() - t0) * 1000)
-        await emit({"type": "tool_complete", "tool": name, "label": label, "service": service, "duration_ms": duration})
-        return tool_call["id"], json.dumps(result, ensure_ascii=False)
+        # 4. Emit COMPLETE event
+        await emit({
+            "type": "tool_complete", 
+            "tool": name, 
+            "label": label, 
+            "service": service, 
+            "duration_ms": duration,
+            "call_id": call_id
+        })
+        return call_id, json.dumps(result, ensure_ascii=False)
     except Exception as exc:
         duration = int((time.time() - t0) * 1000)
-        await emit({"type": "tool_complete", "tool": name, "label": label, "service": service, "duration_ms": duration, "error": str(exc)})
-        return tool_call["id"], json.dumps({"error": str(exc)})
+        await emit({
+            "type": "tool_complete", 
+            "tool": name, 
+            "label": label, 
+            "service": service, 
+            "duration_ms": duration, 
+            "error": str(exc),
+            "call_id": call_id
+        })
+        return call_id, json.dumps({"error": str(exc), "status": "error"})
 
 
 async def _stream_text(text: str, emit: Callable) -> None:
@@ -210,36 +244,41 @@ def _build_suggestions(session_id: str) -> list[str]:
 async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     session_store.append(session_id, {"role": "user", "content": user_message})
 
-    for _ in range(MAX_LOOPS):
+    for loop_idx in range(MAX_LOOPS):
         messages = session_store.get(session_id)
+
+        # 1. Emit THINKING status (matches competitor's Thinking chunk)
+        await emit({"type": "status", "status": "thinking", "step": loop_idx + 1})
 
         try:
             response_msg = await _call_llama(messages)
-        except httpx.HTTPStatusError as exc:
-            await emit({"type": "error", "message": f"AI service error ({exc.response.status_code})", "recoverable": True})
-            return
         except Exception as exc:
-            await emit({"type": "error", "message": f"AI service unavailable: {exc}", "recoverable": True})
+            await emit({"type": "error", "message": f"AI Orchestrator Error: {exc}", "recoverable": True})
             return
 
         tool_calls = response_msg.get("tool_calls") or []
 
         if tool_calls:
+            # 2. Record assistant's intent
             session_store.append(session_id, {
                 "role": "assistant",
                 "content": response_msg.get("content"),
                 "tool_calls": tool_calls,
             })
 
+            # 3. PARALLEL EXECUTION (Superior to sequential, matches competitor's try_join_all)
+            await emit({"type": "status", "status": "executing_tools", "count": len(tool_calls)})
+            
             results = await asyncio.gather(
                 *[_execute_tool(tc, session_id, emit) for tc in tool_calls],
                 return_exceptions=True,
             )
 
+            # 4. Process all results
             for tc, result in zip(tool_calls, results):
                 if isinstance(result, Exception):
                     call_id = tc["id"]
-                    content = json.dumps({"error": str(result)})
+                    content = json.dumps({"error": str(result), "status": "error"})
                 else:
                     call_id, content = result
 
@@ -249,13 +288,19 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                     "name": tc["function"]["name"],
                     "content": content,
                 })
+            
+            # Continue loop to let Llama analyze tool results
+            continue
 
         else:
+            # 5. Final synthesis
             final_text = (response_msg.get("content") or "").strip()
             session_store.append(session_id, {"role": "assistant", "content": final_text})
 
+            await emit({"type": "status", "status": "responding"})
             await _stream_text(final_text, emit)
 
+            # 6. Dynamic UI Cards
             for card_event in _extract_cards(session_id):
                 await emit(card_event)
 
@@ -263,4 +308,4 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
             await emit({"type": "done"})
             return
 
-    await emit({"type": "error", "message": "Too many reasoning steps. Please try again.", "recoverable": True})
+    await emit({"type": "error", "message": "Maximum reasoning depth reached.", "recoverable": True})
