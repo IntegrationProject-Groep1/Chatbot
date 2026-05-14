@@ -3,10 +3,11 @@ import json
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import mcp_client
 import session_store
 import agent
 
@@ -15,9 +16,13 @@ _STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    await mcp_client.init()
     task = asyncio.create_task(_cleanup_loop())
-    yield
-    task.cancel()
+    try:
+        yield
+    finally:
+        task.cancel()
+        await mcp_client.close()
 
 
 async def _cleanup_loop() -> None:
@@ -32,7 +37,32 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 @app.get("/")
 async def root():
+    index = os.path.join(_STATIC_DIR, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index)
     return FileResponse(os.path.join(_STATIC_DIR, "test.html"))
+
+
+@app.post("/api/identify")
+async def identify(request: Request):
+    """Resolve admin email → identity UUID via the identity service."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+
+    email = str(body.get("email", "")).strip().lower()
+    if not email:
+        return JSONResponse({"error": "email is required"}, status_code=400)
+
+    try:
+        from downstream_tools import resolve_identity_by_email, DownstreamConfig
+        cfg = DownstreamConfig()
+        loop = asyncio.get_event_loop()
+        user = await loop.run_in_executor(None, resolve_identity_by_email, email, cfg)
+        return {"identity_uuid": user.identity_uuid, "email": user.email}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=404)
 
 
 @app.get("/health")
