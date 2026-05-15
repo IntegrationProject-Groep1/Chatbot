@@ -78,7 +78,7 @@ class MCPClient:
         try:
             result = await client.call_tool(name, args)
             # result is CallToolResult: .content is list[TextContent|ImageContent], .isError is bool
-            if result.isError:
+            if getattr(result, 'is_error', None) or getattr(result, 'isError', None):
                 return json.dumps({"error": "Tool returned an error", "status": "error"})
             if not result.content:
                 return json.dumps({"status": "ok", "data": []})
