@@ -24,7 +24,8 @@ def _parse_servers() -> dict[str, str]:
 class MCPClient:
     def __init__(self) -> None:
         self._clients: list[Any] = []
-        self._registry: dict[str, tuple[Any, Any]] = {}  # tool_name → (client, tool)
+        # namespaced_name → (client, tool, original_tool_name)
+        self._registry: dict[str, tuple[Any, Any, str]] = {}
 
     async def init(self) -> None:
         from fastmcp import Client
@@ -42,7 +43,8 @@ class MCPClient:
                 self._clients.append(client)  # append before list_tools so close() always runs
                 tools = await client.list_tools()
                 for tool in tools:
-                    self._registry[tool.name] = (client, tool)
+                    namespaced = f"{label}__{tool.name}"
+                    self._registry[namespaced] = (client, tool, tool.name)
                 _log.info("MCP [%s] connected — %d tools: %s", label, len(tools), [t.name for t in tools])
             except Exception as exc:
                 _log.warning("MCP [%s] unavailable at %s: %s", label, url, exc)
@@ -62,21 +64,21 @@ class MCPClient:
             {
                 "type": "function",
                 "function": {
-                    "name": tool.name,
+                    "name": namespaced,
                     "description": tool.description or "",
                     "parameters": tool.inputSchema if tool.inputSchema else {"type": "object", "properties": {}},
                 },
             }
-            for _, (_, tool) in self._registry.items()
+            for namespaced, (_, tool, _orig) in self._registry.items()
         ]
 
     async def call_tool(self, name: str, args: dict) -> str:
-        """Call a tool by name. Always returns a JSON string."""
+        """Call a tool by name (namespaced as label__tool_name). Always returns a JSON string."""
         if name not in self._registry:
             return json.dumps({"error": f"Tool '{name}' not found in any MCP server"})
-        client, _ = self._registry[name]
+        client, _, original_name = self._registry[name]
         try:
-            result = await client.call_tool(name, args)
+            result = await client.call_tool(original_name, args)
             # result is CallToolResult: .content is list[TextContent|ImageContent], .isError is bool
             if getattr(result, 'is_error', None) or getattr(result, 'isError', None):
                 return json.dumps({"error": "Tool returned an error", "status": "error"})
