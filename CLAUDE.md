@@ -9,11 +9,11 @@ Admin-only chatbot for the event management platform. A Llama-powered agent call
 Architecture:
 ```
 Admin (WebSocket) → Chatbot Agent (MCP client)
-  → Sessions MCP server (our team)  → Drupal JSON:API
-  → Monitoring MCP server (our team) → Elasticsearch
-  → Facturatie MCP server (Facturatie team) → FossBilling
-  → CRM MCP server (CRM team) → Salesforce
-  → Kassa MCP server (Kassa team) → Odoo
+  → Frontend MCP server (Frontend team, port 8006) → Drupal JSON:API  [sessions + users + enrollments]
+  → Monitoring MCP server (Monitoring team, port 8005) → Elasticsearch [health + logs + metrics]
+  → Facturatie MCP server (Facturatie team, port 8007) → FossBilling + MySQL
+  → Kassa MCP server (Kassa team, port 8004) → Odoo
+  → CRM MCP server (CRM team) → Salesforce  [not yet deployed]
   → Identity (RabbitMQ RPC, direct — no MCP server needed)
 ```
 
@@ -88,8 +88,8 @@ Browser (WebSocket)
 | `src/api.py` | FastAPI app, WebSocket endpoint, MCP client init in lifespan |
 | `src/agent.py` | Llama tool-use loop — calls MCP tools, streams response |
 | `src/mcp_client.py` | Connects to all MCP servers at startup, discovers tools, routes calls |
-| `src/mcp_servers/sessions.py` | MCP server: sessions → Drupal JSON:API (run on port 8001) |
-| `src/mcp_servers/monitoring.py` | MCP server: health/errors → Elasticsearch (run on port 8005) |
+| `src/mcp_servers/sessions.py` | Legacy MCP server (superseded by Frontend team's MCP on port 8006 — kept for reference) |
+| `src/mcp_servers/monitoring.py` | Legacy MCP server (superseded by Monitoring team's MCP on port 8005 — kept for reference) |
 | `src/downstream_tools.py` | Identity lookup via RabbitMQ RPC (kept direct, no MCP needed) |
 | `src/rabbitmq_rpc.py` | Thread-local persistent RabbitMQ connections, correlation ID matching |
 | `src/session_store.py` | TTL-based in-memory conversation history, admin system prompt |
@@ -133,9 +133,10 @@ XSD contracts are in `xsd/`.
 - `NVIDIA_API_KEY` — get a free key at https://integrate.api.nvidia.com/
 
 **MCP servers** (comma-separated `label@url` pairs):
-- `MCP_SERVERS` — e.g. `sessions@http://localhost:8001/mcp,monitoring@http://localhost:8005/mcp,...`
-- `FRONTEND_BASE_URL` (default: `http://localhost:30020`) — used by sessions MCP server
-- `ELASTICSEARCH_URL` (default: `http://localhost:9200`) — used by monitoring MCP server
+- `MCP_SERVERS` — e.g. `monitoring@http://localhost:8005/mcp,frontend@http://localhost:8006/mcp,facturatie@http://localhost:8007/mcp`
+- Sessions (`port 8001`) is **removed** — the Frontend MCP (port 8006) fully supersedes it with 30+ tools
+- `FRONTEND_BASE_URL` — used by Frontend team's MCP server (port 8006) to reach Drupal JSON:API
+- `ELASTICSEARCH_URL` — used by Monitoring team's MCP server (port 8005) to reach Elasticsearch
 
 **RabbitMQ** (defaults work with the Docker command above):
 - `RABBITMQ_HOST` (default: `localhost`)
