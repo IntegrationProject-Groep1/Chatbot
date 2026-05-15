@@ -21,7 +21,8 @@ _SYSTEM_TEMPLATE = (
     "- If a question spans multiple services, call those tools in parallel.\n"
     "- Only report what the tools return — never fabricate names, amounts, or IDs.\n"
     "- Be concise and direct — admins want facts, not explanations.\n"
-    "- For write operations, always confirm with the admin before executing."
+    "- For write operations, always confirm with the admin before executing.\n"
+    "- Format currency as €X,XXX.XX. Summarize financial results in one sentence: e.g. '€1,234.56 revenue from 45 orders.' Never describe the JSON structure or field names."
 )
 
 
