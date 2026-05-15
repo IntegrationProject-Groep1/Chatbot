@@ -16,6 +16,8 @@ mcp = FastMCP("sessions")
 _BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:30020")
 _JSONAPI = f"{_BASE_URL}/jsonapi"
 
+_http = httpx.AsyncClient(timeout=10.0)
+
 
 def _session_from_node(node: dict) -> dict:
     attr = node.get("attributes", {})
@@ -37,52 +39,58 @@ async def get_all_sessions(status: str | None = None) -> dict[str, Any]:
     params: dict[str, str] = {"page[limit]": "100"}
     if status:
         params["filter[field_status]"] = status
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(f"{_JSONAPI}/node/session", params=params)
+    try:
+        resp = await _http.get(f"{_JSONAPI}/node/session", params=params)
         resp.raise_for_status()
-    data = resp.json().get("data", [])
-    sessions = [_session_from_node(n) for n in data]
-    return {"sessions": sessions, "count": len(sessions)}
+        data = resp.json().get("data", [])
+        sessions = [_session_from_node(n) for n in data]
+        return {"sessions": sessions, "count": len(sessions)}
+    except Exception as exc:
+        return {"error": f"Sessions service unavailable: {exc}", "sessions": [], "count": 0}
 
 
 @mcp.tool()
 async def get_session_detail(session_id: str) -> dict[str, Any]:
     """Get full detail for a single session by its UUID."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(f"{_JSONAPI}/node/session/{session_id}")
+    try:
+        resp = await _http.get(f"{_JSONAPI}/node/session/{session_id}")
         resp.raise_for_status()
-    node = resp.json().get("data", {})
-    return _session_from_node(node)
+        node = resp.json().get("data", {})
+        return _session_from_node(node)
+    except Exception as exc:
+        return {"error": f"Sessions service unavailable: {exc}", "session_id": session_id}
 
 
 @mcp.tool()
 async def get_session_attendance(session_id: str) -> dict[str, Any]:
     """Get the list of registered attendees for a session."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(
+    try:
+        resp = await _http.get(
             f"{_JSONAPI}/node/session/{session_id}",
             params={"include": "field_registered_users,field_registrations"},
         )
         resp.raise_for_status()
-    body = resp.json()
-    included = body.get("included", [])
-    attendees = [
-        {
-            "uuid": item.get("id"),
-            "name": item.get("attributes", {}).get("name") or item.get("attributes", {}).get("field_full_name"),
-            "email": item.get("attributes", {}).get("mail"),
+        body = resp.json()
+        included = body.get("included", [])
+        attendees = [
+            {
+                "uuid": item.get("id"),
+                "name": item.get("attributes", {}).get("name") or item.get("attributes", {}).get("field_full_name"),
+                "email": item.get("attributes", {}).get("mail"),
+            }
+            for item in included
+            if item.get("type", "").startswith("user--")
+        ]
+        node_attr = body.get("data", {}).get("attributes", {})
+        return {
+            "session_id": session_id,
+            "session_name": node_attr.get("title"),
+            "capacity": node_attr.get("field_capacity"),
+            "registered": len(attendees),
+            "attendees": attendees,
         }
-        for item in included
-        if item.get("type", "").startswith("user--")
-    ]
-    node_attr = body.get("data", {}).get("attributes", {})
-    return {
-        "session_id": session_id,
-        "session_name": node_attr.get("title"),
-        "capacity": node_attr.get("field_capacity"),
-        "registered": len(attendees),
-        "attendees": attendees,
-    }
+    except Exception as exc:
+        return {"error": f"Sessions service unavailable: {exc}", "session_id": session_id, "attendees": []}
 
 
 if __name__ == "__main__":

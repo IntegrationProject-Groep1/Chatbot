@@ -134,6 +134,8 @@ def _build_suggestions(session_id: str) -> list[str]:
 async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     session_store.append(session_id, {"role": "user", "content": user_message})
 
+    called_tools: set[str] = set()  # (name, args_json) pairs already executed this turn
+
     for loop_idx in range(MAX_LOOPS):
         messages = session_store.get(session_id)
 
@@ -146,6 +148,15 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
             return
 
         tool_calls = response_msg.get("tool_calls") or []
+
+        # Drop any tool calls the LLM is repeating with identical arguments
+        deduped: list[dict] = []
+        for tc in tool_calls:
+            key = tc["function"]["name"] + "|" + tc["function"].get("arguments", "{}")
+            if key not in called_tools:
+                called_tools.add(key)
+                deduped.append(tc)
+        tool_calls = deduped
 
         if tool_calls:
             session_store.append(session_id, {
