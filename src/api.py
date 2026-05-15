@@ -75,6 +75,53 @@ async def health():
     return {"status": "ok"}
 
 
+# ── MCP passthrough endpoints for the Admin Console UI ────────────────────
+# These let the frontend poll live data without going through the agent/LLM.
+
+async def _call_mcp(tool: str, args: dict = {}) -> dict:
+    try:
+        raw = await mcp_client.get().call_tool(tool, args)
+        import json as _json
+        return _json.loads(raw)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@app.get("/api/monitoring/status")
+async def monitoring_status():
+    """Current online/offline/degraded status of all services (heartbeats)."""
+    return await _call_mcp("monitoring__get_service_status")
+
+
+@app.get("/api/monitoring/errors")
+async def monitoring_errors(limit: int = 50):
+    """Recent errors and warnings across all services."""
+    return await _call_mcp("monitoring__get_recent_errors", {"limit": min(limit, 100)})
+
+
+@app.get("/api/monitoring/alerts")
+async def monitoring_alerts():
+    """Services that sent offline/degraded heartbeats in the last 10 minutes."""
+    return await _call_mcp("monitoring__get_active_alerts")
+
+
+@app.get("/api/mcp/tools")
+async def list_mcp_tools():
+    """All loaded MCP tools grouped by server label."""
+    client = mcp_client.get()
+    servers: dict[str, list[str]] = {}
+    for namespaced, (_c, tool, orig) in client._registry.items():
+        label = namespaced.split("__")[0]
+        servers.setdefault(label, []).append(orig)
+    return {
+        "servers": [
+            {"id": label, "tools": tools, "count": len(tools)}
+            for label, tools in servers.items()
+        ],
+        "total_tools": sum(len(t) for t in servers.values()),
+    }
+
+
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()

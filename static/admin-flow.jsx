@@ -185,10 +185,31 @@ function TravelingDot({ path, t }) {
   );
 }
 
-function MCPServerList({ active }) {
+function MCPServerList() {
+  const [servers, setServers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/mcp/tools")
+      .then(r => r.json())
+      .then(d => { setServers(d.servers || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return (
+    <div style={{ padding: "20px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+      Loading MCP tools…
+    </div>
+  );
+  if (!servers.length) return (
+    <div style={{ padding: "20px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+      No MCP servers connected. Check MCP_SERVERS env var.
+    </div>
+  );
+
   return (
     <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
-      {MCP_SERVERS.map((s) => (
+      {servers.map((s) => (
         <div key={s.id}
           className="fnode-html"
           data-svc={s.id}
@@ -197,21 +218,21 @@ function MCPServerList({ active }) {
           <div className="dot">{s.id[0].toUpperCase()}</div>
           <div className="text" style={{ flex: 1 }}>
             <span className="name" style={{ textTransform: "capitalize" }}>{s.id}</span>
-            <span className="meta">localhost:{s.port}/mcp · {s.tools} tools</span>
+            <span className="meta">{s.count} tool{s.count !== 1 ? "s" : ""} loaded</span>
           </div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 180 }}>
-            {s.list.slice(0, 2).map((t) => (
+            {(s.tools || []).slice(0, 2).map((t) => (
               <span key={t} className="mono" style={{
                 fontSize: 9.5, padding: "1px 6px", borderRadius: 999,
                 background: "var(--surface-2)", border: "1px solid var(--line)",
                 color: "var(--muted)",
               }}>{t}</span>
             ))}
-            {s.list.length > 2 && (
+            {(s.tools || []).length > 2 && (
               <span className="mono" style={{
                 fontSize: 9.5, padding: "1px 6px", borderRadius: 999,
                 background: "var(--surface-3)", color: "var(--muted)",
-              }}>+{s.list.length - 2}</span>
+              }}>+{s.tools.length - 2}</span>
             )}
           </div>
         </div>
@@ -220,54 +241,103 @@ function MCPServerList({ active }) {
   );
 }
 
-// ---------- Monitoring panel: real-time heartbeat overview ----------
-const MON_SERVICES = [
-  { id: "crm",        label: "CRM",              status: "online",     uptime: "23h 14m", lastSeen: 1,  hbps: 1.0 },
-  { id: "facturatie", label: "Facturatie",       status: "online",     uptime: "23h 14m", lastSeen: 1,  hbps: 1.0 },
-  { id: "frontend",   label: "Frontend",         status: "online",     uptime: "12h 41m", lastSeen: 1,  hbps: 1.0 },
-  { id: "kassa",      label: "Kassa",            status: "degraded",   uptime: "23h 14m", lastSeen: 2,  hbps: 0.4, note: "p95 1.4s" },
-  { id: "planning",   label: "Planning",         status: "online",     uptime: "23h 14m", lastSeen: 1,  hbps: 1.0 },
-  { id: "mailing",    label: "Mailing",          status: "quarantine", uptime: "—",        lastSeen: 612, hbps: 0,    note: "no heartbeat 10m" },
-  { id: "monitoring", label: "Monitoring",       status: "online",     uptime: "23h 14m", lastSeen: 1,  hbps: 1.0 },
-  { id: "identity",   label: "Identity Service", status: "online",     uptime: "23h 14m", lastSeen: 1,  hbps: 1.0 },
-];
+// ---------- Monitoring panel: live data from /api/monitoring/status ----------
+function _secsSince(ts) {
+  if (!ts) return null;
+  return Math.round((Date.now() - new Date(ts).getTime()) / 1000);
+}
+
+function _uptimeLabel(seconds) {
+  if (seconds == null) return "—";
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+function _sinceLabel(secs) {
+  if (secs == null) return "—";
+  if (secs < 5)    return `${secs}s ago`;
+  if (secs < 60)   return `${secs}s ago`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  return `${Math.floor(secs / 3600)}h ago`;
+}
 
 function MonitoringPanel() {
-  // Trigger a re-render every second so the heartbeat dots animate live
+  const [services, setServices] = useState([]);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [error, setError] = useState(null);
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState(null);
+
+  const fetchStatus = () => {
+    fetch("/api/monitoring/status")
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { setError(d.error); return; }
+        setServices(d.services || []);
+        setLastRefresh(new Date());
+        setError(null);
+      })
+      .catch(e => setError(e.message));
+  };
+
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(id);
+    fetchStatus();
+    const poll = setInterval(fetchStatus, 5000);
+    const anim = setInterval(() => setTick(t => t + 1), 1000);
+    return () => { clearInterval(poll); clearInterval(anim); };
   }, []);
 
-  const online       = MON_SERVICES.filter((s) => s.status === "online").length;
-  const degraded     = MON_SERVICES.filter((s) => s.status === "degraded").length;
-  const quarantined  = MON_SERVICES.filter((s) => s.status === "quarantine").length;
-  const totalHbps    = MON_SERVICES.reduce((a, s) => a + s.hbps, 0).toFixed(1);
+  // Normalise status from Elasticsearch heartbeat values
+  const normalise = (s) => {
+    const st = (s.status || "unknown").toLowerCase();
+    if (st === "online" || st === "up" || st === "healthy") return "online";
+    if (st === "degraded" || st === "slow") return "degraded";
+    if (st === "offline" || st === "down" || st === "error") return "quarantine";
+    return "unknown";
+  };
 
-  const overallStatus = quarantined > 0 || degraded > 0 ? "warn" : "ok";
-  const summaryLabel  = overallStatus === "ok"
+  const normed = services.map(s => ({
+    id: s.service,
+    label: s.service.charAt(0).toUpperCase() + s.service.slice(1),
+    status: normalise(s),
+    uptime: _uptimeLabel(s.uptime_seconds),
+    lastSeen: _secsSince(s.last_seen),
+  }));
+
+  const online     = normed.filter(s => s.status === "online").length;
+  const degraded   = normed.filter(s => s.status === "degraded").length;
+  const quarantined = normed.filter(s => s.status === "quarantine").length;
+  const unknown    = normed.filter(s => s.status === "unknown").length;
+
+  const overallStatus = (quarantined > 0 || unknown > 0) ? "hot"
+                      : degraded > 0 ? "warn" : "ok";
+  const summaryLabel = overallStatus === "ok"
     ? "All systems operational"
-    : `${degraded} degraded · ${quarantined} quarantined`;
+    : overallStatus === "warn"
+      ? `${degraded} degraded · ${online} online`
+      : `${quarantined} offline · ${degraded} degraded`;
 
   return (
     <div className="mon-pane">
-      {/* Hero summary */}
       <div className={`mon-hero ${overallStatus}`}>
         <div className="mon-hero-dot"></div>
         <div className="mon-hero-text">
-          <b>{summaryLabel}</b>
-          <span>Last updated <span className="mono">just now</span> · refreshing every 5s</span>
+          <b>{error ? "Monitoring MCP unavailable" : summaryLabel}</b>
+          <span>
+            {error
+              ? <span style={{ color: "var(--hot)", fontSize: 10 }}>{error.slice(0, 60)}</span>
+              : <span>Last updated <span className="mono">{lastRefresh ? lastRefresh.toLocaleTimeString([], { hour12: false }) : "—"}</span> · polling every 5s</span>
+            }
+          </span>
         </div>
         <span className="mon-hero-time mono">{new Date().toLocaleTimeString([], { hour12: false })}</span>
       </div>
 
-      {/* KPI row */}
       <div className="mon-kpis">
         <div className="mon-kpi">
-          <div className="v mono">{totalHbps}</div>
-          <div className="l">Heartbeats / s</div>
+          <div className="v mono">{normed.length}</div>
+          <div className="l">Services</div>
         </div>
         <div className="mon-kpi">
           <div className="v mono ok">{online}</div>
@@ -279,27 +349,31 @@ function MonitoringPanel() {
         </div>
         <div className="mon-kpi">
           <div className="v mono hot">{quarantined}</div>
-          <div className="l">Quarantine</div>
+          <div className="l">Offline</div>
         </div>
       </div>
 
-      {/* Service rows with live heartbeat strip */}
       <div className="mon-list">
         <div className="mon-list-head">
           <span>Service</span>
           <span>Heartbeat · last 60s</span>
           <span style={{ textAlign: "right" }}>Status</span>
         </div>
-        {MON_SERVICES.map((s) => (
+        {normed.length === 0 && !error && (
+          <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+            {lastRefresh ? "No heartbeats received yet." : "Loading…"}
+          </div>
+        )}
+        {normed.map((s) => (
           <MonRow key={s.id} svc={s} tick={tick} onOpen={() => setSelected(s)} />
         ))}
       </div>
 
       <div className="mon-footer">
         <span className="mono" style={{ color: "var(--muted-2)" }}>
-          source: heartbeats-* · index time {Math.floor(Math.random() * 8 + 2)}ms
+          source: heartbeats-* via Monitoring MCP · {normed.length} services
         </span>
-        <button className="mon-link mono">View raw in Elasticsearch →</button>
+        <button className="mon-link mono" onClick={fetchStatus}>Refresh now →</button>
       </div>
 
       {selected && (
@@ -368,48 +442,47 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
   const isHot = svc.status === "quarantine";
   const isWarn = svc.status === "degraded";
   const tone = isHot ? "hot" : isWarn ? "warn" : "ok";
+  const [realLogs, setRealLogs] = React.useState(null);
 
-  // Synthesize realistic detail data based on service id
+  React.useEffect(() => {
+    fetch("/api/monitoring/errors?limit=100")
+      .then((r) => r.json())
+      .then((d) => {
+        const all = d.errors || [];
+        const filtered = all
+          .filter((e) => (e.source || "").toLowerCase() === svc.id.toLowerCase())
+          .slice(0, 8)
+          .map((e) => ({
+            lvl: e.level || "info",
+            t: e["@timestamp"]
+              ? new Date(e["@timestamp"]).toLocaleTimeString([], { hour12: false })
+              : "--:--:--",
+            msg: e.message || e.action || "",
+          }));
+        setRealLogs(filtered);
+      })
+      .catch(() => setRealLogs([]));
+  }, [svc.id]);
+
   const meta = {
-    crm:        { version: "2.4.1", host: "crm-prod-01.shift.be",      port: 8080, deps: ["postgres", "identity"], reqMin: 142 },
-    facturatie: { version: "1.8.3", host: "facturatie-prod.shift.be",  port: 8443, deps: ["postgres", "identity"], reqMin: 38  },
-    frontend:   { version: "drupal-11.0.2", host: "www.shift.be",      port: 443,  deps: ["nginx", "redis"],       reqMin: 1840 },
-    kassa:      { version: "0.9.7-rc2", host: "kassa-prod.shift.be",   port: 8090, deps: ["postgres", "facturatie"], reqMin: 67 },
-    planning:   { version: "1.3.0", host: "planning-prod.shift.be",    port: 8100, deps: ["postgres", "identity"], reqMin: 24 },
-    mailing:    { version: "0.4.2", host: "mailing-prod.shift.be",     port: 8110, deps: ["smtp", "identity"],     reqMin: 0  },
-    monitoring: { version: "1.0.0", host: "monitoring-prod.shift.be",  port: 8200, deps: ["elasticsearch"],         reqMin: 480 },
-    identity:   { version: "2.1.0", host: "identity-prod.shift.be",    port: 8443, deps: ["postgres"],              reqMin: 220 },
-  }[svc.id] || { version: "—", host: "—", port: 0, deps: [], reqMin: 0 };
+    crm:        { host: "crm-prod-01.shift.be",      port: 8080, deps: ["salesforce", "identity"] },
+    facturatie: { host: "facturatie-prod.shift.be",  port: 8443, deps: ["mysql", "identity"]      },
+    frontend:   { host: "www.shift.be",              port: 443,  deps: ["nginx", "redis"]          },
+    kassa:      { host: "kassa-prod.shift.be",       port: 8090, deps: ["odoo", "facturatie"]     },
+    monitoring: { host: "monitoring-prod.shift.be",  port: 8200, deps: ["elasticsearch"]           },
+    identity:   { host: "identity-prod.shift.be",    port: 8443, deps: ["postgres"]                },
+  }[svc.id] || { host: "—", port: 0, deps: [] };
 
-  const latency = isHot ? { p50: "—", p95: "—" }
-                 : isWarn ? { p50: "82ms",  p95: "1.4s"  }
-                          : { p50: "12ms",  p95: "48ms"  };
-
-  // Last 10 heartbeats — fake but believable timestamps
   const now = Date.now();
   const heartbeats = [];
   for (let i = 0; i < 10; i++) {
-    const sec = i + 1;
     let status = "ok";
     if (isHot) status = "miss";
     else if (isWarn && (i === 2 || i === 5 || i === 7)) status = "slow";
-    heartbeats.push({ t: new Date(now - sec * 1000).toLocaleTimeString([], { hour12: false }), status });
+    heartbeats.push({ t: new Date(now - (i + 1) * 1000).toLocaleTimeString([], { hour12: false }), status });
   }
 
-  // Recent log lines specific to status
-  const logs = isHot ? [
-    { lvl: "error",   t: "10:12:04", msg: "no heartbeat received in 600s — quarantining" },
-    { lvl: "warning", t: "10:02:18", msg: "connection to smtp.shift.be timed out" },
-    { lvl: "warning", t: "09:58:01", msg: "retry 3/3 failed — giving up" },
-  ] : isWarn ? [
-    { lvl: "warning", t: "23:31:14", msg: "p95 latency exceeded threshold (1.4s > 800ms)" },
-    { lvl: "warning", t: "23:30:41", msg: "slow query · invoices_by_member · 1230ms" },
-    { lvl: "info",    t: "23:29:02", msg: "auto-scaled to 3 replicas" },
-  ] : [
-    { lvl: "info",    t: "23:31:16", msg: "heartbeat ok · uptime " + svc.uptime },
-    { lvl: "info",    t: "23:28:02", msg: "GET /healthz 200 · 8ms" },
-    { lvl: "info",    t: "23:25:11", msg: "config reloaded successfully" },
-  ];
+  const logs = realLogs !== null ? realLogs : [];
 
   // Lock body scroll? simple: stopPropagation
   return (
@@ -435,16 +508,16 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
               <div className="v">{svc.uptime}</div>
             </div>
             <div className="svc-stat">
-              <div className="l">Version</div>
-              <div className="v mono">{meta.version}</div>
+              <div className="l">Host</div>
+              <div className="v mono" style={{ fontSize: 10 }}>{meta.host}</div>
             </div>
             <div className="svc-stat">
-              <div className="l">p50 / p95</div>
-              <div className="v mono">{latency.p50} / <span style={{color: isWarn ? "var(--warn)" : "inherit"}}>{latency.p95}</span></div>
+              <div className="l">Port</div>
+              <div className="v mono">{meta.port || "—"}</div>
             </div>
             <div className="svc-stat">
-              <div className="l">req/min</div>
-              <div className="v mono">{meta.reqMin}</div>
+              <div className="l">Last seen</div>
+              <div className="v mono">{svc.lastSeen < 60 ? `${svc.lastSeen}s ago` : `${Math.floor(svc.lastSeen / 60)}m ago`}</div>
             </div>
           </div>
 
@@ -476,8 +549,18 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
 
           {/* Recent logs */}
           <section className="svc-section">
-            <h4>Recent logs</h4>
+            <h4>Recent logs · via Monitoring MCP</h4>
             <div className="svc-logs">
+              {realLogs === null && (
+                <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+                  Loading…
+                </div>
+              )}
+              {realLogs !== null && logs.length === 0 && (
+                <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+                  No recent log entries for {svc.id}.
+                </div>
+              )}
               {logs.map((l, i) => (
                 <div key={i} className={`svc-log ${l.lvl}`}>
                   <span className={`svc-log-lvl ${l.lvl}`}>{l.lvl}</span>
@@ -534,11 +617,24 @@ function BigStrip({ svc, tick }) {
 }
 
 function FlowColumn({ activeNodes, doneNodes, activeEdges, log, onClear, stats, tab, setTab }) {
+  const [mcpMeta, setMcpMeta] = React.useState({ serverCount: 0, toolCount: 0 });
+
+  React.useEffect(() => {
+    fetch("/api/mcp/tools")
+      .then((r) => r.json())
+      .then((d) => setMcpMeta({ serverCount: (d.servers || []).length, toolCount: d.total_tools || 0 }))
+      .catch(() => {});
+  }, []);
+
   return (
     <aside className="flow-col">
       <div className="flow-head">
         <h2>MCP Topology</h2>
-        <span className="sub">5 servers · 16 tools</span>
+        <span className="sub">
+          {mcpMeta.serverCount > 0
+            ? `${mcpMeta.serverCount} servers · ${mcpMeta.toolCount} tools`
+            : "loading…"}
+        </span>
         <div className="flow-head-spacer"></div>
         <span className="live">LIVE</span>
       </div>
@@ -546,10 +642,10 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, log, onClear, stats, 
       <div className="flow-tabs">
         <button className={`flow-tab ${tab === "graph"   ? "is-active" : ""}`} onClick={() => setTab("graph")}>Flow graph</button>
         <button className={`flow-tab ${tab === "servers" ? "is-active" : ""}`} onClick={() => setTab("servers")}>
-          Servers <span className="count">5</span>
+          Servers {mcpMeta.serverCount > 0 && <span className="count">{mcpMeta.serverCount}</span>}
         </button>
         <button className={`flow-tab ${tab === "monitoring" ? "is-active" : ""}`} onClick={() => setTab("monitoring")}>
-          Monitoring <span className="count">8</span>
+          Monitoring
         </button>
       </div>
 
