@@ -2,39 +2,64 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: ["main", "dev"]
+    tags: ["v*"]
   pull_request:
-    branches: [ main ]
+    branches: ["main", "dev"]
+  workflow_dispatch:
 
 jobs:
   test:
+    name: Run unit tests
     runs-on: ubuntu-latest
 
     services:
       rabbitmq:
-        image: rabbitmq:3-management
+        image: rabbitmq:3-management-alpine
         ports:
           - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        
-    - name: Run Database Setup
-      run: python setup_mocks.py
-        
-    - name: Run Unit Tests
-      run: python -m unittest discover tests
-      env:
-        NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-        RABBITMQ_HOST: localhost
-        PYTHONPATH: src
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set up mock databases
+        run: python setup_mocks.py
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+        env:
+          NVIDIA_API_KEY: dummy-key-for-ci
+          RABBITMQ_HOST: localhost
+          RABBITMQ_PORT: 5672
+          PYTHONPATH: src
+
+  build:
+    name: Validate Docker build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
