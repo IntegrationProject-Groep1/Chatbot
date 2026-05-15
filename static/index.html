@@ -388,7 +388,7 @@
       background: var(--surface); border: 1px solid var(--line);
       border-radius: var(--radius-sm); color: var(--ink); font-size: 14px;
       font-family: var(--font); outline: none; resize: none; line-height: 1.5;
-      max-height: 120px; overflow-y: auto; transition: border-color .15s, box-shadow .15s;
+      max-height: 120px; overflow-y: hidden; transition: border-color .15s, box-shadow .15s;
       box-shadow: var(--shadow-sm);
     }
     #msg-input:focus {
@@ -806,7 +806,9 @@
   });
   $input.addEventListener('input', () => {
     $input.style.height = 'auto';
-    $input.style.height = Math.min($input.scrollHeight, 120) + 'px';
+    const next = Math.min($input.scrollHeight, 120);
+    $input.style.height = next + 'px';
+    $input.style.overflowY = $input.scrollHeight > 120 ? 'auto' : 'hidden';
   });
   $sendBtn.addEventListener('click', () => sendText($input.value));
 
