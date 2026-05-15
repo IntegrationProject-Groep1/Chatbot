@@ -40,7 +40,7 @@ Create a `.env` file (or set these in your deployment):
 ODOO_URL=https://kassa.desiderius.me
 ODOO_DB=your_database_name        # ask infra for the exact DB name
 ODOO_USER=your_api_user@email.com # dedicated read-only API user recommended
-ODOO_PASSWORD=your_api_password
+ODOO_PASS=your_api_password
 PORT=8004                         # port the MCP server listens on
 ```
 
@@ -71,7 +71,7 @@ mcp = FastMCP("kassa")
 _URL      = os.getenv("ODOO_URL", "https://kassa.desiderius.me")
 _DB       = os.getenv("ODOO_DB", "")
 _USER     = os.getenv("ODOO_USER", "")
-_PASSWORD = os.getenv("ODOO_PASSWORD", "")
+_PASSWORD = os.getenv("ODOO_PASS", "")
 
 _uid: int | None = None
 
@@ -174,39 +174,37 @@ def get_recent_orders(limit: int = 20) -> dict[str, Any]:
 @mcp.tool()
 def get_all_wallets() -> dict[str, Any]:
     """
-    Get an overview of all active wallet / loyalty card balances.
-    Returns a list of customers with their current wallet balance.
+    Get an overview of all active wallet balances.
+    Returns customers with a positive wallet balance, ordered by balance descending.
+    Uses the custom x_wallet_balance field on res.partner (Kassa-specific, NOT loyalty.card).
     """
     try:
-        # Try loyalty.card model first (Odoo 16+)
-        try:
-            cards = _odoo("loyalty.card", "search_read",
-                [[["points", ">", 0]]],
-                {
-                    "fields": ["code", "partner_id", "points", "expiration_date"],
-                    "limit": 200,
-                    "order": "points desc",
-                },
-            )
-            wallets = [
-                {
-                    "customer": c["partner_id"][1] if c["partner_id"] else "Unknown",
-                    "balance": c["points"],
-                    "code": c["code"],
-                    "expires": c.get("expiration_date"),
-                }
-                for c in cards
-            ]
-            total_points = sum(c["points"] for c in cards)
-            return {"wallets": wallets, "count": len(wallets), "total_points": total_points}
-
-        except xmlrpc.client.Fault:
-            # Fallback: model may not exist in this Odoo version
-            return {
-                "error": "loyalty.card model not found — check if Loyalty module is installed in Odoo",
-                "wallets": [],
-                "count": 0,
+        partners = _odoo("res.partner", "search_read",
+            [[["x_wallet_balance", ">", 0]]],
+            {
+                "fields": [
+                    "name", "x_user_id", "x_badge_id",
+                    "x_wallet_balance", "x_pending_topup_balance",
+                    "x_outstanding_amount", "x_payment_status",
+                ],
+                "limit": 200,
+                "order": "x_wallet_balance desc",
+            },
+        )
+        total_balance = sum(p.get("x_wallet_balance", 0) for p in partners)
+        wallets = [
+            {
+                "customer": p["name"],
+                "master_uuid": p.get("x_user_id") or None,
+                "badge_id": p.get("x_badge_id") or None,
+                "balance": p.get("x_wallet_balance", 0),
+                "pending_topup": p.get("x_pending_topup_balance", 0),
+                "outstanding_amount": p.get("x_outstanding_amount", 0),
+                "payment_status": p.get("x_payment_status") or None,
             }
+            for p in partners
+        ]
+        return {"wallets": wallets, "count": len(wallets), "total_balance": round(total_balance, 2), "currency": "EUR"}
     except Exception as exc:
         return {"error": f"Odoo unavailable: {exc}", "wallets": [], "count": 0}
 
