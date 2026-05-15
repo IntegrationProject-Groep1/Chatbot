@@ -51,13 +51,13 @@ class TestMCPClient(unittest.TestCase):
         tool.name = "get_all_sessions"
         tool.description = "Get all sessions"
         tool.inputSchema = {"type": "object", "properties": {"status": {"type": "string"}}, "required": []}
-        client._registry["get_all_sessions"] = (MagicMock(), tool)
+        client._registry["planning__get_all_sessions"] = (MagicMock(), tool, "get_all_sessions")
 
         defs = client.get_tool_definitions()
         self.assertEqual(len(defs), 1)
         d = defs[0]
         self.assertEqual(d["type"], "function")
-        self.assertEqual(d["function"]["name"], "get_all_sessions")
+        self.assertEqual(d["function"]["name"], "planning__get_all_sessions")
         self.assertEqual(d["function"]["description"], "Get all sessions")
         self.assertIn("parameters", d["function"])
 
