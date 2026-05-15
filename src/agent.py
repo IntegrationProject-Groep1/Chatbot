@@ -43,14 +43,15 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
     name = tool_call["function"]["name"]
     call_id = tool_call["id"]
 
+    raw_args = tool_call["function"].get("arguments", "{}")
+    args = json.loads(raw_args) if raw_args else {}
+
     await emit({"type": "tool_start", "tool": name, "label": name.replace("_", " ").title(), "call_id": call_id, "arguments": args})
     t0 = time.time()
 
     identity_uuid = session_store.get_identity_uuid(session_id)
 
     try:
-        raw_args = tool_call["function"].get("arguments", "{}")
-        args = json.loads(raw_args)
 
         publish_audit_event(f"tool_called.{name}", {
             "session_id": session_id,
