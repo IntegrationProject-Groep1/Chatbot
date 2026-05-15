@@ -36,7 +36,7 @@ class MCPClient:
 
         for label, url in servers.items():
             try:
-                client = Client(url)
+                client = Client(url, transport="streamable-http")
                 await client.__aenter__()
                 self._clients.append(client)  # append before list_tools so close() always runs
                 tools = await client.list_tools()

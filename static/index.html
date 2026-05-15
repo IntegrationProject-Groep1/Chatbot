@@ -516,14 +516,14 @@
   'use strict';
 
   // ── Auth ───────────────────────────────────────────────────────
-  let identity = JSON.parse(sessionStorage.getItem('admin_identity') || 'null');
-  if (identity) showChat(identity);
-
   const $loginScreen = document.getElementById('login-screen');
   const $chatScreen  = document.getElementById('chat-screen');
   const $loginBtn    = document.getElementById('login-btn');
   const $emailInput  = document.getElementById('email-input');
   const $loginError  = document.getElementById('login-error');
+
+  let identity = JSON.parse(sessionStorage.getItem('admin_identity') || 'null');
+  if (identity) showChat(identity);
 
   $emailInput.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
   $loginBtn.addEventListener('click', doLogin);
