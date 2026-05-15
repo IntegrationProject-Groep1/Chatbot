@@ -190,6 +190,23 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
 
         else:
             final_text = (response_msg.get("content") or "").strip()
+            if not final_text:
+                # LLM returned no text — summarise tool results or give a fallback
+                tool_msgs = [m for m in session_store.get(session_id) if m.get("role") == "tool"]
+                if tool_msgs:
+                    try:
+                        last = json.loads(tool_msgs[-1].get("content", "{}"))
+                        if last.get("error"):
+                            final_text = f"The service returned an error: {last['error']}"
+                        elif last.get("count") == 0 or (isinstance(last.get("sessions"), list) and not last["sessions"]):
+                            final_text = "No results were found. The service may be unavailable or there is no data to show."
+                        else:
+                            final_text = "Done. See the results above."
+                    except Exception:
+                        final_text = "The request completed but no summary was returned."
+                else:
+                    final_text = "I'm not sure how to help with that. Try asking about sessions, invoices, members, orders, or service health."
+
             session_store.append(session_id, {"role": "assistant", "content": final_text})
 
             await emit({"type": "status", "status": "responding"})

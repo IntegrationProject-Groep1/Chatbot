@@ -637,6 +637,10 @@
   function finalize() {
     if (!activeBubble) return;
     activeBubble.cursor.remove();
+    // remove bubble entirely if it ended up empty (no text, no cards)
+    const hasText  = (activeBubble.textNode?.textContent || '').trim().length > 0;
+    const hasCards = !!activeBubble.cardArea?.children.length;
+    if (!hasText && !hasCards) activeBubble.bubble.style.display = 'none';
     activeBubble = null; activeBadges = {};
     scrollBottom();
   }
