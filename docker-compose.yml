@@ -9,12 +9,39 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
 
-  # This container will run our mock services to simulate Planning/Facturatie
-  mock-services:
+  # MCP servers owned by our team
+  mcp-sessions:
     build: .
-    container_name: chatbot-mock-services
+    container_name: chatbot-mcp-sessions
+    ports:
+      - "8001:8001"
+    environment:
+      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://frontend:30020}
+      - PORT=8001
+    command: python -m src.mcp_servers.sessions
+
+  mcp-monitoring:
+    build: .
+    container_name: chatbot-mcp-monitoring
+    ports:
+      - "8005:8005"
+    environment:
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      - PORT=8005
+    command: python -m src.mcp_servers.monitoring
+
+  # Chatbot API
+  chatbot:
+    build: .
+    container_name: chatbot-api
+    ports:
+      - "8000:8000"
     depends_on:
       - rabbitmq
+      - mcp-sessions
+      - mcp-monitoring
+    env_file: .env
     environment:
       - RABBITMQ_HOST=rabbitmq
-    command: python tests/mock_services.py
+      - MCP_SERVERS=sessions@http://mcp-sessions:8001/mcp,monitoring@http://mcp-monitoring:8005/mcp
+    command: uvicorn main:app --host 0.0.0.0 --port 8000

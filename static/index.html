@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Assistant</title>
+  <style>
+    :root {
+      --bg:        #0f172a;
+      --panel:     #1e293b;
+      --panel2:    #162032;
+      --border:    rgba(255,255,255,0.07);
+      --border2:   rgba(255,255,255,0.12);
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --muted2:    #94a3b8;
+      --accent1:   #7c3aed;
+      --accent2:   #2563eb;
+      --green:     #22c55e;
+      --red:       #ef4444;
+      --yellow:    #f59e0b;
+      --radius:    12px;
+      --radius-sm: 8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100dvh;
+      overflow: hidden;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Shared ───────────────────────────────────────────── */
+    .screen { position: absolute; inset: 0; display: flex; flex-direction: column; transition: opacity .3s, transform .3s; }
+    .screen.hidden { opacity: 0; pointer-events: none; transform: translateY(8px); }
+
+    .grad-text {
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+
+    /* ── LOGIN ────────────────────────────────────────────── */
+    #login-screen {
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at 50% 0%, rgba(124,58,237,.15) 0%, transparent 70%), var(--bg);
+    }
+
+    .login-card {
+      width: 100%; max-width: 400px;
+      padding: 40px;
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      box-shadow: 0 24px 64px rgba(0,0,0,.5);
+    }
+
+    .login-logo {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 28px;
+    }
+    .login-logo-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+    }
+    .login-logo-icon svg { width: 20px; height: 20px; fill: #fff; }
+    .login-logo-name { font-size: 17px; font-weight: 700; }
+    .login-logo-badge {
+      font-size: 10px; font-weight: 600; letter-spacing: .05em;
+      padding: 2px 7px; border-radius: 99px;
+      background: rgba(124,58,237,.2); color: #a78bfa;
+      border: 1px solid rgba(124,58,237,.3);
+    }
+
+    .login-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .login-sub   { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block; font-size: 12px; font-weight: 600;
+      color: var(--muted2); margin-bottom: 6px; letter-spacing: .03em;
+    }
+    .form-group input {
+      width: 100%; padding: 11px 14px;
+      background: rgba(255,255,255,.05); border: 1px solid var(--border2);
+      border-radius: var(--radius-sm); color: var(--text); font-size: 14px;
+      outline: none; transition: border-color .15s;
+    }
+    .form-group input:focus { border-color: var(--accent1); }
+    .form-group input::placeholder { color: var(--muted); }
+
+    #login-error {
+      font-size: 12px; color: var(--red); margin-bottom: 14px;
+      min-height: 18px; display: none;
+    }
+
+    .btn-primary {
+      width: 100%; padding: 12px;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      border: none; border-radius: var(--radius-sm);
+      color: #fff; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: opacity .15s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-primary:hover { opacity: .88; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-spinner {
+      width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin .6s linear infinite; display: none;
+    }
+    .btn-primary.loading .btn-spinner { display: block; }
+    .btn-primary.loading .btn-label { display: none; }
+
+    /* ── CHAT ─────────────────────────────────────────────── */
+    #chat-screen { display: flex; flex-direction: column; }
+
+    /* Header */
+    .chat-header {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 20px; height: 56px;
+      background: var(--panel); border-bottom: 1px solid var(--border);
+    }
+    .header-logo {
+      width: 30px; height: 30px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .header-logo svg { width: 15px; height: 15px; fill: #fff; }
+    .header-title { font-size: 14px; font-weight: 700; flex: 1; }
+    .header-user  { font-size: 12px; color: var(--muted); }
+    .header-status {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--muted);
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--muted); transition: background .3s;
+    }
+    .status-dot.online  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.offline { background: var(--red); }
+
+    /* Status bar */
+    .status-bar {
+      flex-shrink: 0; height: 28px;
+      display: flex; align-items: center; padding: 0 20px;
+      background: var(--panel2); border-bottom: 1px solid var(--border);
+    }
+    .status-bar-text { font-size: 11px; color: var(--muted); letter-spacing: .02em; }
+    .status-bar-text.active { color: #a78bfa; }
+
+    /* Messages */
+    .messages {
+      flex: 1; overflow-y: auto; padding: 20px;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .messages::-webkit-scrollbar { width: 4px; }
+    .messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 2px; }
+
+    /* Welcome */
+    .welcome {
+      margin: auto;
+      text-align: center; max-width: 360px; padding: 20px;
+    }
+    .welcome-icon {
+      font-size: 36px; margin-bottom: 16px;
+      display: inline-block;
+      animation: float 3s ease-in-out infinite;
+    }
+    .welcome h2 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .welcome p  { font-size: 13px; color: var(--muted); line-height: 1.6; }
+    .welcome-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+    .welcome-chip {
+      padding: 7px 14px; border-radius: 99px;
+      background: rgba(255,255,255,.05); border: 1px solid var(--border2);
+      font-size: 12px; color: var(--muted2); cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .welcome-chip:hover { background: rgba(124,58,237,.15); color: #a78bfa; border-color: rgba(124,58,237,.3); }
+
+    /* Message rows */
+    .msg-row { display: flex; flex-direction: column; max-width: 80%; }
+    .msg-row.user   { align-self: flex-end; align-items: flex-end; }
+    .msg-row.assist { align-self: flex-start; align-items: flex-start; }
+
+    .msg-bubble {
+      padding: 10px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.6;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .msg-row.user   .msg-bubble { background: linear-gradient(135deg, var(--accent1), var(--accent2)); color: #fff; border-bottom-right-radius: 4px; }
+    .msg-row.assist .msg-bubble { background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; color: var(--text); }
+
+    /* Cursor */
+    .cursor {
+      display: inline-block; width: 2px; height: 14px;
+      background: var(--accent1); margin-left: 2px; vertical-align: middle;
+      animation: blink .8s step-end infinite;
+    }
+
+    /* Tool badges */
+    .badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 500;
+      background: rgba(255,255,255,.06); border: 1px solid var(--border2); color: var(--muted2);
+      transition: all .2s;
+    }
+    .badge.done  { border-color: rgba(34,197,94,.3); color: #86efac; background: rgba(34,197,94,.08); }
+    .badge.error { border-color: rgba(239,68,68,.3);  color: #fca5a5; background: rgba(239,68,68,.08); }
+    .badge-spinner {
+      width: 10px; height: 10px; border: 1.5px solid rgba(255,255,255,.2);
+      border-top-color: #a78bfa; border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+    .badge-icon { font-size: 10px; }
+    .badge-time { opacity: .6; font-size: 10px; }
+
+    /* Suggestions */
+    .suggestions {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;
+    }
+    .chip {
+      padding: 6px 13px; border-radius: 99px; font-size: 12px;
+      background: rgba(255,255,255,.05); border: 1px solid var(--border2);
+      color: var(--muted2); cursor: pointer; transition: all .15s;
+    }
+    .chip:hover { background: rgba(124,58,237,.15); color: #a78bfa; border-color: rgba(124,58,237,.3); }
+
+    /* Cards */
+    .card-grid { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+
+    .card {
+      padding: 10px 13px;
+      background: rgba(255,255,255,.04); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); font-size: 12px;
+    }
+    .card-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; color: var(--text); }
+    .card-meta  { color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+    .card-meta span { display: flex; align-items: center; gap: 4px; }
+
+    /* Status grid */
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; margin-top: 8px; }
+    .status-tile {
+      padding: 10px 12px;
+      background: rgba(255,255,255,.04); border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; gap: 8px; font-size: 12px;
+    }
+    .status-tile .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .status-tile .dot.online  { background: var(--green); box-shadow: 0 0 5px var(--green); }
+    .status-tile .dot.offline { background: var(--red); }
+    .status-tile .dot.degraded{ background: var(--yellow); }
+    .status-tile .svc-name { font-weight: 600; flex: 1; }
+    .status-tile .svc-status{ color: var(--muted); font-size: 11px; }
+
+    /* Error log */
+    .log-line {
+      padding: 6px 10px; border-radius: 6px; font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px; border-left: 3px solid var(--border2); margin-top: 4px;
+      background: rgba(255,255,255,.03); color: var(--muted2);
+    }
+    .log-line.error   { border-left-color: var(--red);    background: rgba(239,68,68,.05); }
+    .log-line.warning { border-left-color: var(--yellow); background: rgba(245,158,11,.05); }
+    .log-source { font-weight: 600; color: var(--text); margin-right: 6px; }
+
+    /* Invoice status badges */
+    .inv-status {
+      display: inline-block; padding: 1px 7px; border-radius: 99px;
+      font-size: 10px; font-weight: 600; letter-spacing: .03em;
+    }
+    .inv-status.paid    { background: rgba(34,197,94,.15);  color: #86efac; }
+    .inv-status.open    { background: rgba(59,130,246,.15); color: #93c5fd; }
+    .inv-status.overdue { background: rgba(239,68,68,.15);  color: #fca5a5; }
+    .inv-status.unknown { background: rgba(100,116,139,.15);color: #94a3b8; }
+
+    /* Total card */
+    .total-card {
+      padding: 14px 16px;
+      background: linear-gradient(135deg, rgba(124,58,237,.12), rgba(37,99,235,.12));
+      border: 1px solid rgba(124,58,237,.2); border-radius: var(--radius-sm);
+      margin-top: 8px;
+    }
+    .total-amount { font-size: 22px; font-weight: 800; }
+    .total-label  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* Typing indicator */
+    .typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+    .typing-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+      animation: bounce .9s ease-in-out infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: .15s; }
+    .typing-dot:nth-child(3) { animation-delay: .30s; }
+
+    /* Error toast */
+    .error-toast {
+      padding: 10px 14px; border-radius: var(--radius-sm);
+      background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25);
+      color: #fca5a5; font-size: 12px;
+    }
+
+    /* Input bar */
+    .input-bar {
+      flex-shrink: 0; padding: 12px 16px;
+      background: var(--panel); border-top: 1px solid var(--border);
+      display: flex; gap: 10px; align-items: flex-end;
+    }
+    .input-wrap { flex: 1; position: relative; }
+    #msg-input {
+      width: 100%; padding: 10px 14px;
+      background: rgba(255,255,255,.06); border: 1px solid var(--border2);
+      border-radius: var(--radius-sm); color: var(--text); font-size: 14px;
+      outline: none; resize: none; font-family: inherit; line-height: 1.5;
+      max-height: 120px; overflow-y: auto; transition: border-color .15s;
+    }
+    #msg-input:focus   { border-color: var(--accent1); }
+    #msg-input::placeholder { color: var(--muted); }
+    #msg-input:disabled { opacity: .5; cursor: not-allowed; }
+
+    #send-btn {
+      width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: opacity .15s;
+    }
+    #send-btn:hover   { opacity: .85; }
+    #send-btn:disabled{ opacity: .4; cursor: not-allowed; }
+    #send-btn svg { width: 18px; height: 18px; fill: #fff; }
+
+    /* Keyframes */
+    @keyframes spin   { to { transform: rotate(360deg); } }
+    @keyframes blink  { 50% { opacity: 0; } }
+    @keyframes bounce { 0%,80%,100% { transform: translateY(0); } 40% { transform: translateY(-5px); } }
+    @keyframes float  { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    .msg-row { animation: fadeIn .2s ease; }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN ─────────────────────────────────────────────── -->
+<div class="screen" id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">
+        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+      </div>
+      <span class="login-logo-name grad-text">Admin Assistant</span>
+      <span class="login-logo-badge">ADMIN</span>
+    </div>
+
+    <div class="login-title">Sign in</div>
+    <div class="login-sub">Access the event management assistant.</div>
+
+    <div class="form-group">
+      <label for="email-input">Work email</label>
+      <input id="email-input" type="email" placeholder="you@example.com" autocomplete="email" />
+    </div>
+
+    <div id="login-error"></div>
+
+    <button class="btn-primary" id="login-btn">
+      <div class="btn-spinner"></div>
+      <span class="btn-label">Continue →</span>
+    </button>
+  </div>
+</div>
+
+<!-- ── CHAT ───────────────────────────────────────────────── -->
+<div class="screen hidden" id="chat-screen">
+  <div class="chat-header">
+    <div class="header-logo">
+      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+    </div>
+    <div class="header-title">Admin Assistant</div>
+    <div class="header-user" id="header-user"></div>
+    <div class="header-status">
+      <div class="status-dot" id="conn-dot"></div>
+      <span id="conn-label">Connecting</span>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span class="status-bar-text" id="status-text"></span>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">⚡</div>
+      <h2>What can I help with?</h2>
+      <p>Ask about sessions, invoices, member registrations,<br>Kassa orders, or system health.</p>
+      <div class="welcome-chips">
+        <div class="welcome-chip" onclick="sendText(this.textContent)">Show all sessions</div>
+        <div class="welcome-chip" onclick="sendText(this.textContent)">Which services are down?</div>
+        <div class="welcome-chip" onclick="sendText(this.textContent)">Revenue this month</div>
+        <div class="welcome-chip" onclick="sendText(this.textContent)">Recent errors</div>
+        <div class="welcome-chip" onclick="sendText(this.textContent)">Member registrations today</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-bar">
+    <div class="input-wrap">
+      <textarea id="msg-input" rows="1" placeholder="Ask something…" disabled></textarea>
+    </div>
+    <button id="send-btn" disabled>
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Auth ──────────────────────────────────────────────────
+  let identity = JSON.parse(sessionStorage.getItem('admin_identity') || 'null');
+  if (identity) showChat(identity);
+
+  const $loginScreen = document.getElementById('login-screen');
+  const $chatScreen  = document.getElementById('chat-screen');
+  const $loginBtn    = document.getElementById('login-btn');
+  const $emailInput  = document.getElementById('email-input');
+  const $loginError  = document.getElementById('login-error');
+
+  $emailInput.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  $loginBtn.addEventListener('click', doLogin);
+
+  async function doLogin() {
+    const email = $emailInput.value.trim().toLowerCase();
+    if (!email) { showLoginError('Please enter your email.'); return; }
+
+    $loginBtn.classList.add('loading');
+    $loginBtn.disabled = true;
+    $loginError.style.display = 'none';
+
+    try {
+      const res = await fetch('/api/identify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { showLoginError(data.error || 'User not found.'); return; }
+      identity = data;
+      sessionStorage.setItem('admin_identity', JSON.stringify(data));
+      showChat(data);
+    } catch (e) {
+      showLoginError('Could not reach server. Is it running?');
+    } finally {
+      $loginBtn.classList.remove('loading');
+      $loginBtn.disabled = false;
+    }
+  }
+
+  function showLoginError(msg) {
+    $loginError.textContent = msg;
+    $loginError.style.display = 'block';
+  }
+
+  function showChat(id) {
+    document.getElementById('header-user').textContent = id.email;
+    $loginScreen.classList.add('hidden');
+    $chatScreen.classList.remove('hidden');
+    initWS(id.identity_uuid);
+  }
+
+  // ── WebSocket ─────────────────────────────────────────────
+  const SESSION_ID = crypto.randomUUID();
+  let ws = null, ready = false, busy = false;
+  let activeBubble = null, activeBadges = {};
+
+  function initWS(uuid) {
+    if (ws && ws.readyState < 2) return;
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/${SESSION_ID}`);
+
+    ws.onopen  = () => ws.send(JSON.stringify({ type: 'identify', identity_uuid: uuid }));
+    ws.onclose = () => {
+      ready = false; setConn(false);
+      setInput(false);
+      setTimeout(() => initWS(identity.identity_uuid), 3000);
+    };
+    ws.onerror = () => setConn(false);
+    ws.onmessage = e => { try { handle(JSON.parse(e.data)); } catch {} };
+  }
+
+  function handle(ev) {
+    switch (ev.type) {
+      case 'ready':
+        ready = true; setConn(true); setInput(true);
+        setStatus('');
+        break;
+      case 'status':
+        if (ev.status === 'thinking')        setStatus('Thinking…', true);
+        else if (ev.status === 'executing_tools') setStatus(`Querying ${ev.count || ''} service${ev.count !== 1 ? 's' : ''}…`, true);
+        else if (ev.status === 'responding') setStatus('Responding…', true);
+        break;
+      case 'tool_start':
+        ensureBubble();
+        addBadge(ev.call_id, ev.label || ev.tool);
+        break;
+      case 'tool_complete':
+        doneBadge(ev.call_id, ev.duration_ms, ev.error);
+        break;
+      case 'stream_token':
+        ensureBubble();
+        appendToken(ev.token);
+        break;
+      case 'cards':
+        if (activeBubble) renderCards(ev.card_type, ev.data);
+        break;
+      case 'suggestions':
+        if (activeBubble) renderChips(ev.items);
+        break;
+      case 'done':
+        finalize(); setInput(true); busy = false; setStatus('');
+        break;
+      case 'error':
+        showError(ev.message, ev.recoverable);
+        if (!ev.recoverable) setInput(false);
+        else { setInput(true); busy = false; }
+        break;
+    }
+  }
+
+  // ── Bubble management ──────────────────────────────────────
+  function ensureBubble() {
+    if (activeBubble) return;
+    hideWelcome();
+    // remove typing indicator
+    document.querySelectorAll('.typing-wrap').forEach(n => n.remove());
+
+    const row     = el('div', 'msg-row assist');
+    const badges  = el('div', 'badge-row');
+    const bubble  = el('div', 'msg-bubble');
+    const cursor  = el('span', 'cursor');
+    bubble.appendChild(cursor);
+    row.append(badges, bubble);
+    $msgs().appendChild(row);
+    activeBubble = { row, badges, bubble, cursor, textNode: null, cardArea: null, chipArea: null };
+    scrollBottom();
+  }
+
+  function appendToken(token) {
+    if (!activeBubble) return;
+    const { bubble, cursor } = activeBubble;
+    if (!activeBubble.textNode) {
+      activeBubble.textNode = document.createTextNode('');
+      bubble.insertBefore(activeBubble.textNode, cursor);
+    }
+    activeBubble.textNode.textContent += token;
+    scrollBottom();
+  }
+
+  function finalize() {
+    if (!activeBubble) return;
+    activeBubble.cursor.remove();
+    activeBubble = null; activeBadges = {};
+    scrollBottom();
+  }
+
+  function addBadge(id, label) {
+    if (!activeBubble) return;
+    const b = el('span', 'badge');
+    b.innerHTML = `<span class="badge-spinner"></span>${esc(label)}`;
+    activeBubble.badges.appendChild(b);
+    activeBadges[id] = b;
+    scrollBottom();
+  }
+
+  function doneBadge(id, ms, error) {
+    const b = activeBadges[id]; if (!b) return;
+    b.classList.add(error ? 'error' : 'done');
+    const icon = error ? '✕' : '✓';
+    const time = ms != null ? `<span class="badge-time">${ms}ms</span>` : '';
+    b.innerHTML = `<span class="badge-icon">${icon}</span>${esc(b.textContent.replace(/✓|✕/g,'').trim())} ${time}`;
+  }
+
+  // ── Cards ──────────────────────────────────────────────────
+  function renderCards(type, data) {
+    if (!activeBubble) return;
+    if (!activeBubble.cardArea) {
+      activeBubble.cardArea = el('div', 'card-grid');
+      activeBubble.row.appendChild(activeBubble.cardArea);
+    }
+    const area = activeBubble.cardArea;
+
+    if (type === 'session') {
+      data.forEach(s => {
+        const c = el('div', 'card');
+        c.innerHTML = `<div class="card-title">${esc(s.name)}</div>
+          <div class="card-meta">
+            ${s.date     ? `<span>📅 ${esc(fmt(s.date))}</span>` : ''}
+            ${s.location ? `<span>📍 ${esc(s.location)}</span>` : ''}
+            ${s.capacity ? `<span>👥 ${esc(s.capacity)}</span>` : ''}
+          </div>`;
+        area.appendChild(c);
+      });
+    } else if (type === 'invoice') {
+      data.forEach(inv => {
+        const c = el('div', 'card');
+        const sc = (inv.status||'').toLowerCase();
+        c.innerHTML = `<div class="card-meta" style="justify-content:space-between;align-items:center">
+            <span style="font-size:15px;font-weight:700;color:var(--text)">€${esc(inv.amount)}</span>
+            <span class="inv-status ${sc}">${esc(inv.status||'unknown')}</span>
+          </div>
+          <div class="card-meta" style="margin-top:4px">
+            ${inv.date ? `<span>${esc(fmt(inv.date))}</span>` : ''}
+            <span style="color:var(--muted);font-size:11px">#${esc(inv.invoice_id)}</span>
+          </div>`;
+        area.appendChild(c);
+      });
+    } else if (type === 'invoice_total') {
+      const c = el('div', 'total-card');
+      c.innerHTML = `<div class="total-amount grad-text">€${esc(data.total_amount)} <span style="font-size:13px;opacity:.7">${esc(data.currency||'EUR')}</span></div>
+        <div class="total-label">${esc(data.count)} invoice${data.count !== 1 ? 's' : ''}</div>`;
+      area.appendChild(c);
+    } else if (type === 'service_status') {
+      const grid = el('div', 'status-grid');
+      data.forEach(svc => {
+        const st = (svc.status||'').toLowerCase();
+        const t  = el('div', 'status-tile');
+        t.innerHTML = `<span class="dot ${st}"></span>
+          <span class="svc-name">${esc(svc.service)}</span>
+          <span class="svc-status">${st}</span>`;
+        grid.appendChild(t);
+      });
+      area.appendChild(grid);
+    } else if (type === 'error_log') {
+      data.forEach(entry => {
+        const lvl = (entry.level||'').toLowerCase();
+        const l   = el('div', `log-line ${lvl}`);
+        const ts  = entry['@timestamp'] ? new Date(entry['@timestamp']).toLocaleTimeString() : '';
+        l.innerHTML = `<span class="log-source">${esc(entry.source||'?')}</span>${esc(entry.message||'')} <span style="opacity:.5;float:right">${ts}</span>`;
+        area.appendChild(l);
+      });
+    } else if (type === 'member') {
+      data.forEach(m => {
+        const c = el('div', 'card');
+        c.innerHTML = `<div class="card-title">${esc(m.name||m.email)}</div>
+          <div class="card-meta">
+            <span>✉ ${esc(m.email)}</span>
+            ${m.registration_status ? `<span>📋 ${esc(m.registration_status)}</span>` : ''}
+          </div>`;
+        area.appendChild(c);
+      });
+    } else if (type === 'order') {
+      data.forEach(o => {
+        const c = el('div', 'card');
+        c.innerHTML = `<div class="card-meta" style="justify-content:space-between">
+            <span style="font-weight:600">€${esc(o.total)}</span>
+            <span style="color:var(--muted);font-size:11px">#${esc(o.order_id)}</span>
+          </div>
+          <div class="card-meta" style="margin-top:4px">
+            ${o.date ? `<span>${esc(fmt(o.date))}</span>` : ''}
+          </div>`;
+        area.appendChild(c);
+      });
+    }
+    scrollBottom();
+  }
+
+  function renderChips(items) {
+    if (!activeBubble || !items?.length) return;
+    if (!activeBubble.chipArea) {
+      activeBubble.chipArea = el('div', 'suggestions');
+      activeBubble.row.appendChild(activeBubble.chipArea);
+    }
+    items.forEach(text => {
+      const c = el('button', 'chip');
+      c.textContent = text;
+      c.onclick = () => { activeBubble?.chipArea?.remove(); sendText(text); };
+      activeBubble.chipArea.appendChild(c);
+    });
+    scrollBottom();
+  }
+
+  // ── Send ──────────────────────────────────────────────────
+  window.sendText = function(text) {
+    text = text.trim();
+    if (!text || busy || !ready) return;
+    hideWelcome();
+    busy = true; setInput(false);
+    document.getElementById('msg-input').value = '';
+
+    // user bubble
+    const row = el('div', 'msg-row user');
+    row.innerHTML = `<div class="msg-bubble">${esc(text)}</div>`;
+    $msgs().appendChild(row);
+
+    // typing
+    const tw = el('div', 'msg-row assist typing-wrap');
+    tw.innerHTML = `<div class="msg-bubble" style="padding:12px 16px"><div class="typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>`;
+    $msgs().appendChild(tw);
+    activeBubble = null;
+
+    scrollBottom();
+    ws?.send(JSON.stringify({ type: 'chat', message: text }));
+  };
+
+  function showError(msg, recoverable) {
+    document.querySelectorAll('.typing-wrap').forEach(n => n.remove());
+    finalize();
+    const t = el('div', 'error-toast');
+    t.textContent = msg || 'Something went wrong.';
+    $msgs().appendChild(t);
+    scrollBottom();
+  }
+
+  // ── Input wiring ──────────────────────────────────────────
+  const $input   = document.getElementById('msg-input');
+  const $sendBtn = document.getElementById('send-btn');
+
+  $input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText($input.value); }
+  });
+  $input.addEventListener('input', () => {
+    $input.style.height = 'auto';
+    $input.style.height = Math.min($input.scrollHeight, 120) + 'px';
+  });
+  $sendBtn.addEventListener('click', () => sendText($input.value));
+
+  function setInput(on) { $input.disabled = !on; $sendBtn.disabled = !on; if (on) $input.focus(); }
+
+  // ── Status / connection ───────────────────────────────────
+  function setConn(online) {
+    document.getElementById('conn-dot').className   = 'status-dot ' + (online ? 'online' : 'offline');
+    document.getElementById('conn-label').textContent = online ? 'Connected' : 'Reconnecting…';
+  }
+  function setStatus(text, active) {
+    const el = document.getElementById('status-text');
+    el.textContent = text;
+    el.className = 'status-bar-text' + (active ? ' active' : '');
+  }
+
+  // ── Utilities ─────────────────────────────────────────────
+  function $msgs()    { return document.getElementById('messages'); }
+  function scrollBottom() { const m = $msgs(); m.scrollTop = m.scrollHeight; }
+  function hideWelcome()  { const w = document.getElementById('welcome'); if (w) w.remove(); }
+  function el(tag, cls)   { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
+  function esc(s)   { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function fmt(d)   { try { const dt=new Date(d); return isNaN(dt)?d:dt.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); } catch { return d; } }
+
+})();
+</script>
+</body>
+</html>
