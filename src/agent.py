@@ -43,7 +43,7 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
     name = tool_call["function"]["name"]
     call_id = tool_call["id"]
 
-    await emit({"type": "tool_start", "tool": name, "label": name.replace("_", " ").title(), "call_id": call_id})
+    await emit({"type": "tool_start", "tool": name, "label": name.replace("_", " ").title(), "call_id": call_id, "arguments": args})
     t0 = time.time()
 
     identity_uuid = session_store.get_identity_uuid(session_id)
@@ -63,7 +63,8 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
         result = await mcp_client.get().call_tool(name, args)
 
         duration = int((time.time() - t0) * 1000)
-        await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id})
+        preview = result[:300] if isinstance(result, str) else ""
+        await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": preview})
         return call_id, result
     except Exception as exc:
         duration = int((time.time() - t0) * 1000)
@@ -157,6 +158,10 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 called_tools.add(key)
                 deduped.append(tc)
         tool_calls = deduped
+
+        thought = (response_msg.get("content") or "").strip()
+        if thought and tool_calls:
+            await emit({"type": "agent_thought", "text": thought, "step": loop_idx + 1})
 
         if tool_calls:
             session_store.append(session_id, {
