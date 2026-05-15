@@ -19,11 +19,12 @@ _ES_URL = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
 _LOGS_INDEX = os.getenv("ES_LOGS_INDEX", "logs")
 _HEARTBEAT_INDEX = os.getenv("ES_HEARTBEAT_INDEX", "logs")
 
+_http = httpx.AsyncClient(timeout=10.0)
+
 
 async def _es_search(index: str, query: dict) -> dict:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(f"{_ES_URL}/{index}/_search", json=query)
-        resp.raise_for_status()
+    resp = await _http.post(f"{_ES_URL}/{index}/_search", json=query)
+    resp.raise_for_status()
     return resp.json()
 
 

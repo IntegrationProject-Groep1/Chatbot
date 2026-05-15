@@ -61,8 +61,13 @@ async def identify(request: Request):
         loop = asyncio.get_event_loop()
         user = await loop.run_in_executor(None, resolve_identity_by_email, email, cfg)
         return {"identity_uuid": user.identity_uuid, "email": user.email}
+    except RuntimeError as exc:
+        msg = str(exc).lower()
+        if "missing" in msg or "not found" in msg or "uuid" in msg:
+            return JSONResponse({"error": str(exc)}, status_code=404)
+        return JSONResponse({"error": str(exc)}, status_code=503)
     except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=404)
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/health")

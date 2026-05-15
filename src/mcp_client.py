@@ -38,8 +38,8 @@ class MCPClient:
             try:
                 client = Client(url)
                 await client.__aenter__()
+                self._clients.append(client)  # append before list_tools so close() always runs
                 tools = await client.list_tools()
-                self._clients.append(client)
                 for tool in tools:
                     self._registry[tool.name] = (client, tool)
                 _log.info("MCP [%s] connected — %d tools: %s", label, len(tools), [t.name for t in tools])
@@ -82,7 +82,14 @@ class MCPClient:
             if not result.content:
                 return json.dumps({"status": "ok", "data": []})
             first = result.content[0]
-            return first.text if hasattr(first, "text") else json.dumps({"result": str(first)})
+            if not hasattr(first, "text"):
+                return json.dumps({"result": str(first)})
+            text = first.text
+            try:
+                json.loads(text)
+                return text
+            except (json.JSONDecodeError, TypeError):
+                return json.dumps({"result": text})
         except Exception as exc:
             return json.dumps({"error": str(exc), "status": "error"})
 

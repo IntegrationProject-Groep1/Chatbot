@@ -51,12 +51,20 @@ def on_request(ch, method, props, body):
         <total_amount currency="eur">99.99</total_amount>
         <invoice_count>1</invoice_count>
         """
-    elif "identity_request" in req_xml:
+    else:
+        # Default: treat as identity lookup (queue: identity.user.lookup.email.request)
         res_type = "identity_response"
-        res_body = """
+        try:
+            root = ET.fromstring(req_xml)
+            email = root.findtext(".//email") or "admin@example.com"
+        except Exception:
+            email = "admin@example.com"
+        res_body = f"""
+        <status>ok</status>
         <user>
-            <master_uuid>mock-uuid-12345</master_uuid>
-            <email>test@example.com</email>
+            <identity_uuid>mock-admin-uuid-001</identity_uuid>
+            <master_uuid>mock-admin-uuid-001</master_uuid>
+            <email>{email}</email>
         </user>
         """
 
@@ -85,7 +93,7 @@ def main():
 
     channel = connection.channel()
 
-    queues = ['identity.rpc', 'facturatie.rpc', 'planning.exchange']
+    queues = ['identity.user.lookup.email.request', 'facturatie.rpc', 'planning.exchange']
     for q in queues:
         channel.queue_declare(queue=q)
         channel.basic_qos(prefetch_count=1)
