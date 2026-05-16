@@ -422,8 +422,15 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+// ─── Pinned shortcuts ─────────────────────────────────────────────────────
+const PINNED = [
+  { label: "Services degraded today",  query: "Which services are degraded or offline right now?" },
+  { label: "Revenue this week",        query: "What is the total invoiced revenue this week?" },
+  { label: "Capacity warnings",        query: "Which sessions are near or at full capacity?" },
+];
+
 // ─── Sidebar ───────────────────────────────────────────────────────────────
-function Sidebar({ history, onPick, onNew, mode, setMode }) {
+function Sidebar({ history, onPick, onNew, onSend, mode, setMode }) {
   return (
     <nav className="sidebar">
       <div className="sb-mode">
@@ -443,9 +450,12 @@ function Sidebar({ history, onPick, onNew, mode, setMode }) {
 
       <div className="sb-section">
         <div className="sb-label">Pinned</div>
-        <button className="sb-item"><span className="ic">{I.pin}</span><span className="label">Services degraded today</span></button>
-        <button className="sb-item"><span className="ic">{I.pin}</span><span className="label">Revenue this week</span></button>
-        <button className="sb-item"><span className="ic">{I.pin}</span><span className="label">Capacity warnings</span></button>
+        {PINNED.map((p) => (
+          <button key={p.label} className="sb-item" onClick={() => { setMode("agent"); onSend(p.query); }}>
+            <span className="ic">{I.pin}</span>
+            <span className="label">{p.label}</span>
+          </button>
+        ))}
       </div>
 
       <div className="sb-section">
@@ -810,6 +820,10 @@ function App() {
     wsRef.current?.send(JSON.stringify({ type: "chat", message: text }));
   };
 
+  // History — replaced with localStorage in next commit
+  const [history, setHistory] = useState([]);
+  const onPick = useCallback(() => {}, []);
+
   const handleSuggest = (text) => handleSend(text);
   const handleNew = useCallback(() => {
     setMessages([]);
@@ -855,9 +869,10 @@ function App() {
       <Topbar identity={identity} connected={connected} serverCount={mcpServerCount} />
 
       <Sidebar
-        history={HISTORY}
-        onPick={() => {}}
+        history={history}
+        onPick={onPick}
         onNew={handleNew}
+        onSend={handleSend}
         mode={mode}
         setMode={setMode}
       />
