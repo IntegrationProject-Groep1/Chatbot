@@ -397,27 +397,17 @@ function MonitoringPanel() {
 }
 
 function MonRow({ svc, tick, onOpen }) {
-  // Generate 60 cells representing the last 60 seconds of heartbeats
-  // For online services: all green. For degraded: occasional miss. For quarantine: all red after a point.
-  const cells = useMemo(() => {
-    const out = [];
-    for (let i = 0; i < 60; i++) {
-      if (svc.status === "online") {
-        out.push("ok");
-      } else if (svc.status === "degraded") {
-        // ~30% misses, clustered
-        const noise = (i * 9301 + 49297) % 233280;
-        out.push(noise / 233280 < 0.3 ? "miss" : "ok");
-      } else if (svc.status === "quarantine") {
-        // Last heartbeat was 612s ago; everything in last 60s is missing
-        out.push("miss");
-      }
-    }
-    return out;
-  }, [svc.status]);
+  const [cells, setCells] = React.useState([]);
 
-  // Rotate the visible window so it looks live
+  React.useEffect(() => {
+    fetch(`/api/monitoring/heartbeat/${svc.id}?hours=1`)
+      .then(r => r.json())
+      .then(d => setCells(d.cells || []))
+      .catch(() => {});
+  }, [svc.id]);
+
   const shifted = useMemo(() => {
+    if (!cells.length) return Array(60).fill({ status: "ok" });
     const offset = tick % cells.length;
     return [...cells.slice(offset), ...cells.slice(0, offset)];
   }, [cells, tick]);
@@ -440,7 +430,7 @@ function MonRow({ svc, tick, onOpen }) {
         </div>
       </div>
       <div className="mon-strip">
-        {shifted.map((c, i) => <span key={i} className={`hb hb-${c}`}></span>)}
+        {shifted.map((c, i) => <span key={i} className={`hb hb-${c.status}`}></span>)}
       </div>
       <div className="mon-row-status">
         <span className={`mon-pill ${svc.status}`}>{svc.status}</span>
@@ -456,6 +446,7 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
   const isWarn = svc.status === "degraded";
   const tone = isHot ? "hot" : isWarn ? "warn" : "ok";
   const [realLogs, setRealLogs] = React.useState(null);
+  const [heartbeatCells, setHeartbeatCells] = React.useState(null);
 
   React.useEffect(() => {
     fetch("/api/monitoring/errors?limit=100")
@@ -477,6 +468,13 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
       .catch(() => setRealLogs([]));
   }, [svc.id]);
 
+  React.useEffect(() => {
+    fetch(`/api/monitoring/heartbeat/${svc.id}?hours=1`)
+      .then(r => r.json())
+      .then(d => setHeartbeatCells((d.cells || []).slice(-10).reverse()))
+      .catch(() => setHeartbeatCells([]));
+  }, [svc.id]);
+
   const meta = {
     crm:        { host: "crm-prod-01.shift.be",      port: 8080, deps: ["salesforce", "identity"] },
     facturatie: { host: "facturatie-prod.shift.be",  port: 8443, deps: ["mysql", "identity"]      },
@@ -485,15 +483,6 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
     monitoring: { host: "monitoring-prod.shift.be",  port: 8200, deps: ["elasticsearch"]           },
     identity:   { host: "identity-prod.shift.be",    port: 8443, deps: ["postgres"]                },
   }[svc.id] || { host: "—", port: 0, deps: [] };
-
-  const now = Date.now();
-  const heartbeats = [];
-  for (let i = 0; i < 10; i++) {
-    let status = "ok";
-    if (isHot) status = "miss";
-    else if (isWarn && (i === 2 || i === 5 || i === 7)) status = "slow";
-    heartbeats.push({ t: new Date(now - (i + 1) * 1000).toLocaleTimeString([], { hour12: false }), status });
-  }
 
   const logs = realLogs !== null ? realLogs : [];
 
@@ -538,23 +527,24 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
           <section className="svc-section">
             <h4>Heartbeat · last 60s</h4>
             <BigStrip svc={svc} tick={tick} />
-            <div className="svc-section-foot mono">
-              {svc.status === "online" ? "60 ok · 0 miss" :
-               svc.status === "degraded" ? "42 ok · 18 slow" :
-               "0 ok · 60 miss"}
-            </div>
+            <div className="svc-section-foot mono">last 60 min · 1-min buckets</div>
           </section>
 
           {/* Last 10 heartbeats */}
           <section className="svc-section">
             <h4>Last 10 heartbeats</h4>
             <div className="svc-hb-list">
-              {heartbeats.map((hb, i) => (
+              {heartbeatCells === null && (
+                <div style={{ fontSize: 11, color: "var(--muted-2)", padding: "8px 0", fontFamily: "var(--font-mono)" }}>Loading…</div>
+              )}
+              {heartbeatCells !== null && heartbeatCells.length === 0 && (
+                <div style={{ fontSize: 11, color: "var(--muted-2)", padding: "8px 0", fontFamily: "var(--font-mono)" }}>No data.</div>
+              )}
+              {(heartbeatCells || []).map((hb, i) => (
                 <div key={i} className={`svc-hb-row ${hb.status}`}>
-                  <span className="t mono">{hb.t}</span>
+                  <span className="t mono">{hb.timestamp ? new Date(hb.timestamp).toLocaleTimeString([], { hour12: false }) : "--:--:--"}</span>
                   <span className="dot"></span>
-                  <span className="label">{hb.status === "ok" ? "ok" : hb.status === "slow" ? "slow · >800ms" : "missed"}</span>
-                  <span className="corr mono">corr_{Math.random().toString(36).slice(2, 8)}</span>
+                  <span className="label">{hb.status === "ok" ? `${hb.count} beat${hb.count !== 1 ? "s" : ""}` : "missed"}</span>
                 </div>
               ))}
             </div>
@@ -607,24 +597,24 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
 }
 
 function BigStrip({ svc, tick }) {
-  const cells = useMemo(() => {
-    const out = [];
-    for (let i = 0; i < 60; i++) {
-      if (svc.status === "online") out.push("ok");
-      else if (svc.status === "degraded") {
-        const noise = (i * 9301 + 49297) % 233280;
-        out.push(noise / 233280 < 0.3 ? "slow" : "ok");
-      } else out.push("miss");
-    }
-    return out;
-  }, [svc.status]);
+  const [cells, setCells] = React.useState([]);
+
+  React.useEffect(() => {
+    fetch(`/api/monitoring/heartbeat/${svc.id}?hours=1`)
+      .then(r => r.json())
+      .then(d => setCells(d.cells || []))
+      .catch(() => {});
+  }, [svc.id]);
+
   const shifted = useMemo(() => {
+    if (!cells.length) return Array(60).fill({ status: "ok" });
     const offset = tick % cells.length;
     return [...cells.slice(offset), ...cells.slice(0, offset)];
   }, [cells, tick]);
+
   return (
     <div className="svc-big-strip">
-      {shifted.map((c, i) => <span key={i} className={`hb-big hb-${c}`}></span>)}
+      {shifted.map((c, i) => <span key={i} className={`hb-big hb-${c.status}`}></span>)}
     </div>
   );
 }

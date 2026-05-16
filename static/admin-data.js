@@ -47,7 +47,7 @@ const MCP_SERVERS = [
   { id: "facturatie", port: 8007, tools: 4,  list: ["list_invoices", "total_invoice_cost", "get_invoice_detail", "list_overdue"] },
   { id: "crm",        port: 8008, tools: 3,  list: ["resolve_user_by_email", "get_member_profile", "list_recent_registrations"] },
   { id: "kassa",      port: 8004, tools: 3,  list: ["list_orders", "revenue_by_period", "order_detail"] },
-  { id: "monitoring", port: 8005, tools: 3,  list: ["get_service_status", "get_recent_errors", "get_active_alerts"] },
+  { id: "monitoring", port: 8005, tools: 34, list: ["get_service_status", "get_recent_logs", "get_heartbeat_timeline", "get_health_scores", "get_platform_health_overview", "+29 more"] },
 ];
 
 // Active nodes per MCP server (tool name prefix → nodes to highlight)

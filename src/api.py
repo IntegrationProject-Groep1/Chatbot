@@ -111,35 +111,78 @@ async def _call_mcp(tool: str, args: dict = {}) -> dict:
 @app.get("/api/monitoring/status")
 async def monitoring_status():
     """Current online/offline/degraded status of all services (heartbeats)."""
-    return await _call_mcp("monitoring__get_service_status")
+    result = await _call_mcp("monitoring__get_service_status")
+    # Remap last_heartbeat → last_seen (UI reads last_seen via _secsSince())
+    for svc in result.get("services", []):
+        if "last_heartbeat" in svc and "last_seen" not in svc:
+            svc["last_seen"] = svc.pop("last_heartbeat")
+    return result
 
 
 @app.get("/api/monitoring/errors")
 async def monitoring_errors(limit: int = 50):
-    """Recent errors and warnings across all services."""
-    return await _call_mcp("monitoring__get_recent_errors", {"limit": min(limit, 100)})
+    """All recent log entries (all levels) across all services, for the log viewer."""
+    result = await _call_mcp("monitoring__get_recent_logs", {"limit": min(limit, 200)})
+    entries = []
+    for e in result.get("logs", []):
+        entries.append({
+            "source":         e.get("system", ""),
+            "level":          e.get("level", ""),
+            "message":        e.get("log_message", "") or e.get("message", ""),
+            "action":         e.get("action", ""),
+            "@timestamp":     e.get("@timestamp", ""),
+            "correlation_id": e.get("correlation_id", ""),
+        })
+    return {"errors": entries, "count": len(entries)}
 
 
 @app.get("/api/monitoring/alerts")
 async def monitoring_alerts():
-    """Services that sent offline/degraded heartbeats in the last 10 minutes."""
-    return await _call_mcp("monitoring__get_active_alerts")
+    """Services currently offline or degraded, derived from heartbeat status."""
+    result = await _call_mcp("monitoring__get_service_status")
+    alerts = []
+    for svc in result.get("services", []):
+        if not svc.get("live", True):
+            alerts.append({
+                "service":    svc.get("service", ""),
+                "status":     svc.get("status", "offline"),
+                "message":    f"{svc.get('service')} is {svc.get('status', 'offline')}",
+                "@timestamp": svc.get("last_heartbeat", svc.get("last_seen", "")),
+            })
+    return {"alerts": alerts, "count": len(alerts)}
+
+
+@app.get("/api/monitoring/heartbeat/{service}")
+async def monitoring_heartbeat(service: str, hours: int = 1):
+    """Per-minute heartbeat timeline for the 60-cell sparkline strip in the UI."""
+    hours = max(1, min(hours, 24))
+    result = await _call_mcp("monitoring__get_heartbeat_timeline",
+                             {"service": service, "hours": hours})
+    timeline = result.get("timeline", [])
+    cells = [
+        {
+            "timestamp": bucket.get("timestamp", ""),
+            "count":     bucket.get("count", 0),
+            "status":    "ok" if bucket.get("count", 0) > 0 else "miss",
+        }
+        for bucket in timeline[-60:]
+    ]
+    return {
+        "service":   service,
+        "cells":     cells,
+        "gap_count": result.get("gap_count", 0),
+        "error":     result.get("error"),
+    }
 
 
 @app.get("/api/dashboard/summary")
 async def dashboard_summary():
-    """Aggregated KPIs from multiple MCP servers for the dashboard strip."""
-    status_data, alerts_data = await asyncio.gather(
-        _call_mcp("monitoring__get_service_status"),
-        _call_mcp("monitoring__get_active_alerts"),
-        return_exceptions=True,
-    )
-    if isinstance(status_data, Exception):
-        status_data = {}
-    if isinstance(alerts_data, Exception):
-        alerts_data = {}
+    """Aggregated KPIs from monitoring for the dashboard strip."""
+    result = await _call_mcp("monitoring__get_service_status")
+    if isinstance(result, Exception):
+        result = {}
 
-    services = status_data.get("services", [])
+    services = result.get("services", [])
     online = sum(
         1 for s in services
         if (s.get("status") or "").lower() in ("online", "up", "healthy")
@@ -149,14 +192,15 @@ async def dashboard_summary():
         if (s.get("status") or "").lower() in ("degraded", "slow")
     )
     offline = len(services) - online - degraded
-    alerts = alerts_data.get("alerts", [])
+    # Alerts = services that are not live (offline or unknown)
+    alerts_count = sum(1 for s in services if not s.get("live", True))
 
     return {
-        "services_online": online,
+        "services_online":   online,
         "services_degraded": degraded,
-        "services_offline": max(offline, 0),
-        "services_total": len(services),
-        "active_alerts": len(alerts),
+        "services_offline":  max(offline, 0),
+        "services_total":    len(services),
+        "active_alerts":     alerts_count,
     }
 
 
