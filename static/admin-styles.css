@@ -642,10 +642,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: 14px;
   line-height: 1.6;
   color: var(--ink-2);
-  white-space: pre-wrap;
   text-wrap: pretty;
   max-width: 760px;
 }
+.msg-text p  { margin: 0 0 6px; }
+.msg-text ul, .msg-text ol { margin: 4px 0 8px 20px; padding: 0; }
+.msg-text li { margin-bottom: 2px; }
 .msg-text strong { color: var(--ink); font-weight: 600; }
 .msg-text code {
   font-family: var(--font-mono);
@@ -656,6 +658,29 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--line);
   color: var(--ink);
 }
+.msg-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 6px 0 10px;
+  width: auto;
+  max-width: 100%;
+  white-space: normal;
+}
+.msg-table th, .msg-table td {
+  border: 1px solid var(--line);
+  padding: 5px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.msg-table th {
+  background: var(--surface-2);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.msg-table tr:nth-child(even) td { background: var(--surface); }
+.msg-table tr:nth-child(odd)  td { background: var(--bg); }
 
 /* ============================================================
    TOOL CALL CARD — permanent, expanded
@@ -1420,8 +1445,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow: hidden;
 }
 .mon-list-body {
-  max-height: 340px;
-  overflow-y: auto;
+  /* no inner scroll — .mon-pane handles overflow */
 }
 .mon-list-head {
   display: grid;

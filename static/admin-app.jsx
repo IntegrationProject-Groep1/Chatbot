@@ -19,15 +19,75 @@ const I = {
 };
 
 // ─── Rich text renderer ────────────────────────────────────────────────────
-function renderRich(text) {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\n)/g);
+function inlineRich(text) {
+  const parts = (text || "").split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
   return parts.map((p, i) => {
-    if (p === "\n") return <br key={i} />;
     if (p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
-    if (p.startsWith("*") && p.endsWith("*"))   return <em key={i}>{p.slice(1, -1)}</em>;
-    if (p.startsWith("`") && p.endsWith("`"))   return <code key={i}>{p.slice(1, -1)}</code>;
-    return <span key={i}>{p}</span>;
+    if (p.startsWith("*")  && p.endsWith("*"))  return <em key={i}>{p.slice(1, -1)}</em>;
+    if (p.startsWith("`")  && p.endsWith("`"))  return <code key={i}>{p.slice(1, -1)}</code>;
+    return p;
   });
+}
+
+function renderRich(text) {
+  if (!text) return null;
+  const lines = text.split("\n");
+  const out = [];
+  let i = 0;
+  let key = 0;
+
+  const parseCells = row =>
+    row.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+  const isSep = row => /^\s*\|[\s\-:|]+\|\s*$/.test(row);
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Pipe table
+    if (line.trim().startsWith("|")) {
+      const tLines = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) {
+        tLines.push(lines[i]); i++;
+      }
+      const rows = tLines.filter(l => !isSep(l));
+      if (rows.length > 0) {
+        const [hRow, ...bRows] = rows;
+        out.push(
+          <table key={key++} className="msg-table">
+            <thead><tr>{parseCells(hRow).map((h, j) => <th key={j}>{inlineRich(h)}</th>)}</tr></thead>
+            <tbody>{bRows.map((r, ri) => (
+              <tr key={ri}>{parseCells(r).map((c, j) => <td key={j}>{inlineRich(c)}</td>)}</tr>
+            ))}</tbody>
+          </table>
+        );
+      }
+      continue;
+    }
+
+    // Bullet list
+    if (/^[-*•]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[-*•]\s+/.test(lines[i]))
+        items.push(lines[i++].replace(/^[-*•]\s+/, ""));
+      out.push(<ul key={key++}>{items.map((it, j) => <li key={j}>{inlineRich(it)}</li>)}</ul>);
+      continue;
+    }
+
+    // Numbered list
+    if (/^\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i]))
+        items.push(lines[i++].replace(/^\d+\.\s+/, ""));
+      out.push(<ol key={key++}>{items.map((it, j) => <li key={j}>{inlineRich(it)}</li>)}</ol>);
+      continue;
+    }
+
+    if (line.trim() === "") { i++; continue; }
+
+    out.push(<p key={key++}>{inlineRich(line)}</p>);
+    i++;
+  }
+  return out;
 }
 
 // ─── Extract MCP server from namespaced tool name ─────────────────────────
