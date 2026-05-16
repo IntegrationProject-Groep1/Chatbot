@@ -430,7 +430,7 @@ const PINNED = [
 ];
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────
-function Sidebar({ history, onPick, onNew, onSend, mode, setMode }) {
+function Sidebar({ history, activeConvId, onPick, onNew, onSend, mode, setMode }) {
   return (
     <nav className="sidebar">
       <div className="sb-mode">
@@ -459,9 +459,12 @@ function Sidebar({ history, onPick, onNew, onSend, mode, setMode }) {
       </div>
 
       <div className="sb-section">
-        <div className="sb-label">Today</div>
+        <div className="sb-label">Recent</div>
+        {history.length === 0 && (
+          <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--muted-2)" }}>No conversations yet.</div>
+        )}
         {history.map(h => (
-          <button key={h.id} className={`sb-item ${h.active ? "is-active" : ""}`} onClick={() => onPick(h.id)}>
+          <button key={h.id} className={`sb-item ${h.id === activeConvId ? "is-active" : ""}`} onClick={() => onPick(h.id)} title={h.label}>
             <span className="ic">{I.msg}</span>
             <span className="label">{h.label}</span>
             <span className="time">{h.time}</span>
@@ -812,7 +815,21 @@ function App() {
   const handleSend = (text) => {
     if (!connected || busy) return;
     setBusy(true);
-    setMessages(msgs => [...msgs, { id: "user-" + Date.now(), kind: "user", text }]);
+    setMessages(msgs => {
+      // Record history entry on first message of a new conversation
+      if (msgs.length === 0) {
+        const convId = sessionId.current;
+        const entry = {
+          id: convId,
+          label: text.length > 52 ? text.slice(0, 49) + "…" : text,
+          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          active: true,
+        };
+        saveHistory([entry, ...history.map(h => ({ ...h, active: false }))].slice(0, 30));
+        setActiveConvId(convId);
+      }
+      return [...msgs, { id: "user-" + Date.now(), kind: "user", text }];
+    });
     streamRef.current = { text: "", cards: [], msgId: null };
     toolBundleRef.current = null;
     setDoneNodes(new Set());
@@ -820,9 +837,22 @@ function App() {
     wsRef.current?.send(JSON.stringify({ type: "chat", message: text }));
   };
 
-  // History — replaced with localStorage in next commit
-  const [history, setHistory] = useState([]);
-  const onPick = useCallback(() => {}, []);
+  // ─── Conversation history (localStorage) ─────────────────────────────────
+  const LS_KEY = "shift_admin_history";
+  const [history, setHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
+  });
+  const [activeConvId, setActiveConvId] = useState(null);
+
+  const saveHistory = useCallback((items) => {
+    setHistory(items);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(items)); } catch {}
+  }, []);
+
+  const onPick = useCallback((id) => {
+    // Session is in-memory on the backend — clicking history shows it was visited but can't restore
+    setActiveConvId(id);
+  }, []);
 
   const handleSuggest = (text) => handleSend(text);
   const handleNew = useCallback(() => {
@@ -832,7 +862,9 @@ function App() {
     setDoneNodes(new Set());
     setLog([]);
     setStats({ tools: 0, ok: 0, warn: 0, tokens: 0 });
-  }, [clearActive]);
+    setActiveConvId(null);
+    saveHistory(history.map(h => ({ ...h, active: false })));
+  }, [clearActive, history, saveHistory]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -870,6 +902,7 @@ function App() {
 
       <Sidebar
         history={history}
+        activeConvId={activeConvId}
         onPick={onPick}
         onNew={handleNew}
         onSend={handleSend}

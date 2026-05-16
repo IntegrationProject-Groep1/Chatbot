@@ -66,14 +66,6 @@ const SUGGESTIONS_INITIAL = [
   "Recent error logs across all services",
 ];
 
-const HISTORY = [
-  { id: "h1", label: "Active sessions this week",     time: "now",   active: true },
-  { id: "h2", label: "Refund flow for INV-2026-0218", time: "11:42" },
-  { id: "h3", label: "Kassa heartbeat investigation",  time: "10:08" },
-  { id: "h4", label: "Member sign-ups · last 24h",     time: "Wed" },
-  { id: "h5", label: "Speaker bios export to CRM",     time: "Tue" },
-];
-
 window.FLOW_W = FLOW_W;
 window.FLOW_H = FLOW_H;
 window.NODES = NODES;
@@ -81,4 +73,3 @@ window.EDGES = EDGES;
 window.MCP_SERVERS = MCP_SERVERS;
 window.SERVER_FLOW = SERVER_FLOW;
 window.SUGGESTIONS_INITIAL = SUGGESTIONS_INITIAL;
-window.HISTORY = HISTORY;
