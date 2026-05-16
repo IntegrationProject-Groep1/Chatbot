@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -6,6 +7,9 @@ from typing import Any
 _log = logging.getLogger(__name__)
 
 _instance: "MCPClient | None" = None
+
+_HEALTH_INTERVAL = int(os.getenv("MCP_HEALTH_INTERVAL", "30"))   # seconds between health checks
+_RECONNECT_BACKOFF = [2, 5, 15, 30]                               # seconds to wait between retries
 
 
 def _parse_servers() -> dict[str, str]:
@@ -27,20 +31,19 @@ class MCPClient:
         self._label_clients: dict[str, Any] = {}    # label → client
         # namespaced_name → (label, tool, original_tool_name)
         self._registry: dict[str, tuple[str, Any, str]] = {}
+        self._health_task: asyncio.Task | None = None
 
     async def _connect_server(self, label: str, url: str) -> None:
-        """Connect to one MCP server and register its tools. Idempotent — tears down any existing connection first."""
+        """Connect to one MCP server and register its tools. Idempotent — tears down existing connection first."""
         from fastmcp import Client
         from fastmcp.client.transports import StreamableHttpTransport
 
-        # Tear down existing connection for this label if present
         old_client = self._label_clients.pop(label, None)
         if old_client is not None:
             try:
                 await old_client.__aexit__(None, None, None)
             except Exception:
                 pass
-        # Remove stale registry entries for this label
         stale = [k for k in self._registry if k.startswith(f"{label}__")]
         for k in stale:
             del self._registry[k]
@@ -54,6 +57,42 @@ class MCPClient:
             self._registry[namespaced] = (label, tool, tool.name)
         _log.info("MCP [%s] connected — %d tools: %s", label, len(tools), [t.name for t in tools])
 
+    async def _reconnect_with_backoff(self, label: str) -> None:
+        """Keep retrying to reconnect a single server using exponential backoff."""
+        url = self._servers.get(label)
+        if not url:
+            return
+        for wait in _RECONNECT_BACKOFF:
+            await asyncio.sleep(wait)
+            try:
+                await self._connect_server(label, url)
+                _log.info("MCP [%s] reconnected successfully", label)
+                return
+            except Exception as exc:
+                _log.warning("MCP [%s] reconnect attempt failed (retrying in %ss): %s", label, wait, exc)
+        _log.error("MCP [%s] could not reconnect after all retries — will retry at next health check", label)
+
+    async def _health_loop(self) -> None:
+        """Background task: ping every MCP server periodically and reconnect if dead."""
+        while True:
+            await asyncio.sleep(_HEALTH_INTERVAL)
+            for label, url in list(self._servers.items()):
+                client = self._label_clients.get(label)
+                alive = False
+                if client is not None:
+                    try:
+                        await asyncio.wait_for(client.list_tools(), timeout=5.0)
+                        alive = True
+                    except Exception:
+                        pass
+                if not alive:
+                    _log.warning("MCP [%s] health check failed — reconnecting…", label)
+                    try:
+                        await self._connect_server(label, url)
+                        _log.info("MCP [%s] recovered", label)
+                    except Exception as exc:
+                        _log.warning("MCP [%s] recovery failed: %s", label, exc)
+
     async def init(self) -> None:
         self._servers = _parse_servers()
         if not self._servers:
@@ -66,7 +105,16 @@ class MCPClient:
             except Exception as exc:
                 _log.warning("MCP [%s] unavailable at %s: %s", label, url, exc)
 
+        self._health_task = asyncio.create_task(self._health_loop())
+
     async def close(self) -> None:
+        if self._health_task:
+            self._health_task.cancel()
+            try:
+                await self._health_task
+            except asyncio.CancelledError:
+                pass
+            self._health_task = None
         for client in self._label_clients.values():
             try:
                 await client.__aexit__(None, None, None)
@@ -91,7 +139,7 @@ class MCPClient:
 
     async def call_tool(self, name: str, args: dict, timeout: float = 30.0) -> str:
         """Call a tool by name (namespaced as label__tool_name). Always returns a JSON string.
-        On session/connection errors, reconnects once and retries."""
+        On session/connection errors, reconnects once and retries immediately."""
         if name not in self._registry:
             return json.dumps({"error": f"Tool '{name}' not found in any MCP server"})
 
@@ -101,7 +149,6 @@ class MCPClient:
             if client is None:
                 return json.dumps({"error": f"No active connection for server '{label}'"})
             try:
-                import asyncio
                 result = await asyncio.wait_for(
                     client.call_tool(original_name, args),
                     timeout=timeout,
@@ -127,14 +174,16 @@ class MCPClient:
                 return json.dumps({"error": f"Tool '{name}' timed out after {timeout}s", "status": "timeout"})
             except Exception as exc:
                 err_str = str(exc).lower()
-                is_session_error = any(k in err_str for k in ("session", "terminated", "closed", "connection", "404", "reconnect"))
+                is_session_error = any(k in err_str for k in ("session", "terminated", "closed", "connection", "404"))
                 if attempt == 0 and is_session_error and label in self._servers:
                     _log.warning("MCP [%s] session lost (%s) — reconnecting…", label, exc)
                     try:
                         await self._connect_server(label, self._servers[label])
-                        continue  # retry with fresh connection
+                        continue
                     except Exception as reconnect_exc:
                         _log.warning("MCP [%s] reconnect failed: %s", label, reconnect_exc)
+                        # Kick off background backoff reconnect so it recovers without user waiting
+                        asyncio.create_task(self._reconnect_with_backoff(label))
                 return json.dumps({"error": str(exc), "status": "error"})
 
         return json.dumps({"error": "Tool call failed after reconnect attempt", "status": "error"})
