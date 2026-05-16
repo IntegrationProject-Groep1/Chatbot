@@ -156,24 +156,6 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery, themeName })
         </div>
       </div>
 
-      {/* KPI summary bar — clicking also sets the level filter */}
-      <div className="logs-kpis">
-        {[
-          { label: "Total entries", v: totals.total, cls: "",     lv: "any"     },
-          { label: "Info",          v: totals.info,  cls: "ok",   lv: "info"    },
-          { label: "Warnings",      v: totals.warn,  cls: "warn", lv: "warning" },
-          { label: "Errors",        v: totals.err,   cls: "hot",  lv: "error"   },
-        ].map(k => (
-          <button
-            key={k.lv}
-            className={`logs-kpi ${k.cls}${levelFilter === k.lv ? " is-active" : ""}`}
-            onClick={() => setLevelFilter(k.lv)}
-          >
-            <div className="l">{k.label}</div>
-            <div className="v mono">{k.v}</div>
-          </button>
-        ))}
-      </div>
 
       {loading && (
         <div style={{ padding: "32px", textAlign: "center", color: "var(--muted-2)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
