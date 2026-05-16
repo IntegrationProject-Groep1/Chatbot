@@ -376,14 +376,16 @@ function MonitoringPanel() {
           <span>Heartbeat · last 60s</span>
           <span style={{ textAlign: "right" }}>Status</span>
         </div>
-        {normed.length === 0 && !error && (
-          <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
-            {lastRefresh ? "No heartbeats received yet." : "Loading…"}
-          </div>
-        )}
-        {normed.map((s) => (
-          <MonRow key={s.id} svc={s} tick={tick} onOpen={() => setSelected(s)} />
-        ))}
+        <div className="mon-list-body">
+          {normed.length === 0 && !error && (
+            <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+              {lastRefresh ? "No heartbeats received yet." : "Loading…"}
+            </div>
+          )}
+          {normed.map((s) => (
+            <MonRow key={s.id} svc={s} tick={tick} onOpen={() => setSelected(s)} />
+          ))}
+        </div>
       </div>
 
       <div className="mon-footer">

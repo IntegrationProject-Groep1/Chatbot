@@ -354,28 +354,38 @@ function ErrorToast({ message }) {
 }
 
 // ─── Dashboard KPI strip ───────────────────────────────────────────────────
-function DashboardStrip({ kpis }) {
+function DashboardStrip({ kpis, onOpenMonitoring }) {
   if (!kpis) return null;
   const { services_online: on, services_degraded: deg, services_offline: off, active_alerts: alerts } = kpis;
-  const tone = off > 0 ? "hot" : deg > 0 ? "warn" : "ok";
+  const items = [
+    { v: on,     l: "Online",   c: "ok",     clickable: true  },
+    { v: deg,    l: "Degraded", c: deg  > 0 ? "warn"   : "muted-2", clickable: deg  > 0 },
+    { v: off,    l: "Offline",  c: off  > 0 ? "hot"    : "muted-2", clickable: off  > 0 },
+    { v: alerts, l: "Alerts",   c: alerts > 0 ? "hot"  : "muted-2", clickable: alerts > 0 },
+  ];
   return (
     <div style={{
       display: "flex", gap: 0, borderBottom: "1px solid var(--line)",
       background: "var(--surface)", flexShrink: 0,
     }}>
-      {[
-        { v: on,     l: "Online",   c: "ok"   },
-        { v: deg,    l: "Degraded", c: deg  > 0 ? "warn" : "muted-2" },
-        { v: off,    l: "Offline",  c: off  > 0 ? "hot"  : "muted-2" },
-        { v: alerts, l: "Alerts",   c: alerts > 0 ? "hot" : "muted-2" },
-      ].map(({ v, l, c }) => (
-        <div key={l} style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "7px 16px",
-          borderRight: "1px solid var(--line)", fontSize: 12,
-        }}>
+      {items.map(({ v, l, c, clickable }) => (
+        <button
+          key={l}
+          onClick={clickable ? onOpenMonitoring : undefined}
+          title={clickable ? "Open Monitoring panel" : undefined}
+          style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "7px 16px",
+            borderRight: "1px solid var(--line)", fontSize: 12,
+            background: "none", border: "none", borderRight: "1px solid var(--line)",
+            cursor: clickable ? "pointer" : "default",
+            transition: "background .15s",
+          }}
+          onMouseEnter={e => { if (clickable) e.currentTarget.style.background = "var(--surface-2)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "none"; }}
+        >
           <span style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: `var(--${c})` }}>{v ?? "—"}</span>
           <span style={{ color: "var(--muted)", fontSize: 11 }}>{l}</span>
-        </div>
+        </button>
       ))}
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", padding: "0 14px", fontSize: 10, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
         monitoring MCP · live
@@ -1079,7 +1089,7 @@ function App() {
               </span>
             </div>
 
-            <DashboardStrip kpis={dashKpis} />
+            <DashboardStrip kpis={dashKpis} onOpenMonitoring={() => setFlowTab("monitoring")} />
 
             <div className="messages" ref={messagesRef}>
               <div className="day-divider">Today</div>

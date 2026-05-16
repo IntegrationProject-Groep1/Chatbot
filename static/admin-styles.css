@@ -1419,6 +1419,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: var(--r-md);
   overflow: hidden;
 }
+.mon-list-body {
+  max-height: 340px;
+  overflow-y: auto;
+}
 .mon-list-head {
   display: grid;
   grid-template-columns: 145px 1fr 105px;
