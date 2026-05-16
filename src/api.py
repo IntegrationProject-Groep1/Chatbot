@@ -105,6 +105,40 @@ async def monitoring_alerts():
     return await _call_mcp("monitoring__get_active_alerts")
 
 
+@app.get("/api/dashboard/summary")
+async def dashboard_summary():
+    """Aggregated KPIs from multiple MCP servers for the dashboard strip."""
+    status_data, alerts_data = await asyncio.gather(
+        _call_mcp("monitoring__get_service_status"),
+        _call_mcp("monitoring__get_active_alerts"),
+        return_exceptions=True,
+    )
+    if isinstance(status_data, Exception):
+        status_data = {}
+    if isinstance(alerts_data, Exception):
+        alerts_data = {}
+
+    services = status_data.get("services", [])
+    online = sum(
+        1 for s in services
+        if (s.get("status") or "").lower() in ("online", "up", "healthy")
+    )
+    degraded = sum(
+        1 for s in services
+        if (s.get("status") or "").lower() in ("degraded", "slow")
+    )
+    offline = len(services) - online - degraded
+    alerts = alerts_data.get("alerts", [])
+
+    return {
+        "services_online": online,
+        "services_degraded": degraded,
+        "services_offline": max(offline, 0),
+        "services_total": len(services),
+        "active_alerts": len(alerts),
+    }
+
+
 @app.get("/api/mcp/tools")
 async def list_mcp_tools():
     """All loaded MCP tools grouped by server label."""

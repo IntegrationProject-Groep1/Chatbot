@@ -353,6 +353,37 @@ function ErrorToast({ message }) {
   );
 }
 
+// ─── Dashboard KPI strip ───────────────────────────────────────────────────
+function DashboardStrip({ kpis }) {
+  if (!kpis) return null;
+  const { services_online: on, services_degraded: deg, services_offline: off, active_alerts: alerts } = kpis;
+  const tone = off > 0 ? "hot" : deg > 0 ? "warn" : "ok";
+  return (
+    <div style={{
+      display: "flex", gap: 0, borderBottom: "1px solid var(--line)",
+      background: "var(--surface)", flexShrink: 0,
+    }}>
+      {[
+        { v: on,     l: "Online",   c: "ok"   },
+        { v: deg,    l: "Degraded", c: deg  > 0 ? "warn" : "muted-2" },
+        { v: off,    l: "Offline",  c: off  > 0 ? "hot"  : "muted-2" },
+        { v: alerts, l: "Alerts",   c: alerts > 0 ? "hot" : "muted-2" },
+      ].map(({ v, l, c }) => (
+        <div key={l} style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "7px 16px",
+          borderRight: "1px solid var(--line)", fontSize: 12,
+        }}>
+          <span style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: `var(--${c})` }}>{v ?? "—"}</span>
+          <span style={{ color: "var(--muted)", fontSize: 11 }}>{l}</span>
+        </div>
+      ))}
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", padding: "0 14px", fontSize: 10, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+        monitoring MCP · live
+      </div>
+    </div>
+  );
+}
+
 // ─── Login screen ──────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -573,6 +604,15 @@ function App() {
   // Event log
   const [log, setLog] = useState([]);
   const [stats, setStats] = useState({ tools: 0, ok: 0, warn: 0, tokens: 0 });
+
+  // ─── Dashboard KPIs ───────────────────────────────────────────────────────
+  const [dashKpis, setDashKpis] = useState(null);
+  useEffect(() => {
+    const load = () => fetch("/api/dashboard/summary").then(r => r.json()).then(setDashKpis).catch(() => {});
+    load();
+    const id = setInterval(load, 60000);
+    return () => clearInterval(id);
+  }, []);
 
   // Live MCP server count
   const [mcpServerCount, setMcpServerCount] = useState(MCP_SERVERS.length);
@@ -923,6 +963,8 @@ function App() {
                 <span className="pulse"></span>{connected ? "Agent connected" : "Reconnecting…"}
               </span>
             </div>
+
+            <DashboardStrip kpis={dashKpis} />
 
             <div className="messages" ref={messagesRef}>
               <div className="day-divider">Today</div>
