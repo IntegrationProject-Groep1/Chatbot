@@ -3,7 +3,10 @@ import json
 import os
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Callable
+
+_TZ = ZoneInfo("Europe/Brussels")
 
 import httpx
 from dotenv import load_dotenv
@@ -34,7 +37,7 @@ _LOCAL_TOOLS = [
 
 def _handle_local_tool(name: str) -> str | None:
     if name == "get_current_date":
-        now = datetime.now()
+        now = datetime.now(_TZ)
         return json.dumps({
             "date": now.strftime("%Y-%m-%d"),
             "day_of_week": now.strftime("%A"),
@@ -245,7 +248,7 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
         messages = session_store.get(session_id)
 
         # Inject live date into the system message for this call — never stored, always fresh
-        now = datetime.now()
+        now = datetime.now(_TZ)
         week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
         date_line = (
             f"\nCurrent date: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')})"
