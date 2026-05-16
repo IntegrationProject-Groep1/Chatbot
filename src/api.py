@@ -70,6 +70,27 @@ async def identify(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@app.get("/api/identity/uuid/{identity_uuid}")
+async def identify_by_uuid(identity_uuid: str):
+    """Reverse identity lookup: UUID → email via the same XML RPC as /api/identify."""
+    identity_uuid = identity_uuid.strip()
+    if not identity_uuid:
+        return JSONResponse({"error": "identity_uuid is required"}, status_code=400)
+    try:
+        from downstream_tools import resolve_identity_by_uuid, DownstreamConfig
+        cfg = DownstreamConfig()
+        loop = asyncio.get_event_loop()
+        user = await loop.run_in_executor(None, resolve_identity_by_uuid, identity_uuid, cfg)
+        return {"identity_uuid": user.identity_uuid, "email": user.email}
+    except RuntimeError as exc:
+        msg = str(exc).lower()
+        if "missing" in msg or "not found" in msg or "uuid" in msg:
+            return JSONResponse({"error": str(exc)}, status_code=404)
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -103,6 +124,40 @@ async def monitoring_errors(limit: int = 50):
 async def monitoring_alerts():
     """Services that sent offline/degraded heartbeats in the last 10 minutes."""
     return await _call_mcp("monitoring__get_active_alerts")
+
+
+@app.get("/api/dashboard/summary")
+async def dashboard_summary():
+    """Aggregated KPIs from multiple MCP servers for the dashboard strip."""
+    status_data, alerts_data = await asyncio.gather(
+        _call_mcp("monitoring__get_service_status"),
+        _call_mcp("monitoring__get_active_alerts"),
+        return_exceptions=True,
+    )
+    if isinstance(status_data, Exception):
+        status_data = {}
+    if isinstance(alerts_data, Exception):
+        alerts_data = {}
+
+    services = status_data.get("services", [])
+    online = sum(
+        1 for s in services
+        if (s.get("status") or "").lower() in ("online", "up", "healthy")
+    )
+    degraded = sum(
+        1 for s in services
+        if (s.get("status") or "").lower() in ("degraded", "slow")
+    )
+    offline = len(services) - online - degraded
+    alerts = alerts_data.get("alerts", [])
+
+    return {
+        "services_online": online,
+        "services_degraded": degraded,
+        "services_offline": max(offline, 0),
+        "services_total": len(services),
+        "active_alerts": len(alerts),
+    }
 
 
 @app.get("/api/mcp/tools")
