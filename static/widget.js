@@ -7,15 +7,12 @@
   const WS_BASE = `ws://${HOST}/ws`;
   const SESSION_ID = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 
-  if (!UUID) {
-    // Not logged in — don't render the widget
-    return;
-  }
+  if (!UUID) return;
 
-  // ─── Icons ──────────────────────────────────────────────────────────────────
+  // ─── Icons ───────────────────────────────────────────────────────────────────
 
-  const ICON_CHAT = `<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>`;
-  const ICON_SEND = `<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`;
+  const ICON_CHAT  = `<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>`;
+  const ICON_SEND  = `<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`;
   const ICON_CLOSE = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
 
   // ─── DOM Construction ────────────────────────────────────────────────────────
@@ -44,19 +41,23 @@
         <div class="chatbot-welcome">
           <div class="chatbot-welcome-icon">✨</div>
           <strong>Your personal event assistant</strong>
-          Ask me about your sessions, invoices, or anything about the event.
+          Ask me about sessions, invoices, members, or anything about the event.
+          <div class="chatbot-welcome-hint">
+            <button class="chatbot-welcome-chip" id="wc1">Who registered today?</button>
+            <button class="chatbot-welcome-chip" id="wc2">Show overdue invoices</button>
+            <button class="chatbot-welcome-chip" id="wc3">Service health status</button>
+          </div>
         </div>
       </div>
 
       <div class="chatbot-input-row">
-        <input
-          type="text"
+        <textarea
           class="chatbot-input"
           id="chatbot-input"
           placeholder="Ask something..."
           disabled
-          maxlength="500"
-        />
+          rows="1"
+        ></textarea>
         <button class="chatbot-send" id="chatbot-send" disabled aria-label="Send">${ICON_SEND}</button>
       </div>
     </div>
@@ -75,15 +76,75 @@
   const $subtitle = root.querySelector('#chatbot-subtitle');
   const $close    = root.querySelector('#chatbot-close');
 
+  ['wc1', 'wc2', 'wc3'].forEach(id => {
+    const el = root.querySelector('#' + id);
+    if (el) el.addEventListener('click', () => sendMessage(el.textContent));
+  });
+
   // ─── State ───────────────────────────────────────────────────────────────────
 
-  let ws = null;
-  let isOpen = false;
-  let isReady = false;
-  let isBusy = false;
-  let activeBubble = null;    // The assistant bubble currently being filled
-  let activeBadges = {};      // tool name → badge DOM element
+  let ws          = null;
+  let isOpen      = false;
+  let isReady     = false;
+  let isBusy      = false;
+  let activeBubble = null;   // assistant bubble currently being filled
+  let activeBadges = {};     // tool name → badge DOM element
   let unreadCount = 0;
+  let busyTimeout = null;    // 90s safety reset
+
+  // ─── Markdown renderer ───────────────────────────────────────────────────────
+
+  function renderMarkdown(raw) {
+    // Escape HTML
+    let s = raw
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // Fenced code blocks
+    s = s.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) =>
+      `<pre><code>${code.trim()}</code></pre>`);
+
+    // Inline code
+    s = s.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+
+    // Bold
+    s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
+
+    // Italic (single *, not **)
+    s = s.replace(/(?<![*])\*(?![*])([^*\n]+?)(?<![*])\*(?![*])/g, '<em>$1</em>');
+
+    // Process line by line for lists / paragraphs
+    const lines = s.split('\n');
+    const out = [];
+    let inUl = false;
+    let inOl = false;
+
+    for (const line of lines) {
+      const ulMatch = line.match(/^[-*•]\s+(.+)/);
+      const olMatch = line.match(/^\d+\.\s+(.+)/);
+
+      if (ulMatch) {
+        if (!inUl) { if (inOl) { out.push('</ol>'); inOl = false; } out.push('<ul>'); inUl = true; }
+        out.push(`<li>${ulMatch[1]}</li>`);
+      } else if (olMatch) {
+        if (!inOl) { if (inUl) { out.push('</ul>'); inUl = false; } out.push('<ol>'); inOl = true; }
+        out.push(`<li>${olMatch[1]}</li>`);
+      } else {
+        if (inUl) { out.push('</ul>'); inUl = false; }
+        if (inOl) { out.push('</ol>'); inOl = false; }
+        if (line.trim() === '') {
+          out.push('<p></p>');
+        } else {
+          out.push(`<p>${line}</p>`);
+        }
+      }
+    }
+    if (inUl) out.push('</ul>');
+    if (inOl) out.push('</ol>');
+
+    return out.join('');
+  }
 
   // ─── WebSocket ───────────────────────────────────────────────────────────────
 
@@ -97,16 +158,11 @@
     };
 
     ws.onmessage = (e) => {
-      try {
-        handleEvent(JSON.parse(e.data));
-      } catch (err) {
-        console.error('[Chatbot] parse error', err);
-      }
+      try { handleEvent(JSON.parse(e.data)); }
+      catch (err) { console.error('[Chatbot] parse error', err); }
     };
 
-    ws.onerror = () => {
-      setStatus(false, 'Connection error');
-    };
+    ws.onerror = () => setStatus(false, 'Connection error');
 
     ws.onclose = () => {
       isReady = false;
@@ -126,19 +182,40 @@
 
   function handleEvent(ev) {
     switch (ev.type) {
+
       case 'ready':
         isReady = true;
+        isBusy  = false;   // reset in case previous response got stuck
+        clearBusyTimeout();
+        setBusyState(false);
         setStatus(true, 'Online — ask me anything');
         setInputEnabled(true);
         break;
 
       case 'tool_start':
         ensureActiveBubble();
-        addBadge(ev.tool, ev.label, ev.service);
+        updateStatusLine(`Calling ${serviceLabel(ev.tool)} service…`);
+        addBadge(ev.tool, ev.label || toolDisplayName(ev.tool), serviceFromTool(ev.tool));
         break;
 
       case 'tool_complete':
         completeBadge(ev.tool, ev.duration_ms, ev.error);
+        updateStatusLine(null);
+        break;
+
+      case 'status':
+        ensureActiveBubble();
+        if (ev.status === 'thinking') {
+          updateStatusLine('Thinking…');
+        } else if (ev.status === 'executing_tools') {
+          const step = ev.step ? ` (step ${ev.step})` : '';
+          updateStatusLine(`Running tools${step}…`);
+        }
+        break;
+
+      case 'agent_thought':
+        ensureActiveBubble();
+        addAgentThought(ev.thought || ev.content || '');
         break;
 
       case 'stream_token':
@@ -155,20 +232,78 @@
         break;
 
       case 'done':
+        updateStatusLine(null);
         finalizeActiveBubble();
-        setInputEnabled(true);
         isBusy = false;
+        clearBusyTimeout();
+        setBusyState(false);
+        setInputEnabled(true);
         break;
 
       case 'error':
+        updateStatusLine(null);
         showError(ev.message, ev.recoverable);
+        clearBusyTimeout();
         if (!ev.recoverable) setInputEnabled(false);
-        else { setInputEnabled(true); isBusy = false; }
+        else { isBusy = false; setBusyState(false); setInputEnabled(true); }
         break;
     }
   }
 
-  // ─── Message bubble management ───────────────────────────────────────────────
+  // ─── Service helpers ─────────────────────────────────────────────────────────
+
+  function serviceFromTool(name) {
+    if (!name) return 'unknown';
+    const parts = name.split('__');
+    return parts.length >= 2 ? parts[0] : 'unknown';
+  }
+
+  function serviceLabel(name) {
+    const map = { crm: 'CRM', kassa: 'Kassa', monitoring: 'Monitoring', frontend: 'Frontend', facturatie: 'Facturatie' };
+    return map[serviceFromTool(name)] || serviceFromTool(name);
+  }
+
+  function toolDisplayName(name) {
+    if (!name) return 'tool';
+    const parts = name.split('__');
+    return (parts.length >= 2 ? parts[1] : name).replace(/_/g, ' ');
+  }
+
+  // ─── Busy state ──────────────────────────────────────────────────────────────
+
+  function setBusyState(busy) {
+    if (busy) {
+      $status.classList.add('chatbot-status-busy');
+      $status.classList.remove('chatbot-status-offline');
+      $subtitle.classList.add('chatbot-subtitle-active');
+    } else {
+      $status.classList.remove('chatbot-status-busy');
+      $subtitle.classList.remove('chatbot-subtitle-active');
+    }
+  }
+
+  function startBusyTimeout() {
+    clearBusyTimeout();
+    busyTimeout = setTimeout(() => {
+      if (!isBusy) return;
+      isBusy = false;
+      setBusyState(false);
+      setInputEnabled(true);
+      updateStatusLine(null);
+      finalizeActiveBubble();
+      const toast = document.createElement('div');
+      toast.className = 'chatbot-error-toast';
+      toast.textContent = 'Request timed out — please try again.';
+      $messages.appendChild(toast);
+      scrollBottom();
+    }, 90000);
+  }
+
+  function clearBusyTimeout() {
+    if (busyTimeout) { clearTimeout(busyTimeout); busyTimeout = null; }
+  }
+
+  // ─── Bubble management ───────────────────────────────────────────────────────
 
   function addUserBubble(text) {
     const el = document.createElement('div');
@@ -181,27 +316,32 @@
   function ensureActiveBubble() {
     if (activeBubble) return;
 
-    // Remove typing indicator if present
-    const existing = $messages.querySelector('.chatbot-typing-wrap');
-    if (existing) existing.remove();
+    const typing = $messages.querySelector('.chatbot-typing-wrap');
+    if (typing) typing.remove();
 
-    const wrap = document.createElement('div');
-    wrap.className = 'chatbot-msg chatbot-msg--assistant';
+    const wrap       = document.createElement('div');
+    wrap.className   = 'chatbot-msg chatbot-msg--assistant';
 
-    const badgeRow = document.createElement('div');
+    const badgeRow   = document.createElement('div');
     badgeRow.className = 'chatbot-badges';
 
-    const bubble = document.createElement('div');
+    const statusLine = document.createElement('div');
+    statusLine.className = 'chatbot-status-line';
+    statusLine.style.display = 'none';
+
+    const bubble     = document.createElement('div');
     bubble.className = 'chatbot-msg-bubble';
-    const cursor = document.createElement('span');
+
+    const cursor     = document.createElement('span');
     cursor.className = 'chatbot-cursor';
     bubble.appendChild(cursor);
 
     wrap.appendChild(badgeRow);
+    wrap.appendChild(statusLine);
     wrap.appendChild(bubble);
     $messages.appendChild(wrap);
 
-    activeBubble = { wrap, badgeRow, bubble, cursor, textNode: null, cardArea: null, chipArea: null };
+    activeBubble = { wrap, badgeRow, statusLine, bubble, cursor, rawText: '', cardArea: null, chipArea: null };
     scrollBottom();
   }
 
@@ -210,6 +350,7 @@
     wrap.className = 'chatbot-msg chatbot-msg--assistant chatbot-typing-wrap';
     wrap.innerHTML = `
       <div class="chatbot-typing">
+        <span class="chatbot-typing-label">Thinking</span>
         <div class="chatbot-typing-dot"></div>
         <div class="chatbot-typing-dot"></div>
         <div class="chatbot-typing-dot"></div>
@@ -219,13 +360,46 @@
     return wrap;
   }
 
+  function updateStatusLine(text) {
+    if (!activeBubble) return;
+    const sl = activeBubble.statusLine;
+    if (!text) {
+      sl.style.display = 'none';
+      sl.textContent = '';
+    } else {
+      sl.style.display = 'flex';
+      sl.textContent = text;
+    }
+    scrollBottom();
+  }
+
+  function addAgentThought(thought) {
+    if (!activeBubble || !thought.trim()) return;
+    const el = document.createElement('div');
+    el.className = 'chatbot-agent-thought';
+    el.textContent = thought;
+    activeBubble.bubble.insertBefore(el, activeBubble.cursor);
+    scrollBottom();
+  }
+
   function finalizeActiveBubble() {
     if (!activeBubble) return;
-    if (activeBubble.cursor && activeBubble.cursor.parentNode) {
-      activeBubble.cursor.remove();
+    const { bubble, cursor, rawText } = activeBubble;
+
+    // Collect thought elements to preserve them
+    const thoughts = Array.from(bubble.querySelectorAll('.chatbot-agent-thought'));
+    bubble.innerHTML = '';
+    thoughts.forEach(t => bubble.appendChild(t));
+
+    // Render final markdown (or plain text if no markdown syntax)
+    if (rawText) {
+      const content = document.createElement('div');
+      content.innerHTML = renderMarkdown(rawText);
+      bubble.appendChild(content);
     }
-    activeBubble = null;
-    activeBadges = {};
+
+    activeBubble  = null;
+    activeBadges  = {};
     scrollBottom();
   }
 
@@ -235,6 +409,7 @@
     if (!activeBubble) return;
     const badge = document.createElement('span');
     badge.className = `chatbot-badge chatbot-badge--${service || 'unknown'}`;
+    badge.dataset.tool = tool;
     badge.innerHTML = `<span class="chatbot-badge-dot"></span>${escHtml(label)}`;
     activeBubble.badgeRow.appendChild(badge);
     activeBadges[tool] = badge;
@@ -245,21 +420,31 @@
     const badge = activeBadges[tool];
     if (!badge) return;
     badge.classList.add('chatbot-badge--done');
-    const icon = error ? '✕' : '✓';
+    const icon    = error ? '✕' : '✓';
     const timeStr = durationMs != null ? `${durationMs}ms` : '';
-    badge.innerHTML = `<span class="chatbot-badge-check">${icon}</span>${badge.textContent.trim().replace(/✓|✕/g,'').trim()} <span class="chatbot-badge-time">${timeStr}</span>`;
+    // Grab label text (everything after the dot span)
+    const dot = badge.querySelector('.chatbot-badge-dot');
+    const name = dot ? (badge.textContent || '').trim() : (badge.textContent || '').trim().replace(/^[✓✕]\s*/, '');
+    badge.innerHTML = `<span class="chatbot-badge-check">${icon}</span>${escHtml(name)} <span class="chatbot-badge-time">${escHtml(timeStr)}</span>`;
   }
 
   // ─── Text streaming ──────────────────────────────────────────────────────────
 
   function appendToken(token) {
     if (!activeBubble) return;
+    activeBubble.rawText += token;
+
     const { bubble, cursor } = activeBubble;
-    if (!activeBubble.textNode) {
-      activeBubble.textNode = document.createTextNode('');
-      bubble.insertBefore(activeBubble.textNode, cursor);
-    }
-    activeBubble.textNode.textContent += token;
+
+    // Preserve thought elements, stream raw text as plain text for responsiveness
+    const thoughts = Array.from(bubble.querySelectorAll('.chatbot-agent-thought'));
+    bubble.innerHTML = '';
+    thoughts.forEach(t => bubble.appendChild(t));
+
+    const preview = document.createTextNode(activeBubble.rawText);
+    bubble.appendChild(preview);
+    bubble.appendChild(cursor);
+
     scrollBottom();
     if (!isOpen) bumpUnread();
   }
@@ -326,7 +511,7 @@
       chip.className = 'chatbot-chip';
       chip.textContent = text;
       chip.onclick = () => {
-        activeBubble && activeBubble.chipArea && activeBubble.chipArea.remove();
+        if (activeBubble && activeBubble.chipArea) activeBubble.chipArea.remove();
         sendMessage(text);
       };
       activeBubble.chipArea.appendChild(chip);
@@ -340,24 +525,25 @@
     text = text.trim();
     if (!text || isBusy || !isReady) return;
 
-    // Remove any stale suggestion chips from last bubble
     root.querySelectorAll('.chatbot-suggestions').forEach(el => el.remove());
 
     isBusy = true;
+    setBusyState(true);
     setInputEnabled(false);
     $input.value = '';
+    autoGrow($input);
 
     addUserBubble(text);
     showTypingIndicator();
-    activeBubble = null; // Will be created on first event
+    activeBubble = null;
 
+    startBusyTimeout();
     send('chat', { message: text });
   }
 
   // ─── Error display ───────────────────────────────────────────────────────────
 
   function showError(message, recoverable) {
-    // Remove typing indicator
     const typing = $messages.querySelector('.chatbot-typing-wrap');
     if (typing) typing.remove();
     finalizeActiveBubble();
@@ -372,18 +558,27 @@
   // ─── UI helpers ──────────────────────────────────────────────────────────────
 
   function setStatus(online, subtitle) {
-    $status.className = `chatbot-header-status${online ? '' : ' chatbot-status-offline'}`;
+    if (online) {
+      $status.className = 'chatbot-header-status';
+    } else {
+      $status.className = 'chatbot-header-status chatbot-status-offline';
+    }
     $subtitle.textContent = subtitle || (online ? 'Online' : 'Offline');
   }
 
   function setInputEnabled(enabled) {
     $input.disabled = !enabled;
-    $send.disabled = !enabled;
+    $send.disabled  = !enabled;
     if (enabled) $input.focus();
   }
 
+  function autoGrow(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 90) + 'px';
+  }
+
   function scrollBottom() {
-    $messages.scrollTop = $messages.scrollHeight;
+    requestAnimationFrame(() => { $messages.scrollTop = $messages.scrollHeight; });
   }
 
   function bumpUnread() {
@@ -395,8 +590,7 @@
 
   function clearUnread() {
     unreadCount = 0;
-    const badge = root.querySelector('#chatbot-badge');
-    badge.style.display = 'none';
+    root.querySelector('#chatbot-badge').style.display = 'none';
   }
 
   function escHtml(str) {
@@ -413,14 +607,12 @@
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return dateStr;
       return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    } catch {
-      return dateStr;
-    }
+    } catch { return dateStr; }
   }
 
   function getStatusClass(status) {
     const s = (status || '').toLowerCase();
-    if (s === 'paid') return 'chatbot-status-paid';
+    if (s === 'paid')    return 'chatbot-status-paid';
     if (s === 'pending') return 'chatbot-status-pending';
     if (s === 'overdue') return 'chatbot-status-overdue';
     return 'chatbot-status-draft';
@@ -432,9 +624,7 @@
     isOpen = true;
     $popup.classList.add('chatbot-open');
     clearUnread();
-    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
-      connect();
-    }
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) connect();
     $input.focus();
   }
 
@@ -448,6 +638,8 @@
   $bubble.addEventListener('click', () => isOpen ? closePopup() : openPopup());
   $close.addEventListener('click', closePopup);
 
+  $input.addEventListener('input', () => autoGrow($input));
+
   $input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -457,7 +649,6 @@
 
   $send.addEventListener('click', () => sendMessage($input.value));
 
-  // Close on backdrop click
   document.addEventListener('click', (e) => {
     if (isOpen && !root.contains(e.target)) closePopup();
   });
