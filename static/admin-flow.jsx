@@ -313,9 +313,10 @@ function MonitoringPanel() {
     return "unknown";
   };
 
+  const _svcLabel = { "identity-service": "Identity", "iot_gateway": "IoT Gateway" };
   const normed = services.map(s => ({
     id: s.service,
-    label: s.service.charAt(0).toUpperCase() + s.service.slice(1),
+    label: _svcLabel[s.service] || (s.service.charAt(0).toUpperCase() + s.service.slice(1)),
     status: normalise(s),
     uptime: _uptimeLabel(s.uptime_seconds),
     lastSeen: _secsSince(s.last_seen),

@@ -183,17 +183,18 @@ async def dashboard_summary():
         result = {}
 
     services = result.get("services", [])
+    # Use live field as ground truth — a service with live=False is offline
+    # regardless of what the last stored status field says
     online = sum(
         1 for s in services
-        if (s.get("status") or "").lower() in ("online", "up", "healthy")
+        if s.get("live") and (s.get("status") or "").lower() in ("online", "up", "healthy")
     )
     degraded = sum(
         1 for s in services
-        if (s.get("status") or "").lower() in ("degraded", "slow")
+        if s.get("live") and (s.get("status") or "").lower() in ("degraded", "slow")
     )
-    offline = len(services) - online - degraded
-    # Alerts = services that are not live (offline or unknown)
-    alerts_count = sum(1 for s in services if not s.get("live", True))
+    offline = sum(1 for s in services if not s.get("live", True))
+    alerts_count = offline
 
     return {
         "services_online":   online,
