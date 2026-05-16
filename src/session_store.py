@@ -34,12 +34,13 @@ _SYSTEM_TEMPLATE = (
 
     "## Term disambiguation — when a question is ambiguous, use this mapping\n\n"
 
-    "'users' / 'people' / 'who is registered'\n"
+    "'users' / 'people' / 'who is registered' / 'how many users/members'\n"
     "  → MEMBER PROFILES (wallet, badge, address, CRM data) → CRM\n"
     "  → WEBSITE ACCOUNTS (login, Drupal roles, site access) → Frontend\n"
-    "  → Generic 'show me users' with no further context → CRM (more complete profiles)\n"
+    "  → Generic 'show me users' / 'how many users' with no further context → CRM ONLY (more complete profiles) — NEVER Frontend\n"
     "  → 'who registered on the website recently' → Frontend `get_recent_registrations`\n"
     "  → 'show member details / profile' → CRM\n\n"
+    "NEVER call Frontend for generic user/member count or listing questions.\n\n"
 
     "'activity' / 'recent events' / 'history' / 'what happened'\n"
     "  → Human-readable curated log (check-ins, payments, registrations) → CRM `get_recent_tasks`\n"
@@ -59,6 +60,10 @@ _SYSTEM_TEMPLATE = (
     "IMPORTANT: Drupal user_id (Frontend) ≠ CRM master_uuid — these are DIFFERENT identifiers\n"
     "for the same person across two separate systems. Never mix them up.\n\n"
 
+    "## Member status fields — two separate concepts\n"
+    "- `Status__c` → member lifecycle: **Active** (normal) / **Inactive** (deleted account) / **Cancelled** (cancelled registration)\n"
+    "- `Wallet_Status__c` → wallet lease state: **Active** (CRM holds balance) / **Leased** (Kassa holds live balance)\n"
+    "These are independent. 'Active members' = members where Status__c = Active.\n\n"
     "## Wallet balance — critical two-step rule\n"
     "1. Call `crm__get_member_wallet(master_uuid)` → read `Wallet_Status__c`.\n"
     "2. If status is **Leased**: also call `kassa__get_wallet_by_master_uuid(master_uuid)` "
@@ -72,6 +77,8 @@ _SYSTEM_TEMPLATE = (
     "  → email       → `crm__get_member_by_email(email=X)`\n"
     "  → UUID        → `crm__get_member(master_uuid=X)`\n\n"
 
+    "Q: How many users/members are there? / user count?\n"
+    "  → `crm__get_member_stats` (one call) — NOT frontend, NOT crm__list_members\n\n"
     "Q: List members / show latest members?\n"
     "  → `crm__list_members(limit=N)` — returns newest first\n"
     "  → For counts/overview → `crm__get_crm_overview` (one call)\n\n"
@@ -107,9 +114,9 @@ _SYSTEM_TEMPLATE = (
     "Q: What sessions is person X enrolled in?\n"
     "  → `frontend__get_user_enrolled_sessions_by_email(email=X)` — NOT CRM\n\n"
 
-    "Q: 'Show me users' / 'list users' (ambiguous)?\n"
-    "  → Default to CRM `crm__list_members` (complete profiles)\n"
-    "  → Only use Frontend if explicitly about website accounts/logins\n\n"
+    "Q: 'Show me users' / 'list users' / 'how many users' (ambiguous)?\n"
+    "  → ALWAYS start with CRM: `crm__list_members` or `crm__get_member_stats`\n"
+    "  → NEVER call `frontend__list_users` unless admin explicitly asks about website/Drupal accounts\n\n"
 
     "Q: 'Recent activity' / 'what happened' / 'history'?\n"
     "  → Default to CRM `crm__get_recent_tasks` (human-readable)\n"

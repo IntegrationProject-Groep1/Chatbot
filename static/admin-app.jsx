@@ -711,7 +711,7 @@ function SidebarItem({ h, activeConvId, onPick, onPin, onDelete }) {
     <div className={`sb-item ${h.id === activeConvId ? "is-active" : ""}`}
       style={{ position: "relative", display: "flex", alignItems: "center" }}
       onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => { setHover(false); setConfirmDelete(false); }}
+      onMouseLeave={() => setHover(false)}
     >
       <button
         style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "inherit", fontFamily: "inherit", textAlign: "left", padding: 0, minWidth: 0 }}
@@ -722,36 +722,34 @@ function SidebarItem({ h, activeConvId, onPick, onPin, onDelete }) {
         <span className="label" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.label}</span>
         <span className="time">{h.time}</span>
       </button>
-      {hover && (
-        <div style={{ position: "absolute", right: 4, display: "flex", gap: 3 }}>
-          <button
-            onClick={e => { e.stopPropagation(); onPin(h.id); }}
-            title={h.pinned ? "Unpin" : "Pin"}
-            style={{
-              background: "var(--surface-2)", border: "1px solid var(--line)",
-              borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: "pointer", color: h.pinned ? "var(--primary)" : "var(--muted-2)", flexShrink: 0,
-            }}
-          >
-            {I.pin}
-          </button>
-          <button
-            onClick={handleDelete}
-            title={confirmDelete ? "Click again to confirm" : "Delete"}
-            style={{
-              background: confirmDelete ? "rgba(239,68,68,.15)" : "var(--surface-2)",
-              border: `1px solid ${confirmDelete ? "rgba(239,68,68,.5)" : "var(--line)"}`,
-              borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: "pointer", color: confirmDelete ? "#f87171" : "var(--muted-2)", flexShrink: 0,
-              transition: "background .15s, border-color .15s, color .15s",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-            </svg>
-          </button>
-        </div>
-      )}
+      <div style={{ position: "absolute", right: 4, display: "flex", gap: 3, opacity: hover ? 1 : 0, transition: "opacity .15s", pointerEvents: hover ? "auto" : "none" }}>
+        <button
+          onClick={e => { e.stopPropagation(); onPin(h.id); }}
+          title={h.pinned ? "Unpin" : "Pin"}
+          style={{
+            background: "var(--surface-2)", border: "1px solid var(--line)",
+            borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", color: h.pinned ? "var(--primary)" : "var(--muted-2)", flexShrink: 0,
+          }}
+        >
+          {I.pin}
+        </button>
+        <button
+          onClick={handleDelete}
+          title={confirmDelete ? "Click again to confirm" : "Delete"}
+          style={{
+            background: confirmDelete ? "rgba(239,68,68,.15)" : "var(--surface-2)",
+            border: `1px solid ${confirmDelete ? "rgba(239,68,68,.5)" : "var(--line)"}`,
+            borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", color: confirmDelete ? "#f87171" : "var(--muted-2)", flexShrink: 0,
+            transition: "background .15s, border-color .15s, color .15s",
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }

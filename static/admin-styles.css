@@ -579,7 +579,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: flex; flex-direction: column;
   gap: 22px;
   scroll-behavior: smooth;
+  cursor: default;
+  user-select: none;
 }
+.messages .msg-text, .messages .msg-text * { user-select: text; cursor: auto; }
+.messages textarea, .composer textarea { cursor: text; user-select: text; }
 .messages::-webkit-scrollbar { width: 8px; }
 .messages::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
 .messages::-webkit-scrollbar-thumb:hover { background: var(--line-3); }
