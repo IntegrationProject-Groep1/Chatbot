@@ -4,7 +4,10 @@
    ============================================================ */
 const { useEffect, useMemo, useRef, useState } = React;
 
-function FlowTopology({ activeNodes, doneNodes, activeEdges }) {
+// MCP server node ids — used to detect "disconnected" state
+const MCP_NODE_IDS = new Set(["frontend", "facturatie", "crm", "kassa", "monitoring"]);
+
+function FlowTopology({ activeNodes, doneNodes, activeEdges, connectedServers = new Set() }) {
   // Build edge data once
   const edges = useMemo(() => {
     return EDGES.map(([from, to, label]) => {
@@ -103,6 +106,8 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges }) {
         {Object.entries(NODES).map(([id, n]) => {
           const active = activeNodes.has(id);
           const done = doneNodes.has(id) && !active;
+          // MCP server nodes that didn't load are marked disconnected
+          const disconnected = MCP_NODE_IDS.has(id) && connectedServers.size > 0 && !connectedServers.has(id);
           return (
             <foreignObject key={id}
               x={n.x} y={n.y} width="130" height="44"
@@ -111,12 +116,20 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges }) {
                 xmlns="http://www.w3.org/1999/xhtml"
                 className={`fnode-html ${active ? "is-active" : ""} ${done ? "is-done" : ""} ${n.llama ? "is-llama" : ""}`}
                 data-svc={n.svc}
-                style={{ width: "130px" }}
+                style={{
+                  width: "130px",
+                  opacity: disconnected ? 0.38 : 1,
+                  filter: disconnected ? "grayscale(0.7)" : "none",
+                  transition: "opacity 0.4s, filter 0.4s",
+                }}
+                title={disconnected ? `${n.label} — not connected` : undefined}
               >
-                <div className="dot">{n.icon}</div>
+                <div className="dot" style={disconnected ? { background: "var(--muted-2)" } : {}}>
+                  {disconnected ? "×" : n.icon}
+                </div>
                 <div className="text">
                   <span className="name">{n.label}</span>
-                  <span className="meta">{n.meta}</span>
+                  <span className="meta">{disconnected ? "not connected" : n.meta}</span>
                 </div>
               </div>
             </foreignObject>
@@ -618,11 +631,16 @@ function BigStrip({ svc, tick }) {
 
 function FlowColumn({ activeNodes, doneNodes, activeEdges, log, onClear, stats, tab, setTab }) {
   const [mcpMeta, setMcpMeta] = React.useState({ serverCount: 0, toolCount: 0 });
+  const [connectedServers, setConnectedServers] = React.useState(new Set());
 
   React.useEffect(() => {
     fetch("/api/mcp/tools")
       .then((r) => r.json())
-      .then((d) => setMcpMeta({ serverCount: (d.servers || []).length, toolCount: d.total_tools || 0 }))
+      .then((d) => {
+        const servers = d.servers || [];
+        setMcpMeta({ serverCount: servers.length, toolCount: d.total_tools || 0 });
+        setConnectedServers(new Set(servers.map((s) => s.id)));
+      })
       .catch(() => {});
   }, []);
 
@@ -654,6 +672,7 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, log, onClear, stats, 
           activeNodes={activeNodes}
           doneNodes={doneNodes}
           activeEdges={activeEdges}
+          connectedServers={connectedServers}
         />
       )}
       {tab === "servers"    && <MCPServerList active={[...activeNodes][0]} />}
