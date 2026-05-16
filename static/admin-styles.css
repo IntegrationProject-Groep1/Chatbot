@@ -1529,8 +1529,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow: hidden;
 }
 .mon-list-body {
-  /* no inner scroll — .mon-pane handles overflow */
+  max-height: 320px;
+  overflow-y: auto;
 }
+.mon-list-body::-webkit-scrollbar { width: 5px; }
+.mon-list-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
 .mon-list-head {
   display: grid;
   grid-template-columns: 145px 1fr 105px;
