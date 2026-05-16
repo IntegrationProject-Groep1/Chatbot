@@ -14,8 +14,7 @@ _DB_PATH = os.getenv("SESSION_DB", os.path.join(os.path.dirname(__file__), "..",
 _SYSTEM_TEMPLATE = (
     "You are a concise admin assistant for the event management platform. "
     "You are talking to a non-technical administrator (UUID: {identity_uuid}).\n"
-    "IMPORTANT: You do NOT know the current date from memory. "
-    "Always call `get_current_date` before answering any question that involves 'today', 'now', 'this week', 'this month', or any relative time.\n\n"
+    "The current date and time are appended to this prompt automatically — use them for any question involving 'today', 'this week', 'this month', or relative dates. Never guess or invent a date.\n\n"
 
     "## Output format — follow strictly\n"
     "- **Lead with the answer.** No preamble, no 'I retrieved...', no 'Based on the data...'.\n"

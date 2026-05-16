@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from typing import Callable
 
 import httpx
@@ -243,6 +243,18 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     for loop_idx in range(MAX_LOOPS):
         called_tools: set[str] = set()  # reset each loop so the LLM can re-call tools with fresh data
         messages = session_store.get(session_id)
+
+        # Inject live date into the system message for this call — never stored, always fresh
+        now = datetime.now()
+        week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+        date_line = (
+            f"\nCurrent date: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')})"
+            f", time: {now.strftime('%H:%M')}"
+            f", week starts: {week_start}"
+            f", month starts: {now.strftime('%Y-%m-01')}."
+        )
+        if messages and messages[0].get("role") == "system":
+            messages = [{**messages[0], "content": messages[0]["content"] + date_line}, *messages[1:]]
 
         await emit({"type": "status", "status": "thinking", "step": loop_idx + 1})
 
