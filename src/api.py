@@ -170,7 +170,7 @@ async def monitoring_heartbeat(service: str, hours: int = 1):
     return {
         "service":   service,
         "cells":     cells,
-        "gap_count": result.get("gap_count", 0),
+        "gap_count": result.get("gap_minutes", 0),
         "error":     result.get("error"),
     }
 

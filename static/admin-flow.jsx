@@ -301,12 +301,15 @@ function MonitoringPanel() {
     return () => { clearInterval(poll); clearInterval(anim); };
   }, []);
 
-  // Normalise status from Elasticsearch heartbeat values
+  // Normalise status: live=false overrides any stored status value
   const normalise = (s) => {
+    if (!s.live) {
+      if ((s.status || "").toLowerCase() === "no_data") return "unknown";
+      return "quarantine";
+    }
     const st = (s.status || "unknown").toLowerCase();
     if (st === "online" || st === "up" || st === "healthy") return "online";
     if (st === "degraded" || st === "slow") return "degraded";
-    if (st === "offline" || st === "down" || st === "error") return "quarantine";
     return "unknown";
   };
 
