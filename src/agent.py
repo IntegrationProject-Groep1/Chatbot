@@ -195,9 +195,8 @@ def _build_suggestions(session_id: str) -> list[str]:
 async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     session_store.append(session_id, {"role": "user", "content": user_message})
 
-    called_tools: set[str] = set()  # (name, args_json) pairs already executed this turn
-
     for loop_idx in range(MAX_LOOPS):
+        called_tools: set[str] = set()  # reset each loop so the LLM can re-call tools with fresh data
         messages = session_store.get(session_id)
 
         await emit({"type": "status", "status": "thinking", "step": loop_idx + 1})

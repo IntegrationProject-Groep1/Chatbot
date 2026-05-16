@@ -72,16 +72,24 @@ class MCPClient:
             for namespaced, (_, tool, _orig) in self._registry.items()
         ]
 
-    async def call_tool(self, name: str, args: dict) -> str:
+    async def call_tool(self, name: str, args: dict, timeout: float = 30.0) -> str:
         """Call a tool by name (namespaced as label__tool_name). Always returns a JSON string."""
         if name not in self._registry:
             return json.dumps({"error": f"Tool '{name}' not found in any MCP server"})
         client, _, original_name = self._registry[name]
         try:
-            result = await client.call_tool(original_name, args)
+            import asyncio
+            result = await asyncio.wait_for(
+                client.call_tool(original_name, args),
+                timeout=timeout,
+            )
             # result is CallToolResult: .content is list[TextContent|ImageContent], .isError is bool
             if getattr(result, 'is_error', None) or getattr(result, 'isError', None):
-                return json.dumps({"error": "Tool returned an error", "status": "error"})
+                error_text = next(
+                    (block.text for block in (result.content or []) if hasattr(block, "text")),
+                    "Tool returned an error",
+                )
+                return json.dumps({"error": error_text, "status": "error"})
             if not result.content:
                 return json.dumps({"status": "ok", "data": []})
             first = result.content[0]
@@ -93,6 +101,8 @@ class MCPClient:
                 return text
             except (json.JSONDecodeError, TypeError):
                 return json.dumps({"result": text})
+        except asyncio.TimeoutError:
+            return json.dumps({"error": f"Tool '{name}' timed out after {timeout}s", "status": "timeout"})
         except Exception as exc:
             return json.dumps({"error": str(exc), "status": "error"})
 
