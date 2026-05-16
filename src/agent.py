@@ -21,22 +21,76 @@ _HEADERS = {"Authorization": f"Bearer {_API_KEY}", "Content-Type": "application/
 MAX_LOOPS = 6
 
 
-async def _call_llama(messages: list[dict]) -> dict:
+async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dict:
+    """Stream a completion from the NVIDIA API.
+
+    When `emit` is provided, text tokens are forwarded to the client in real-time.
+    Tool-call rounds suppress token emission (the model is not producing prose).
+    Returns a reconstructed message dict compatible with the old non-streaming shape.
+    """
     tools = mcp_client.get().get_tool_definitions()
     payload: dict = {
         "model": _MODEL,
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": 1024,
-        "stream": False,
+        "stream": True,
     }
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
+
+    full_content = ""
+    tool_calls_acc: dict[int, dict] = {}
+    is_tool_response = False  # becomes True as soon as we see a tool_call delta
+
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(_API_URL, json=payload, headers=_HEADERS)
-        resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]
+        async with client.stream("POST", _API_URL, json=payload, headers=_HEADERS) as resp:
+            resp.raise_for_status()
+            async for raw in resp.aiter_lines():
+                if not raw.startswith("data: "):
+                    continue
+                payload_str = raw[6:].strip()
+                if payload_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload_str)
+                except json.JSONDecodeError:
+                    continue
+
+                delta = chunk.get("choices", [{}])[0].get("delta", {})
+
+                # Detect tool call as early as possible
+                if delta.get("tool_calls"):
+                    is_tool_response = True
+
+                # Accumulate and optionally stream text
+                if delta.get("content"):
+                    full_content += delta["content"]
+                    if emit and not is_tool_response:
+                        await emit({"type": "stream_token", "token": delta["content"]})
+
+                # Accumulate tool call fragments (streamed in pieces)
+                for tc in delta.get("tool_calls", []):
+                    idx = tc.get("index", 0)
+                    if idx not in tool_calls_acc:
+                        tool_calls_acc[idx] = {
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        }
+                    if tc.get("id"):
+                        tool_calls_acc[idx]["id"] = tc["id"]
+                    fn = tc.get("function", {})
+                    if fn.get("name"):
+                        tool_calls_acc[idx]["function"]["name"] += fn["name"]
+                    if fn.get("arguments"):
+                        tool_calls_acc[idx]["function"]["arguments"] += fn["arguments"]
+
+    result: dict = {"content": full_content or None}
+    if tool_calls_acc:
+        result["tool_calls"] = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
+    return result
 
 
 async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tuple[str, str]:
@@ -148,8 +202,12 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
 
         await emit({"type": "status", "status": "thinking", "step": loop_idx + 1})
 
+        # Pass emit only when there are no pending tool results — i.e. the LLM
+        # might be producing a final answer we want to stream to the client.
+        # On rounds where tool results are present, we still pass emit; the
+        # is_tool_response guard inside _call_llama suppresses token emission.
         try:
-            response_msg = await _call_llama(messages)
+            response_msg = await _call_llama(messages, emit=emit)
         except Exception as exc:
             await emit({"type": "error", "message": f"AI error: {exc}", "recoverable": True})
             return
@@ -201,8 +259,10 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
 
         else:
             final_text = (response_msg.get("content") or "").strip()
+            streamed = bool(final_text)  # tokens already sent by _call_llama
+
             if not final_text:
-                # LLM returned no text — summarise tool results or give a fallback
+                # LLM returned no text — build a fallback and stream it explicitly
                 tool_msgs = [m for m in session_store.get(session_id) if m.get("role") == "tool"]
                 if tool_msgs:
                     try:
@@ -220,8 +280,8 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
 
             session_store.append(session_id, {"role": "assistant", "content": final_text})
 
-            await emit({"type": "status", "status": "responding"})
-            await _stream_text(final_text, emit)
+            if not streamed:
+                await _stream_text(final_text, emit)
 
             for card_event in _extract_cards(session_id):
                 await emit(card_event)
