@@ -45,7 +45,7 @@ const EDGES = [
 const MCP_SERVERS = [
   { id: "frontend",   port: 8006, tools: 30, list: ["get_all_sessions", "get_session_detail", "get_session_attendance"] },
   { id: "facturatie", port: 8007, tools: 4,  list: ["list_invoices", "total_invoice_cost", "get_invoice_detail", "list_overdue"] },
-  { id: "crm",        port: 8008, tools: 3,  list: ["resolve_user_by_email", "get_member_profile", "list_recent_registrations"] },
+  { id: "crm",        port: 8008, tools: 20, list: ["list_members", "get_member", "get_member_by_email", "search_members", "get_member_wallet", "get_crm_overview", "get_member_stats", "list_active_leases", "get_wallet_stats", "get_recent_tasks", "+10 more"] },
   { id: "kassa",      port: 8004, tools: 3,  list: ["list_orders", "revenue_by_period", "order_detail"] },
   { id: "monitoring", port: 8005, tools: 34, list: ["get_service_status", "get_recent_logs", "get_heartbeat_timeline", "get_health_scores", "get_platform_health_overview", "+29 more"] },
 ];

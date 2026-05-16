@@ -156,24 +156,23 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery, themeName })
         </div>
       </div>
 
-      {/* KPI summary bar */}
+      {/* KPI summary bar — clicking also sets the level filter */}
       <div className="logs-kpis">
-        <div className="logs-kpi">
-          <div className="l">Total entries</div>
-          <div className="v mono">{totals.total}</div>
-        </div>
-        <div className="logs-kpi ok">
-          <div className="l">Info</div>
-          <div className="v mono">{totals.info}</div>
-        </div>
-        <div className="logs-kpi warn">
-          <div className="l">Warnings</div>
-          <div className="v mono">{totals.warn}</div>
-        </div>
-        <div className="logs-kpi hot">
-          <div className="l">Errors</div>
-          <div className="v mono">{totals.err}</div>
-        </div>
+        {[
+          { label: "Total entries", v: totals.total, cls: "",     lv: "any"     },
+          { label: "Info",          v: totals.info,  cls: "ok",   lv: "info"    },
+          { label: "Warnings",      v: totals.warn,  cls: "warn", lv: "warning" },
+          { label: "Errors",        v: totals.err,   cls: "hot",  lv: "error"   },
+        ].map(k => (
+          <button
+            key={k.lv}
+            className={`logs-kpi ${k.cls}${levelFilter === k.lv ? " is-active" : ""}`}
+            onClick={() => setLevelFilter(k.lv)}
+          >
+            <div className="l">{k.label}</div>
+            <div className="v mono">{k.v}</div>
+          </button>
+        ))}
       </div>
 
       {loading && (
@@ -201,8 +200,9 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery, themeName })
 }
 
 function LogPanel({ svc, logs, allLogs, now }) {
+  const [showAll, setShowAll] = React.useState(false);
   const stats = computeStats(allLogs);
-  const shown = logs.slice(0, 12);
+  const shown = showAll ? logs : logs.slice(0, 12);
 
   return (
     <div className="log-panel" data-svc={svc.svc}>
@@ -259,6 +259,11 @@ function LogPanel({ svc, logs, allLogs, now }) {
               );
             })}
           </div>
+          {logs.length > 12 && (
+            <button className="log-show-more" onClick={() => setShowAll(s => !s)}>
+              {showAll ? "↑ Show less" : `↓ Show ${logs.length - 12} more`}
+            </button>
+          )}
         </div>
       </div>
     </div>

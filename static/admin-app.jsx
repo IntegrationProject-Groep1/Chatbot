@@ -18,6 +18,40 @@ const I = {
   search: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
 };
 
+// ─── Toast notifications ───────────────────────────────────────────────────
+function ToastContainer({ toasts, onDismiss }) {
+  if (!toasts.length) return null;
+  return (
+    <div className="toast-container">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast toast-${t.type}`}>
+          <span className="toast-icon">
+            {t.type === "error" ? "⚠" : t.type === "ok" ? "✓" : "ℹ"}
+          </span>
+          <span className="toast-msg">{t.message}</span>
+          <button className="toast-close" onClick={() => onDismiss(t.id)}>×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Copy button ──────────────────────────────────────────────────────────
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    }).catch(() => {});
+  };
+  return (
+    <button className="rich-copy-btn" onClick={copy} title="Copy to clipboard">
+      {copied ? "✓ Copied" : "Copy"}
+    </button>
+  );
+}
+
 // ─── Rich text renderer ────────────────────────────────────────────────────
 function inlineRich(text) {
   const parts = (text || "").split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
@@ -52,13 +86,17 @@ function renderRich(text) {
       const rows = tLines.filter(l => !isSep(l));
       if (rows.length > 0) {
         const [hRow, ...bRows] = rows;
+        const tsvText = rows.map(r => parseCells(r).join("\t")).join("\n");
         out.push(
-          <table key={key++} className="msg-table">
-            <thead><tr>{parseCells(hRow).map((h, j) => <th key={j}>{inlineRich(h)}</th>)}</tr></thead>
-            <tbody>{bRows.map((r, ri) => (
-              <tr key={ri}>{parseCells(r).map((c, j) => <td key={j}>{inlineRich(c)}</td>)}</tr>
-            ))}</tbody>
-          </table>
+          <div key={key++} className="rich-block-wrap">
+            <CopyButton text={tsvText} />
+            <table className="msg-table">
+              <thead><tr>{parseCells(hRow).map((h, j) => <th key={j}>{inlineRich(h)}</th>)}</tr></thead>
+              <tbody>{bRows.map((r, ri) => (
+                <tr key={ri}>{parseCells(r).map((c, j) => <td key={j}>{inlineRich(c)}</td>)}</tr>
+              ))}</tbody>
+            </table>
+          </div>
         );
       }
       continue;
@@ -606,7 +644,7 @@ function LoginScreen({ onLogin }) {
 }
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────
-function Sidebar({ history, activeConvId, onPick, onNew, onPin, mode, setMode }) {
+function Sidebar({ history, activeConvId, onPick, onNew, onPin, onDelete, mode, setMode }) {
   const pinned = history.filter(h => h.pinned);
   const recent = history.filter(h => !h.pinned);
 
@@ -631,7 +669,7 @@ function Sidebar({ history, activeConvId, onPick, onNew, onPin, mode, setMode })
         <div className="sb-section">
           <div className="sb-label">Pinned</div>
           {pinned.map(h => (
-            <SidebarItem key={h.id} h={h} activeConvId={activeConvId} onPick={onPick} onPin={onPin} />
+            <SidebarItem key={h.id} h={h} activeConvId={activeConvId} onPick={onPick} onPin={onPin} onDelete={onDelete} />
           ))}
         </div>
       )}
@@ -642,7 +680,7 @@ function Sidebar({ history, activeConvId, onPick, onNew, onPin, mode, setMode })
           <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--muted-2)" }}>No conversations yet.</div>
         )}
         {recent.map(h => (
-          <SidebarItem key={h.id} h={h} activeConvId={activeConvId} onPick={onPick} onPin={onPin} />
+          <SidebarItem key={h.id} h={h} activeConvId={activeConvId} onPick={onPick} onPin={onPin} onDelete={onDelete} />
         ))}
       </div>
 
@@ -655,13 +693,25 @@ function Sidebar({ history, activeConvId, onPick, onNew, onPin, mode, setMode })
   );
 }
 
-function SidebarItem({ h, activeConvId, onPick, onPin }) {
+function SidebarItem({ h, activeConvId, onPick, onPin, onDelete }) {
   const [hover, setHover] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    if (confirmDelete) {
+      onDelete(h.id);
+    } else {
+      setConfirmDelete(true);
+      setTimeout(() => setConfirmDelete(false), 2500);
+    }
+  };
+
   return (
     <div className={`sb-item ${h.id === activeConvId ? "is-active" : ""}`}
       style={{ position: "relative", display: "flex", alignItems: "center" }}
       onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseLeave={() => { setHover(false); setConfirmDelete(false); }}
     >
       <button
         style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "inherit", fontFamily: "inherit", textAlign: "left", padding: 0, minWidth: 0 }}
@@ -673,17 +723,34 @@ function SidebarItem({ h, activeConvId, onPick, onPin }) {
         <span className="time">{h.time}</span>
       </button>
       {hover && (
-        <button
-          onClick={e => { e.stopPropagation(); onPin(h.id); }}
-          title={h.pinned ? "Unpin" : "Pin"}
-          style={{
-            position: "absolute", right: 4, background: "var(--surface-2)", border: "1px solid var(--line)",
-            borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer", color: h.pinned ? "var(--primary)" : "var(--muted-2)", flexShrink: 0,
-          }}
-        >
-          {I.pin}
-        </button>
+        <div style={{ position: "absolute", right: 4, display: "flex", gap: 3 }}>
+          <button
+            onClick={e => { e.stopPropagation(); onPin(h.id); }}
+            title={h.pinned ? "Unpin" : "Pin"}
+            style={{
+              background: "var(--surface-2)", border: "1px solid var(--line)",
+              borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", color: h.pinned ? "var(--primary)" : "var(--muted-2)", flexShrink: 0,
+            }}
+          >
+            {I.pin}
+          </button>
+          <button
+            onClick={handleDelete}
+            title={confirmDelete ? "Click again to confirm" : "Delete"}
+            style={{
+              background: confirmDelete ? "rgba(239,68,68,.15)" : "var(--surface-2)",
+              border: `1px solid ${confirmDelete ? "rgba(239,68,68,.5)" : "var(--line)"}`,
+              borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", color: confirmDelete ? "#f87171" : "var(--muted-2)", flexShrink: 0,
+              transition: "background .15s, border-color .15s, color .15s",
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+          </button>
+        </div>
       )}
     </div>
   );
@@ -799,6 +866,40 @@ function App() {
       .then(d => { if ((d.servers || []).length) setMcpServerCount(d.servers.length); })
       .catch(() => {});
   }, []);
+
+  // ─── Toast notifications ──────────────────────────────────────────────────
+  const [toasts, setToasts] = useState([]);
+  const addToast = useCallback((message, type = "info") => {
+    const id = Date.now() + Math.random();
+    setToasts(ts => [...ts, { id, message, type }]);
+    setTimeout(() => setToasts(ts => ts.filter(t => t.id !== id)), 5000);
+  }, []);
+  const dismissToast = useCallback((id) => setToasts(ts => ts.filter(t => t.id !== id)), []);
+
+  // Background service status watcher — fires a toast when a service changes state
+  const prevSvcStatus = useRef({});
+  useEffect(() => {
+    const poll = setInterval(() => {
+      fetch("/api/monitoring/status")
+        .then(r => r.json())
+        .then(d => {
+          (d.services || []).forEach(svc => {
+            const id = svc.service;
+            const live = Boolean(svc.live);
+            const prev = prevSvcStatus.current[id];
+            if (prev !== undefined && prev !== live) {
+              addToast(
+                live ? `${id} is back online` : `${id} went offline`,
+                live ? "ok" : "error"
+              );
+            }
+            prevSvcStatus.current[id] = live;
+          });
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(poll);
+  }, [addToast]);
 
   // Sidebar / UI state
   const [flowTab, setFlowTab] = useState("graph");
@@ -1079,6 +1180,14 @@ function App() {
     });
   }, []);
 
+  const onDelete = useCallback((id) => {
+    setHistory(prev => {
+      const next = prev.filter(h => h.id !== id);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
   const handleSuggest = (text) => handleSend(text);
   const handleNew = useCallback(() => {
     setMessages([]);
@@ -1130,6 +1239,7 @@ function App() {
         activeConvId={activeConvId}
         onPick={onPick}
         onPin={onPin}
+        onDelete={onDelete}
         onNew={handleNew}
         mode={mode}
         setMode={setMode}
@@ -1218,6 +1328,8 @@ function App() {
       {showSettings && (
         <SettingsModal settings={settings} onChange={changeSetting} onClose={() => setShowSettings(false)} />
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       <style>{`.cursor-blink { display:inline-block; width:2px; height:14px; background:var(--accent); margin-left:2px; vertical-align:middle; animation:blink .8s step-end infinite; } @keyframes blink { 50% { opacity:0; } }`}</style>
     </div>

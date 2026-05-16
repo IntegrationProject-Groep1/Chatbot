@@ -682,6 +682,75 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .msg-table tr:nth-child(even) td { background: var(--surface); }
 .msg-table tr:nth-child(odd)  td { background: var(--bg); }
 
+/* Copy button (wraps tables) */
+.rich-block-wrap { position: relative; }
+.rich-copy-btn {
+  position: absolute;
+  top: 6px; right: 6px;
+  padding: 3px 9px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--muted);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s, color .15s;
+  z-index: 2;
+}
+.rich-block-wrap:hover .rich-copy-btn { opacity: 1; }
+.rich-copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ============================================================
+   TOAST NOTIFICATIONS
+   ============================================================ */
+.toast-container {
+  position: fixed;
+  top: 16px; right: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  font-size: 12.5px;
+  font-weight: 500;
+  pointer-events: all;
+  animation: toast-in .2s ease;
+  max-width: 320px;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: none; }
+}
+.toast-icon { font-size: 13px; flex-shrink: 0; }
+.toast-msg  { flex: 1; color: var(--ink); line-height: 1.4; }
+.toast-close {
+  flex-shrink: 0;
+  background: none; border: none;
+  color: var(--muted-2);
+  font-size: 14px; line-height: 1;
+  cursor: pointer; padding: 0 2px;
+}
+.toast-close:hover { color: var(--ink); }
+.toast-ok    { border-color: rgba(52,211,153,.35); }
+.toast-ok    .toast-icon { color: var(--ok); }
+.toast-error { border-color: rgba(239,68,68,.35); }
+.toast-error .toast-icon { color: var(--hot); }
+.toast-info  .toast-icon { color: var(--accent); }
+
 /* ============================================================
    TOOL CALL CARD — permanent, expanded
    ============================================================ */
@@ -1420,6 +1489,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 9px 10px;
   display: flex; flex-direction: column;
   gap: 2px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s, background .15s;
+}
+.mon-kpi:hover {
+  border-color: var(--accent);
+  background: var(--surface-3);
+}
+.mon-kpi.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
 }
 .mon-kpi .v {
   font-size: 18px;
@@ -2108,6 +2188,14 @@ button.mon-row:focus-visible {
   background: var(--surface);
   display: flex; flex-direction: column;
   gap: 2px;
+  cursor: pointer;
+  text-align: left;
+  transition: background .15s;
+}
+.logs-kpi:hover { background: var(--surface-2); }
+.logs-kpi.is-active {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-bottom: 2px solid var(--accent);
 }
 .logs-kpi .l {
   font-size: 9.5px;
@@ -2331,6 +2419,21 @@ button.mon-row:focus-visible {
   font-size: 12px;
   color: var(--muted-2);
 }
+.log-show-more {
+  display: block;
+  width: 100%;
+  padding: 6px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+  text-align: center;
+  transition: color .15s, background .15s;
+}
+.log-show-more:hover { color: var(--accent); background: var(--surface-2); }
 
 /* ============================================================
    Mode switcher in sidebar

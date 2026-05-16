@@ -179,20 +179,31 @@ def _extract_cards(session_id: str) -> list[dict]:
 
 
 def _build_suggestions(session_id: str) -> list[str]:
-    tools_called = {msg.get("name") for msg in session_store.get(session_id) if msg.get("role") == "tool"}
+    _FOLLOW_UPS: dict[str, list[str]] = {
+        "crm":        ["Show wallet balance for this member", "List all active members", "Show recent CRM tasks"],
+        "facturatie": ["Show overdue invoices", "Total revenue this month", "List all invoices for this client"],
+        "kassa":      ["Revenue breakdown by day", "List recent orders", "Show refunds this week"],
+        "frontend":   ["Show all sessions this week", "Attendance for this session", "List all website users"],
+        "monitoring": ["Which services are degraded?", "Recent error logs", "Heartbeat timeline for a service"],
+    }
+    used: set[str] = set()
+    for msg in session_store.get(session_id):
+        if msg.get("role") == "tool":
+            name = msg.get("name", "")
+            ns = name.split("__")[0] if "__" in name else ""
+            if ns:
+                used.add(ns)
     suggestions: list[str] = []
-    if any("session" in t for t in tools_called):
-        suggestions.append("Show attendance for a specific session")
-    if any("invoice" in t or "facturatie" in t for t in tools_called):
-        suggestions.append("Show overdue invoices")
-    if any("service" in t or "monitor" in t or "error" in t or "alert" in t for t in tools_called):
-        suggestions.append("Show recent error logs")
-    if any("member" in t or "crm" in t for t in tools_called):
-        suggestions.append("Look up a specific member")
+    for ns in used:
+        suggestions.extend(_FOLLOW_UPS.get(ns, []))
     if not suggestions:
-        suggestions = ["Show all active sessions", "Which services are currently down?"]
-    suggestions.append("What else can I help with?")
-    return suggestions[:3]
+        suggestions = [
+            "Show all active sessions for this week",
+            "Which services are degraded right now?",
+            "Revenue from the Kassa today",
+            "Recent error logs across all services",
+        ]
+    return suggestions[:4]
 
 
 async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:

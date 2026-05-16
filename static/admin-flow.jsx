@@ -281,6 +281,7 @@ function MonitoringPanel() {
   const [error, setError] = useState(null);
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState(null);
+  const [statusFilter, setStatusFilter] = useState(null);
 
   const fetchStatus = () => {
     fetch("/api/monitoring/status")
@@ -326,6 +327,7 @@ function MonitoringPanel() {
   const degraded   = normed.filter(s => s.status === "degraded").length;
   const quarantined = normed.filter(s => s.status === "quarantine").length;
   const unknown    = normed.filter(s => s.status === "unknown").length;
+  const offlineAll = quarantined + unknown;
 
   const overallStatus = (quarantined > 0 || unknown > 0) ? "hot"
                       : degraded > 0 ? "warn" : "ok";
@@ -352,22 +354,22 @@ function MonitoringPanel() {
       </div>
 
       <div className="mon-kpis">
-        <div className="mon-kpi">
+        <button className={`mon-kpi${statusFilter === null ? " active" : ""}`} onClick={() => setStatusFilter(null)}>
           <div className="v mono">{normed.length}</div>
           <div className="l">Services</div>
-        </div>
-        <div className="mon-kpi">
+        </button>
+        <button className={`mon-kpi${statusFilter === "online" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "online" ? null : "online")}>
           <div className="v mono ok">{online}</div>
           <div className="l">Online</div>
-        </div>
-        <div className="mon-kpi">
+        </button>
+        <button className={`mon-kpi${statusFilter === "degraded" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "degraded" ? null : "degraded")}>
           <div className="v mono warn">{degraded}</div>
           <div className="l">Degraded</div>
-        </div>
-        <div className="mon-kpi">
-          <div className="v mono hot">{quarantined}</div>
-          <div className="l">Offline</div>
-        </div>
+        </button>
+        <button className={`mon-kpi${statusFilter === "offline-all" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "offline-all" ? null : "offline-all")}>
+          <div className="v mono hot">{offlineAll}</div>
+          <div className="l">Offline / Unknown</div>
+        </button>
       </div>
 
       <div className="mon-list">
@@ -382,9 +384,18 @@ function MonitoringPanel() {
               {lastRefresh ? "No heartbeats received yet." : "Loading…"}
             </div>
           )}
-          {normed.map((s) => (
+          {normed.filter(s => {
+            if (statusFilter === null) return true;
+            if (statusFilter === "offline-all") return s.status === "quarantine" || s.status === "unknown";
+            return s.status === statusFilter;
+          }).map((s) => (
             <MonRow key={s.id} svc={s} tick={tick} onOpen={() => setSelected(s)} />
           ))}
+          {statusFilter !== null && normed.filter(s => statusFilter === "offline-all" ? (s.status === "quarantine" || s.status === "unknown") : s.status === statusFilter).length === 0 && (
+            <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+              No {statusFilter} services.
+            </div>
+          )}
         </div>
       </div>
 

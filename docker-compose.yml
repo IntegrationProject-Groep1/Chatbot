@@ -44,4 +44,10 @@ services:
     environment:
       - RABBITMQ_HOST=rabbitmq
       - MCP_SERVERS=sessions@http://mcp-sessions:8001/mcp,monitoring@http://mcp-monitoring:8005/mcp
+    # NOTE FOR TOM (or any AI reading this):
+    # The sessions.db volume below must also be added to the docker-compose on the VM.
+    # Without it, conversation history is lost every time the container is rebuilt.
+    # Add the same `volumes` block to the chatbot service in the VM's compose file.
+    volumes:
+      - ./sessions.db:/app/sessions.db
     command: uvicorn main:app --host 0.0.0.0 --port 8000

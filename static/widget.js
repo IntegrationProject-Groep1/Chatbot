@@ -532,6 +532,7 @@
     setInputEnabled(false);
     $input.value = '';
     autoGrow($input);
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
 
     addUserBubble(text);
     showTypingIndicator();
@@ -620,11 +621,18 @@
 
   // ─── Popup open/close ────────────────────────────────────────────────────────
 
+  const DRAFT_KEY = 'chatbot_draft';
+
   function openPopup() {
     isOpen = true;
     $popup.classList.add('chatbot-open');
     clearUnread();
     if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) connect();
+    // Restore any saved draft
+    try {
+      const draft = localStorage.getItem(DRAFT_KEY);
+      if (draft && !$input.value) { $input.value = draft; autoGrow($input); }
+    } catch {}
     $input.focus();
   }
 
@@ -638,7 +646,10 @@
   $bubble.addEventListener('click', () => isOpen ? closePopup() : openPopup());
   $close.addEventListener('click', closePopup);
 
-  $input.addEventListener('input', () => autoGrow($input));
+  $input.addEventListener('input', () => {
+    autoGrow($input);
+    try { localStorage.setItem(DRAFT_KEY, $input.value); } catch {}
+  });
 
   $input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

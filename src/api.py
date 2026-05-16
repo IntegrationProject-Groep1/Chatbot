@@ -34,6 +34,38 @@ async def _cleanup_loop() -> None:
 app = FastAPI(title="Event Chatbot API", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
+# ── Admin auth (disabled — see src/auth.py for setup instructions) ──────────
+# from auth import AdminAuthMiddleware, verify_credentials, create_token, _COOKIE   # AUTH
+# app.add_middleware(AdminAuthMiddleware)                                             # AUTH
+#
+# @app.get("/admin/login")
+# async def admin_login_page():
+#     return FileResponse(os.path.join(_STATIC_DIR, "admin-login.html"))
+#
+# @app.post("/api/admin/login")
+# async def admin_login(request: Request):
+#     try:
+#         body = await request.json()
+#     except Exception:
+#         return JSONResponse({"error": "invalid JSON"}, status_code=400)
+#     username = str(body.get("username", "")).strip()
+#     password = str(body.get("password", "")).strip()
+#     if not username or not password:
+#         return JSONResponse({"error": "username and password are required"}, status_code=400)
+#     if not verify_credentials(username, password):
+#         return JSONResponse({"error": "Invalid credentials"}, status_code=401)
+#     token = create_token(username)
+#     resp = JSONResponse({"ok": True, "user": username})
+#     resp.set_cookie(_COOKIE, token, httponly=True, samesite="lax", max_age=60 * 60 * 8)
+#     return resp
+#
+# @app.post("/api/admin/logout")
+# async def admin_logout():
+#     resp = JSONResponse({"ok": True})
+#     resp.delete_cookie(_COOKIE)
+#     return resp
+# ────────────────────────────────────────────────────────────────────────────
+
 
 @app.get("/")
 async def root():
