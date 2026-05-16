@@ -7,7 +7,7 @@ const { useEffect, useMemo, useRef, useState } = React;
 // MCP server node ids — used to detect "disconnected" state
 const MCP_NODE_IDS = new Set(["frontend", "facturatie", "crm", "kassa", "monitoring"]);
 
-function FlowTopology({ activeNodes, doneNodes, activeEdges, connectedServers = new Set() }) {
+function FlowTopology({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, connectedServers = new Set() }) {
   // Build edge data once
   const edges = useMemo(() => {
     return EDGES.map(([from, to, label]) => {
@@ -38,7 +38,7 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges, connectedServers = 
     let raf;
     const start = performance.now();
     const loop = (t) => {
-      setTick(((t - start) % 1600) / 1600);
+      setTick(((t - start) % 3200) / 3200);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -85,18 +85,20 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges, connectedServers = 
         {edges.map((e) => {
           const key = `${e.from}->${e.to}`;
           const isActive = activeEdges.has(key);
+          const isLit = !isActive && litEdges && litEdges.has(key);
+          const highlighted = isActive || isLit;
           return (
             <g key={key}>
               <path
                 d={e.path}
                 fill="none"
-                stroke={isActive ? "url(#edge-active)" : "#DADEEC"}
-                strokeWidth={isActive ? 2 : 1.2}
-                strokeDasharray={isActive ? "0" : "5 4"}
-                markerEnd={isActive ? "url(#arr-active)" : "url(#arr-idle)"}
-                style={{ transition: "stroke 300ms, stroke-width 300ms" }}
+                stroke={highlighted ? "url(#edge-active)" : "#DADEEC"}
+                strokeWidth={highlighted ? 2 : 1.2}
+                strokeDasharray={highlighted ? "0" : "5 4"}
+                markerEnd={highlighted ? "url(#arr-active)" : "url(#arr-idle)"}
+                style={{ transition: "stroke 400ms, stroke-width 400ms" }}
               />
-              <EdgeLabel path={e.path} label={e.label} active={isActive} />
+              <EdgeLabel path={e.path} label={e.label} active={highlighted} />
               {isActive && <TravelingDot path={e.path} t={tick} />}
             </g>
           );
@@ -105,7 +107,7 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges, connectedServers = 
         {/* Nodes as foreignObject so they share the SVG coordinate system */}
         {Object.entries(NODES).map(([id, n]) => {
           const active = activeNodes.has(id);
-          const done = doneNodes.has(id) && !active;
+          const done = (doneNodes.has(id) || (litNodes && litNodes.has(id))) && !active;
           // MCP server nodes that didn't load are marked disconnected
           const disconnected = MCP_NODE_IDS.has(id) && connectedServers.size > 0 && !connectedServers.has(id);
           return (
@@ -632,7 +634,7 @@ function BigStrip({ svc, tick }) {
   );
 }
 
-function FlowColumn({ activeNodes, doneNodes, activeEdges, log, onClear, stats, tab, setTab }) {
+function FlowColumn({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, log, onClear, stats, tab, setTab }) {
   const [mcpMeta, setMcpMeta] = React.useState({ serverCount: 0, toolCount: 0 });
   const [connectedServers, setConnectedServers] = React.useState(new Set());
 
@@ -675,6 +677,8 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, log, onClear, stats, 
           activeNodes={activeNodes}
           doneNodes={doneNodes}
           activeEdges={activeEdges}
+          litNodes={litNodes}
+          litEdges={litEdges}
           connectedServers={connectedServers}
         />
       )}

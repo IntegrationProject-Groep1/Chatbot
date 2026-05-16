@@ -837,6 +837,9 @@ function App() {
   const [activeNodes, setActiveNodes] = useState(new Set());
   const [doneNodes, setDoneNodes] = useState(new Set());
   const [activeEdges, setActiveEdges] = useState(new Set());
+  // Lit state — paths that stay highlighted until the next question
+  const [litNodes, setLitNodes] = useState(new Set());
+  const [litEdges, setLitEdges] = useState(new Set());
 
   // Event log
   const [log, setLog] = useState([]);
@@ -938,13 +941,12 @@ function App() {
   const activateServer = useCallback((toolName) => {
     const svc = serverFromTool(toolName);
     const flow = svc && SERVER_FLOW[svc];
-    if (!flow) {
-      setActiveNodes(new Set(["user", "api", "llama"]));
-      setActiveEdges(new Set(["user->api", "api->llama"]));
-      return svc;
-    }
-    setActiveNodes(new Set(flow.nodes));
-    setActiveEdges(new Set(flow.edges));
+    const nodes = flow ? flow.nodes : ["user", "api", "llama"];
+    const edges = flow ? flow.edges : ["user->api", "api->llama"];
+    setActiveNodes(new Set(nodes));
+    setActiveEdges(new Set(edges));
+    setLitNodes(prev => new Set([...prev, ...nodes]));
+    setLitEdges(prev => new Set([...prev, ...edges]));
     return svc;
   }, []);
 
@@ -1085,8 +1087,7 @@ function App() {
       }
 
       case "done":
-        clearActive();
-        setDoneNodes(new Set());
+        clearActive(); // stops the traveling dot; lit paths stay highlighted
         if (streamRef.current.msgId) {
           setMessages(msgs => msgs.map(m => m.id === streamRef.current.msgId ? { ...m, streaming: false } : m));
         }
@@ -1146,6 +1147,9 @@ function App() {
     streamRef.current = { text: "", cards: [], msgId: null };
     toolBundleRef.current = null;
     setDoneNodes(new Set());
+    setLitNodes(new Set());
+    setLitEdges(new Set());
+    clearActive();
     pushLog({ src: "user", svc: "user", txt: `chat → "${text.slice(0, 50)}"`, dur: "—" });
     wsRef.current?.send(JSON.stringify({ type: "chat", message: text }));
   };
@@ -1219,6 +1223,8 @@ function App() {
     streamRef.current = { text: "", cards: [], msgId: null };
     clearActive();
     setDoneNodes(new Set());
+    setLitNodes(new Set());
+    setLitEdges(new Set());
     setLog([]);
     setStats({ tools: 0, ok: 0, warn: 0, tokens: 0 });
     setActiveConvId(null);
@@ -1334,6 +1340,8 @@ function App() {
             activeNodes={activeNodes}
             doneNodes={doneNodes}
             activeEdges={activeEdges}
+            litNodes={litNodes}
+            litEdges={litEdges}
             log={log}
             onClear={() => setLog([])}
             stats={stats}
