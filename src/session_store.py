@@ -1,8 +1,10 @@
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
+from datetime import date as _date
 
 _sessions: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -209,9 +211,23 @@ _load_from_db()
 # ── Public API ──────────────────────────────────────────────────────────────
 
 
+def _refresh_date(messages: list) -> None:
+    """Update the date in the system message to today (called on every WS connect)."""
+    today = _date.today().isoformat()
+    for m in messages:
+        if m.get("role") == "system":
+            m["content"] = re.sub(
+                r"Today's date is \d{4}-\d{2}-\d{2}\.",
+                f"Today's date is {today}.",
+                m["content"],
+            )
+            break
+
+
 def init_session(session_id: str, identity_uuid: str) -> None:
     with _lock:
         if session_id in _sessions:
+            _refresh_date(_sessions[session_id]["messages"])
             _sessions[session_id]["last_active"] = time.time()
             return
     # Try to restore from DB (session exists from a previous connection)
@@ -223,9 +239,11 @@ def init_session(session_id: str, identity_uuid: str) -> None:
         ).fetchone()
         if row:
             msgs_json, _ = row
+            messages = json.loads(msgs_json)
+            _refresh_date(messages)
             with _lock:
                 _sessions[session_id] = {
-                    "messages": json.loads(msgs_json),
+                    "messages": messages,
                     "identity_uuid": identity_uuid,
                     "last_active": time.time(),
                 }
@@ -234,7 +252,6 @@ def init_session(session_id: str, identity_uuid: str) -> None:
         pass
     # Brand new session
     with _lock:
-        from datetime import date as _date
         _sessions[session_id] = {
             "messages": [{"role": "system", "content": _SYSTEM_TEMPLATE.format(
                 identity_uuid=identity_uuid,
