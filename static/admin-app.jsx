@@ -128,6 +128,47 @@ function OrderCard({ o }) {
   );
 }
 
+// ─── Wallet card ───────────────────────────────────────────────────────────
+function WalletCard({ w }) {
+  const status = (w.Wallet_Status__c || w.wallet_status || w.status || "").toLowerCase();
+  const isLeased = status === "leased";
+  const balance = w.Wallet_Balance__c ?? w.wallet_balance ?? w.balance ?? null;
+  const leaseId = w.Last_Lease_ID__c || w.last_lease_id || null;
+  const masterUuid = w.master_uuid || w.Master_UUID__c || null;
+
+  return (
+    <div style={{ padding: "12px 14px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r-md)", display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>Wallet</span>
+        <span className={`inv-pill ${isLeased ? "pending" : "paid"}`}>{isLeased ? "Leased" : status || "Active"}</span>
+        {isLeased && (
+          <span style={{ fontSize: 11, color: "var(--warn)", fontFamily: "var(--font-mono)" }}>
+            ⚠ Kassa holds live balance
+          </span>
+        )}
+      </div>
+      {balance !== null && (
+        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+          €{parseFloat(balance).toLocaleString("nl-BE", { minimumFractionDigits: 2 })}
+          {isLeased && (
+            <span style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)", marginLeft: 6 }}>
+              (CRM cached — niet actueel)
+            </span>
+          )}
+        </div>
+      )}
+      {masterUuid && (
+        <div style={{ fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>{masterUuid}</div>
+      )}
+      {leaseId && (
+        <div style={{ fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+          Lease: {leaseId}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Service status grid ───────────────────────────────────────────────────
 function ServiceStatusGrid({ services }) {
   return (
@@ -205,6 +246,14 @@ function CardsArea({ cardEvents }) {
         }
         if (card_type === "order" && Array.isArray(data)) {
           return <div key={idx} className="inv-list">{data.map((o, i) => <OrderCard key={i} o={o} />)}</div>;
+        }
+        if (card_type === "wallet") {
+          const items = Array.isArray(data) ? data : [data];
+          return (
+            <div key={idx} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {items.map((w, i) => <WalletCard key={i} w={w} />)}
+            </div>
+          );
         }
         return null;
       })}
@@ -512,6 +561,15 @@ function App() {
   const [log, setLog] = useState([]);
   const [stats, setStats] = useState({ tools: 0, ok: 0, warn: 0, tokens: 0 });
 
+  // Live MCP server count
+  const [mcpServerCount, setMcpServerCount] = useState(MCP_SERVERS.length);
+  useEffect(() => {
+    fetch("/api/mcp/tools")
+      .then(r => r.json())
+      .then(d => { if ((d.servers || []).length) setMcpServerCount(d.servers.length); })
+      .catch(() => {});
+  }, []);
+
   // Sidebar / UI state
   const [flowTab, setFlowTab] = useState("graph");
   const [mode, setMode] = useState("agent");
@@ -753,14 +811,40 @@ function App() {
   };
 
   const handleSuggest = (text) => handleSend(text);
-  const handleNew = () => {
+  const handleNew = useCallback(() => {
     setMessages([]);
     streamRef.current = { text: "", cards: [], msgId: null };
     clearActive();
     setDoneNodes(new Set());
     setLog([]);
     setStats({ tools: 0, ok: 0, warn: 0, tokens: 0 });
-  };
+  }, [clearActive]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = document.activeElement?.tagName;
+      const inInput = tag === "INPUT" || tag === "TEXTAREA";
+      // ⌘N / Ctrl+N → new conversation
+      if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+        e.preventDefault();
+        handleNew();
+        return;
+      }
+      // / → focus composer (when not already in a text field)
+      if (e.key === "/" && !inInput) {
+        e.preventDefault();
+        document.querySelector(".composer textarea")?.focus();
+        return;
+      }
+      // Escape → blur active input
+      if (e.key === "Escape" && inInput) {
+        document.activeElement?.blur();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleNew]);
 
   if (!identity) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -768,7 +852,7 @@ function App() {
 
   return (
     <div className="app">
-      <Topbar identity={identity} connected={connected} serverCount={MCP_SERVERS.length} />
+      <Topbar identity={identity} connected={connected} serverCount={mcpServerCount} />
 
       <Sidebar
         history={HISTORY}

@@ -113,6 +113,11 @@ def _extract_cards(session_id: str) -> list[dict]:
         if "orders" in data and data["orders"] and "orders" not in seen:
             events.append({"type": "cards", "card_type": "order", "data": data["orders"]})
             seen.add("orders")
+        # Wallet data — CRM (Wallet_Status__c / wallet_status) or Kassa live balance
+        data_keys_lower = {k.lower() for k in data.keys()}
+        if any("wallet" in k for k in data_keys_lower) and "wallet" not in seen:
+            events.append({"type": "cards", "card_type": "wallet", "data": data})
+            seen.add("wallet")
     return events
 
 
