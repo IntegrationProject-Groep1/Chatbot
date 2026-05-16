@@ -290,7 +290,7 @@ function AssistantMessage({ text, streaming, cursor, cardEvents, suggestions, on
         </div>
         <div className="msg-text">
           {renderRich(text)}
-          {streaming && <span className="cursor-blink">▋</span>}
+          {streaming && <span className="cursor-blink"></span>}
         </div>
         <CardsArea cardEvents={cardEvents} />
         {suggestions && suggestions.length > 0 && (
