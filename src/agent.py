@@ -58,7 +58,10 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
                 except json.JSONDecodeError:
                     continue
 
-                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta", {})
 
                 # Detect tool call as early as possible
                 if delta.get("tool_calls"):
