@@ -42,8 +42,8 @@ class MCPClient:
         if old_client is not None:
             try:
                 await old_client.__aexit__(None, None, None)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("MCP [%s] session teardown: %s (ignored)", label, e)
         stale = [k for k in self._registry if k.startswith(f"{label}__")]
         for k in stale:
             del self._registry[k]

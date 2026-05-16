@@ -136,16 +136,6 @@ class PersistentRabbitMQClient:
         )
 
 
-def publish_audit_event(routing_key: str, event_data: dict) -> None:
-    """Helper to publish to the central audit exchange."""
-    try:
-        client = get_thread_client()
-        client.publish_event("ai.events", routing_key, event_data)
-    except Exception as e:
-        # Don't crash the main loop if logging fails
-        print(f"[Audit] Failed to publish event: {e}")
-
-
 _thread_local = threading.local()
 
 
@@ -248,10 +238,18 @@ class RabbitMQRpcClient:
 
 
 def publish_audit_event(routing_key: str, event_data: dict) -> None:
-    """Helper to publish to the central audit exchange."""
-    try:
-        client = get_thread_client()
-        client.publish_event("ai.events", routing_key, event_data)
-    except Exception as e:
-        # Don't crash the main loop if logging fails
-        print(f"[Audit] Failed to publish event: {e}")
+    """Publish a fire-and-forget audit event. Retries once after forced reconnect on connection loss."""
+    import logging
+    _alog = logging.getLogger(__name__)
+    for attempt in range(2):
+        try:
+            client = get_thread_client()
+            if attempt > 0:
+                client.reconnect()
+            client.publish_event("ai.events", routing_key, event_data)
+            return
+        except Exception as exc:
+            if attempt == 0:
+                _alog.debug("Audit publish failed (%s) — reconnecting and retrying", exc)
+            else:
+                _alog.warning("Audit event lost after reconnect: %s", exc)
