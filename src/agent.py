@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import time
+from datetime import datetime, timezone
 from typing import Callable
 
 import httpx
@@ -20,6 +21,30 @@ _HEADERS = {"Authorization": f"Bearer {_API_KEY}", "Content-Type": "application/
 
 MAX_LOOPS = 6
 
+_LOCAL_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_date",
+            "description": "Returns today's date and current time. Call this before answering any question that involves 'today', 'this week', 'this month', 'now', or any relative date.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    }
+]
+
+def _handle_local_tool(name: str) -> str | None:
+    if name == "get_current_date":
+        now = datetime.now()
+        return json.dumps({
+            "date": now.strftime("%Y-%m-%d"),
+            "day_of_week": now.strftime("%A"),
+            "time": now.strftime("%H:%M"),
+            "month": now.strftime("%B %Y"),
+            "week_start": (now - __import__("datetime").timedelta(days=now.weekday())).strftime("%Y-%m-%d"),
+            "month_start": now.strftime("%Y-%m-01"),
+        })
+    return None
+
 
 async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dict:
     """Stream a completion from the NVIDIA API.
@@ -28,7 +53,7 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
     Tool-call rounds suppress token emission (the model is not producing prose).
     Returns a reconstructed message dict compatible with the old non-streaming shape.
     """
-    tools = mcp_client.get().get_tool_definitions()
+    tools = _LOCAL_TOOLS + mcp_client.get().get_tool_definitions()
     payload: dict = {
         "model": _MODEL,
         "messages": messages,
@@ -109,6 +134,12 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
     identity_uuid = session_store.get_identity_uuid(session_id)
 
     try:
+        # Handle local tools without going through MCP
+        local_result = _handle_local_tool(name)
+        if local_result is not None:
+            duration = int((time.time() - t0) * 1000)
+            await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": local_result[:120]})
+            return call_id, local_result
 
         publish_audit_event(f"tool_called.{name}", {
             "session_id": session_id,
