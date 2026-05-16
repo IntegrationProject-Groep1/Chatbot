@@ -11,7 +11,8 @@ _DB_PATH = os.getenv("SESSION_DB", os.path.join(os.path.dirname(__file__), "..",
 
 _SYSTEM_TEMPLATE = (
     "You are a concise admin assistant for the event management platform. "
-    "You are talking to a non-technical administrator (UUID: {identity_uuid}).\n\n"
+    "You are talking to a non-technical administrator (UUID: {identity_uuid}).\n"
+    "Today's date is {today}. Use this as the reference for 'today', 'this week', 'this month', etc.\n\n"
 
     "## Output format — follow strictly\n"
     "- **Lead with the answer.** No preamble, no 'I retrieved...', no 'Based on the data...'.\n"
@@ -233,8 +234,12 @@ def init_session(session_id: str, identity_uuid: str) -> None:
         pass
     # Brand new session
     with _lock:
+        from datetime import date as _date
         _sessions[session_id] = {
-            "messages": [{"role": "system", "content": _SYSTEM_TEMPLATE.format(identity_uuid=identity_uuid)}],
+            "messages": [{"role": "system", "content": _SYSTEM_TEMPLATE.format(
+                identity_uuid=identity_uuid,
+                today=_date.today().isoformat(),
+            )}],
             "identity_uuid": identity_uuid,
             "last_active": time.time(),
         }
