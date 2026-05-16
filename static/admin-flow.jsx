@@ -401,27 +401,21 @@ function MonitoringPanel() {
 
 function MonRow({ svc, tick, onOpen }) {
   const [cells, setCells] = React.useState([]);
+  const [loaded, setLoaded] = React.useState(false);
 
   React.useEffect(() => {
     fetch(`/api/monitoring/heartbeat/${svc.id}?hours=1`)
       .then(r => r.json())
-      .then(d => setCells(d.cells || []))
-      .catch(() => {});
+      .then(d => { setCells(d.cells || []); setLoaded(true); })
+      .catch(() => setLoaded(true));
   }, [svc.id]);
 
   const shifted = useMemo(() => {
-    if (!cells.length) return Array(60).fill({ status: "ok" });
+    if (!loaded) return Array(60).fill({ status: "ok" });
+    if (!cells.length) return Array(60).fill({ status: "miss" });
     const offset = tick % cells.length;
     return [...cells.slice(offset), ...cells.slice(0, offset)];
-  }, [cells, tick]);
-
-  const sinceLabel = svc.lastSeen < 5
-    ? `${svc.lastSeen}s ago`
-    : svc.lastSeen < 60
-      ? `${svc.lastSeen}s ago`
-      : svc.lastSeen < 3600
-        ? `${Math.floor(svc.lastSeen / 60)}m ago`
-        : `${Math.floor(svc.lastSeen / 3600)}h ago`;
+  }, [cells, loaded, tick]);
 
   return (
     <button className={`mon-row ${svc.status}`} onClick={onOpen} type="button">
@@ -429,7 +423,7 @@ function MonRow({ svc, tick, onOpen }) {
         <span className={`mon-dot ${svc.status}`}></span>
         <div className="mon-row-name">
           <b>{svc.label}</b>
-          <span className="mono">{sinceLabel}{svc.note ? ` · ${svc.note}` : ""}</span>
+          <span className="mono">{_sinceLabel(svc.lastSeen)}{svc.note ? ` · ${svc.note}` : ""}</span>
         </div>
       </div>
       <div className="mon-strip">
@@ -522,7 +516,7 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
             </div>
             <div className="svc-stat">
               <div className="l">Last seen</div>
-              <div className="v mono">{svc.lastSeen < 60 ? `${svc.lastSeen}s ago` : `${Math.floor(svc.lastSeen / 60)}m ago`}</div>
+              <div className="v mono">{_sinceLabel(svc.lastSeen)}</div>
             </div>
           </div>
 
@@ -601,19 +595,21 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
 
 function BigStrip({ svc, tick }) {
   const [cells, setCells] = React.useState([]);
+  const [loaded, setLoaded] = React.useState(false);
 
   React.useEffect(() => {
     fetch(`/api/monitoring/heartbeat/${svc.id}?hours=1`)
       .then(r => r.json())
-      .then(d => setCells(d.cells || []))
-      .catch(() => {});
+      .then(d => { setCells(d.cells || []); setLoaded(true); })
+      .catch(() => setLoaded(true));
   }, [svc.id]);
 
   const shifted = useMemo(() => {
-    if (!cells.length) return Array(60).fill({ status: "ok" });
+    if (!loaded) return Array(60).fill({ status: "ok" });
+    if (!cells.length) return Array(60).fill({ status: "miss" });
     const offset = tick % cells.length;
     return [...cells.slice(offset), ...cells.slice(0, offset)];
-  }, [cells, tick]);
+  }, [cells, loaded, tick]);
 
   return (
     <div className="svc-big-strip">
