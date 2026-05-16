@@ -535,15 +535,11 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// ─── Pinned shortcuts ─────────────────────────────────────────────────────
-const PINNED = [
-  { label: "Services degraded today",  query: "Which services are degraded or offline right now?" },
-  { label: "Revenue this week",        query: "What is the total invoiced revenue this week?" },
-  { label: "Capacity warnings",        query: "Which sessions are near or at full capacity?" },
-];
-
 // ─── Sidebar ───────────────────────────────────────────────────────────────
-function Sidebar({ history, activeConvId, onPick, onNew, onSend, mode, setMode }) {
+function Sidebar({ history, activeConvId, onPick, onNew, onPin, mode, setMode }) {
+  const pinned = history.filter(h => h.pinned);
+  const recent = history.filter(h => !h.pinned);
+
   return (
     <nav className="sidebar">
       <div className="sb-mode">
@@ -561,36 +557,65 @@ function Sidebar({ history, activeConvId, onPick, onNew, onSend, mode, setMode }
         <span className="kbd">⌘N</span>
       </button>
 
-      <div className="sb-section">
-        <div className="sb-label">Pinned</div>
-        {PINNED.map((p) => (
-          <button key={p.label} className="sb-item" onClick={() => { setMode("agent"); onSend(p.query); }}>
-            <span className="ic">{I.pin}</span>
-            <span className="label">{p.label}</span>
-          </button>
-        ))}
-      </div>
+      {pinned.length > 0 && (
+        <div className="sb-section">
+          <div className="sb-label">Pinned</div>
+          {pinned.map(h => (
+            <SidebarItem key={h.id} h={h} activeConvId={activeConvId} onPick={onPick} onPin={onPin} />
+          ))}
+        </div>
+      )}
 
       <div className="sb-section">
         <div className="sb-label">Recent</div>
-        {history.length === 0 && (
+        {recent.length === 0 && (
           <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--muted-2)" }}>No conversations yet.</div>
         )}
-        {history.map(h => (
-          <button key={h.id} className={`sb-item ${h.id === activeConvId ? "is-active" : ""}`} onClick={() => onPick(h.id)} title={h.label}>
-            <span className="ic">{I.msg}</span>
-            <span className="label">{h.label}</span>
-            <span className="time">{h.time}</span>
-          </button>
+        {recent.map(h => (
+          <SidebarItem key={h.id} h={h} activeConvId={activeConvId} onPick={onPick} onPin={onPin} />
         ))}
       </div>
 
       <div className="sb-spacer"></div>
       <div className="sb-tip">
         <b>Tip — keyboard</b>
-        Hit <span className="kbd">⌘K</span> to search past conversations, <span className="kbd">/</span> to focus the composer.
+        <span className="kbd">/</span> to focus the composer · <span className="kbd">⌘N</span> for new chat
       </div>
     </nav>
+  );
+}
+
+function SidebarItem({ h, activeConvId, onPick, onPin }) {
+  const [hover, setHover] = React.useState(false);
+  return (
+    <div className={`sb-item ${h.id === activeConvId ? "is-active" : ""}`}
+      style={{ position: "relative", display: "flex", alignItems: "center" }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <button
+        style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "inherit", fontFamily: "inherit", textAlign: "left", padding: 0, minWidth: 0 }}
+        onClick={() => onPick(h.id)}
+        title={h.label}
+      >
+        <span className="ic">{h.pinned ? I.pin : I.msg}</span>
+        <span className="label" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.label}</span>
+        <span className="time">{h.time}</span>
+      </button>
+      {hover && (
+        <button
+          onClick={e => { e.stopPropagation(); onPin(h.id); }}
+          title={h.pinned ? "Unpin" : "Pin"}
+          style={{
+            position: "absolute", right: 4, background: "var(--surface-2)", border: "1px solid var(--line)",
+            borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", color: h.pinned ? "var(--primary)" : "var(--muted-2)", flexShrink: 0,
+          }}
+        >
+          {I.pin}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -973,8 +998,15 @@ function App() {
   }, []);
 
   const onPick = useCallback((id) => {
-    // Session is in-memory on the backend — clicking history shows it was visited but can't restore
     setActiveConvId(id);
+  }, []);
+
+  const onPin = useCallback((id) => {
+    setHistory(prev => {
+      const next = prev.map(h => h.id === id ? { ...h, pinned: !h.pinned } : h);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
   }, []);
 
   const handleSuggest = (text) => handleSend(text);
@@ -1027,8 +1059,8 @@ function App() {
         history={history}
         activeConvId={activeConvId}
         onPick={onPick}
+        onPin={onPin}
         onNew={handleNew}
-        onSend={handleSend}
         mode={mode}
         setMode={setMode}
       />
