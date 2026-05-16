@@ -254,6 +254,13 @@ async def list_mcp_tools():
     }
 
 
+@app.get("/api/session/{session_id}/messages")
+async def get_session_messages(session_id: str):
+    """Return stored conversation messages for a session (used to restore chat UI)."""
+    messages = session_store.get_messages_for_api(session_id)
+    return {"messages": messages, "count": len(messages)}
+
+
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()

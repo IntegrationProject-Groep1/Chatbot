@@ -695,16 +695,10 @@ function Sidebar({ history, activeConvId, onPick, onNew, onPin, onDelete, mode, 
 
 function SidebarItem({ h, activeConvId, onPick, onPin, onDelete }) {
   const [hover, setHover] = React.useState(false);
-  const [confirmDelete, setConfirmDelete] = React.useState(false);
 
   const handleDelete = (e) => {
     e.stopPropagation();
-    if (confirmDelete) {
-      onDelete(h.id);
-    } else {
-      setConfirmDelete(true);
-      setTimeout(() => setConfirmDelete(false), 2500);
-    }
+    onDelete(h.id);
   };
 
   return (
@@ -736,14 +730,15 @@ function SidebarItem({ h, activeConvId, onPick, onPin, onDelete }) {
         </button>
         <button
           onClick={handleDelete}
-          title={confirmDelete ? "Click again to confirm" : "Delete"}
+          title="Delete"
           style={{
-            background: confirmDelete ? "rgba(239,68,68,.15)" : "var(--surface-2)",
-            border: `1px solid ${confirmDelete ? "rgba(239,68,68,.5)" : "var(--line)"}`,
+            background: "var(--surface-2)", border: "1px solid var(--line)",
             borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer", color: confirmDelete ? "#f87171" : "var(--muted-2)", flexShrink: 0,
+            cursor: "pointer", color: "var(--muted-2)", flexShrink: 0,
             transition: "background .15s, border-color .15s, color .15s",
           }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(239,68,68,.15)"; e.currentTarget.style.color = "#f87171"; e.currentTarget.style.borderColor = "rgba(239,68,68,.5)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.color = "var(--muted-2)"; e.currentTarget.style.borderColor = "var(--line)"; }}
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
@@ -1138,6 +1133,7 @@ function App() {
         const convId = sessionId.current;
         const entry = {
           id: convId,
+          sessionId: sessionId.current,
           label: text.length > 52 ? text.slice(0, 49) + "…" : text,
           time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           active: true,
@@ -1157,7 +1153,11 @@ function App() {
   // ─── Conversation history (localStorage) ─────────────────────────────────
   const LS_KEY = "shift_admin_history";
   const [history, setHistory] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
+    try {
+      const raw = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+      const seen = new Set();
+      return raw.filter(h => { if (seen.has(h.id)) return false; seen.add(h.id); return true; });
+    } catch { return []; }
   });
   const [activeConvId, setActiveConvId] = useState(null);
 
@@ -1166,9 +1166,34 @@ function App() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(items)); } catch {}
   }, []);
 
-  const onPick = useCallback((id) => {
+  const onPick = useCallback(async (id) => {
+    const entry = history.find(h => h.id === id);
+    if (!entry?.sessionId) { setActiveConvId(id); return; }
+    // Close current WS without triggering auto-reconnect
+    if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
+    sessionId.current = entry.sessionId;
     setActiveConvId(id);
-  }, []);
+    setMessages([]);
+    streamRef.current = { text: "", cards: [], msgId: null };
+    setBusy(false);
+    // Fetch stored messages from backend
+    try {
+      const res = await fetch(`/api/session/${entry.sessionId}/messages`);
+      const data = await res.json();
+      if (Array.isArray(data.messages) && data.messages.length > 0) {
+        setMessages(data.messages.map((m, i) => ({
+          id: `hist-${i}-${entry.sessionId}`,
+          kind: m.role === "user" ? "user" : "assistant",
+          text: m.text,
+          streaming: false,
+          cardEvents: [],
+          suggestions: [],
+        })));
+      }
+    } catch {}
+    // Reconnect with the old session_id (backend will restore context)
+    if (identity?.identity_uuid) initWS(identity.identity_uuid);
+  }, [history, identity, initWS]);
 
   const onPin = useCallback((id) => {
     setHistory(prev => {
@@ -1188,6 +1213,8 @@ function App() {
 
   const handleSuggest = (text) => handleSend(text);
   const handleNew = useCallback(() => {
+    sessionId.current = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
     setMessages([]);
     streamRef.current = { text: "", cards: [], msgId: null };
     clearActive();
@@ -1196,7 +1223,8 @@ function App() {
     setStats({ tools: 0, ok: 0, warn: 0, tokens: 0 });
     setActiveConvId(null);
     saveHistory(history.map(h => ({ ...h, active: false })));
-  }, [clearActive, history, saveHistory]);
+    if (identity?.identity_uuid) initWS(identity.identity_uuid);
+  }, [clearActive, history, saveHistory, identity, initWS]);
 
   // Keyboard shortcuts
   useEffect(() => {

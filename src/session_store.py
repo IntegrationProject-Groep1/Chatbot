@@ -6,7 +6,7 @@ import time
 
 _sessions: dict[str, dict] = {}
 _lock = threading.Lock()
-_TTL = int(os.getenv("SESSION_TTL_SECONDS", "3600"))
+_TTL = int(os.getenv("SESSION_TTL_SECONDS", "604800"))  # 7 days
 _DB_PATH = os.getenv("SESSION_DB", os.path.join(os.path.dirname(__file__), "..", "sessions.db"))
 
 _SYSTEM_TEMPLATE = (
@@ -210,6 +210,29 @@ _load_from_db()
 
 def init_session(session_id: str, identity_uuid: str) -> None:
     with _lock:
+        if session_id in _sessions:
+            _sessions[session_id]["last_active"] = time.time()
+            return
+    # Try to restore from DB (session exists from a previous connection)
+    try:
+        db = _get_db()
+        row = db.execute(
+            "SELECT messages, last_active FROM sessions WHERE session_id = ? AND last_active > ?",
+            (session_id, time.time() - _TTL),
+        ).fetchone()
+        if row:
+            msgs_json, _ = row
+            with _lock:
+                _sessions[session_id] = {
+                    "messages": json.loads(msgs_json),
+                    "identity_uuid": identity_uuid,
+                    "last_active": time.time(),
+                }
+            return
+    except Exception:
+        pass
+    # Brand new session
+    with _lock:
         _sessions[session_id] = {
             "messages": [{"role": "system", "content": _SYSTEM_TEMPLATE.format(identity_uuid=identity_uuid)}],
             "identity_uuid": identity_uuid,
@@ -234,6 +257,27 @@ def append(session_id: str, message: dict) -> None:
 def get(session_id: str) -> list[dict]:
     with _lock:
         return list(_sessions.get(session_id, {}).get("messages", []))
+
+
+def get_messages_for_api(session_id: str) -> list[dict]:
+    """Return user/assistant messages (no system, no tool) for restoring the chat UI."""
+    msgs = get(session_id)
+    result = []
+    for m in msgs:
+        role = m.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        content = m.get("content", "")
+        if isinstance(content, list):
+            text = " ".join(
+                block.get("text", "") for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+        else:
+            text = str(content)
+        if text.strip():
+            result.append({"role": role, "text": text.strip()})
+    return result
 
 
 def cleanup_expired() -> None:
