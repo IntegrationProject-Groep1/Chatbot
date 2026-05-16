@@ -384,6 +384,88 @@ function DashboardStrip({ kpis }) {
   );
 }
 
+// ─── Settings (localStorage-backed, replaces TweaksPanel) ─────────────────
+const SETTINGS_KEY = "shift_admin_settings";
+const SETTINGS_DEFAULTS = { theme: "light", accent: "navy", density: "comfy" };
+const ACCENT_MAP = {
+  navy:   { c: "#1F3A8A", dk: "#172A63", soft: "#EEF1F9", line: "#D7DEF0" },
+  teal:   { c: "#0E7C66", dk: "#0A5C4D", soft: "#E6F4F1", line: "#BCDED5" },
+  purple: { c: "#7C3AED", dk: "#5B21B6", soft: "#F0EBFB", line: "#D9C7F4" },
+  slate:  { c: "#334155", dk: "#1E293B", soft: "#EFF1F5", line: "#D2D7E0" },
+};
+
+function loadSettings() {
+  try { return { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") }; }
+  catch { return { ...SETTINGS_DEFAULTS }; }
+}
+function persistSettings(s) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch {}
+}
+
+function SettingsModal({ settings, onChange, onClose }) {
+  const THEMES = ["light", "dark", "slate", "sepia", "contrast"];
+  const ACCENTS = [
+    { id: "navy",   hex: "#1F3A8A", label: "Navy"   },
+    { id: "teal",   hex: "#0E7C66", label: "Teal"   },
+    { id: "purple", hex: "#7C3AED", label: "Purple" },
+    { id: "slate",  hex: "#334155", label: "Slate"  },
+  ];
+  const DENSITIES = ["cozy", "comfy", "loose"];
+
+  const row = { marginBottom: 22 };
+  const lbl = { fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 10, display: "block" };
+  const pill = (active) => ({
+    padding: "5px 13px", borderRadius: 8, fontSize: 12, cursor: "pointer", fontFamily: "var(--font)",
+    border: `1.5px solid ${active ? "var(--primary)" : "var(--line)"}`,
+    background: active ? "var(--primary-soft)" : "var(--surface-2)",
+    color: active ? "var(--primary)" : "var(--muted)",
+    fontWeight: active ? 600 : 400,
+  });
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 18, padding: "28px 28px 24px", width: 380, boxShadow: "var(--shadow-lg)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 26 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Settings</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)", lineHeight: 1, padding: "2px 6px", borderRadius: 6 }}>×</button>
+        </div>
+
+        <div style={row}>
+          <span style={lbl}>Color theme</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {THEMES.map(t => (
+              <button key={t} style={pill(settings.theme === t)} onClick={() => onChange("theme", t)}>{t}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={row}>
+          <span style={lbl}>Accent color</span>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {ACCENTS.map(a => (
+              <button key={a.id} title={a.label} onClick={() => onChange("accent", a.id)} style={{
+                width: 30, height: 30, borderRadius: 8, background: a.hex, cursor: "pointer",
+                border: `2.5px solid ${settings.accent === a.id ? "var(--ink)" : "transparent"}`,
+                boxShadow: settings.accent === a.id ? `0 0 0 1.5px var(--surface), 0 0 0 3px ${a.hex}` : "none",
+                transition: "box-shadow .15s",
+              }} />
+            ))}
+          </div>
+        </div>
+
+        <div style={{ ...row, marginBottom: 0 }}>
+          <span style={lbl}>Density</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            {DENSITIES.map(d => (
+              <button key={d} style={{ ...pill(settings.density === d), flex: 1 }} onClick={() => onChange("density", d)}>{d}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Login screen ──────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -513,7 +595,7 @@ function Sidebar({ history, activeConvId, onPick, onNew, onSend, mode, setMode }
 }
 
 // ─── Topbar ────────────────────────────────────────────────────────────────
-function Topbar({ identity, connected, serverCount }) {
+function Topbar({ identity, connected, serverCount, onSettings }) {
   const initials = identity ? (identity.email || "AD").split("@")[0].slice(0,2).toUpperCase() : "??";
   return (
     <header className="topbar">
@@ -528,7 +610,7 @@ function Topbar({ identity, connected, serverCount }) {
         <span className="label">{connected ? "Online" : "Reconnecting…"}</span>
         {connected && <span style={{color:"var(--muted-2)"}}>· /ws · {serverCount} MCP servers</span>}
       </span>
-      <button className="icon-btn" title="Help">{I.help}</button>
+      <button className="icon-btn" title="Settings" onClick={onSettings}>{I.cog}</button>
       <div className="user-chip">
         <span className="av">{initials}</span>
         <span className="em">{identity ? identity.email : "…"}</span>
@@ -629,25 +711,26 @@ function App() {
   const [logLevelFilter, setLogLevelFilter] = useState("any");
   const [logQuery, setLogQuery] = useState("");
 
-  // Tweaks
-  const [tweaks, setTweak] = (window.useTweaks || (() => [{ theme: "light", density: "comfy", accent: "navy" }, () => {}]))(
-    /*EDITMODE-BEGIN*/{ "theme": "light", "density": "comfy", "accent": "navy" }/*EDITMODE-END*/
-  );
+  // ─── Settings (localStorage-backed) ──────────────────────────────────────
+  const [settings, setSettings] = useState(loadSettings);
+  const [showSettings, setShowSettings] = useState(false);
 
-  useEffect(() => { document.body.dataset.theme = tweaks.theme || "light"; }, [tweaks.theme]);
-  useEffect(() => { document.body.dataset.density = tweaks.density || "comfy"; }, [tweaks.density]);
+  const changeSetting = useCallback((key, val) => {
+    setSettings(s => {
+      const next = { ...s, [key]: val };
+      persistSettings(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => { document.body.dataset.theme = settings.theme; }, [settings.theme]);
+  useEffect(() => { document.body.dataset.density = settings.density; }, [settings.density]);
   useEffect(() => {
-    const map = {
-      navy:   { c: "#1F3A8A", dk: "#172A63", soft: "#EEF1F9", line: "#D7DEF0" },
-      teal:   { c: "#0E7C66", dk: "#0A5C4D", soft: "#E6F4F1", line: "#BCDED5" },
-      purple: { c: "#7C3AED", dk: "#5B21B6", soft: "#F0EBFB", line: "#D9C7F4" },
-      slate:  { c: "#334155", dk: "#1E293B", soft: "#EFF1F5", line: "#D2D7E0" },
-    };
-    const c = map[tweaks.accent] || map.navy;
+    const c = ACCENT_MAP[settings.accent] || ACCENT_MAP.navy;
     const r = document.documentElement.style;
     r.setProperty("--primary", c.c); r.setProperty("--primary-dk", c.dk);
     r.setProperty("--primary-soft", c.soft); r.setProperty("--primary-line", c.line);
-  }, [tweaks.accent]);
+  }, [settings.accent]);
 
   const messagesRef = useRef(null);
   useEffect(() => {
@@ -938,7 +1021,7 @@ function App() {
 
   return (
     <div className="app">
-      <Topbar identity={identity} connected={connected} serverCount={mcpServerCount} />
+      <Topbar identity={identity} connected={connected} serverCount={mcpServerCount} onSettings={() => setShowSettings(true)} />
 
       <Sidebar
         history={history}
@@ -1026,33 +1109,12 @@ function App() {
           setLevelFilter={setLogLevelFilter}
           query={logQuery}
           setQuery={setLogQuery}
-          themeName={tweaks.theme}
+          themeName={settings.theme}
         />
       )}
 
-      {window.TweaksPanel && (
-        <window.TweaksPanel title="Tweaks">
-          <window.TweakSection label="Theme">
-            <window.TweakSelect
-              label="Color theme"
-              value={tweaks.theme}
-              options={["light", "dark", "slate", "sepia", "contrast"]}
-              onChange={v => setTweak("theme", v)}
-            />
-            <window.TweakRadio
-              label="Accent color"
-              value={tweaks.accent}
-              options={["navy", "teal", "purple", "slate"]}
-              onChange={v => setTweak("accent", v)}
-            />
-            <window.TweakRadio
-              label="Density"
-              value={tweaks.density}
-              options={["cozy", "comfy", "loose"]}
-              onChange={v => setTweak("density", v)}
-            />
-          </window.TweakSection>
-        </window.TweaksPanel>
+      {showSettings && (
+        <SettingsModal settings={settings} onChange={changeSetting} onClose={() => setShowSettings(false)} />
       )}
 
       <style>{`.cursor-blink { display:inline-block; width:2px; height:14px; background:var(--accent); margin-left:2px; vertical-align:middle; animation:blink .8s step-end infinite; } @keyframes blink { 50% { opacity:0; } }`}</style>
