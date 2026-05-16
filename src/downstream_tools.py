@@ -32,3 +32,9 @@ def resolve_identity_by_email(email: str, cfg: DownstreamConfig) -> IdentityUser
     xml = build_identity_lookup_by_email_request(email)
     response = _rpc_call(cfg.identity_queue, xml, cfg.rpc_timeout)
     return parse_identity_response(response)
+
+
+def resolve_identity_by_uuid(identity_uuid: str, cfg: DownstreamConfig) -> IdentityUser:
+    xml = build_identity_lookup_by_uuid_request(identity_uuid)
+    response = _rpc_call(cfg.identity_queue, xml, cfg.rpc_timeout)
+    return parse_identity_response(response)

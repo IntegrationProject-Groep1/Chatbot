@@ -70,6 +70,27 @@ async def identify(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@app.get("/api/identity/uuid/{identity_uuid}")
+async def identify_by_uuid(identity_uuid: str):
+    """Reverse identity lookup: UUID → email via the same XML RPC as /api/identify."""
+    identity_uuid = identity_uuid.strip()
+    if not identity_uuid:
+        return JSONResponse({"error": "identity_uuid is required"}, status_code=400)
+    try:
+        from downstream_tools import resolve_identity_by_uuid, DownstreamConfig
+        cfg = DownstreamConfig()
+        loop = asyncio.get_event_loop()
+        user = await loop.run_in_executor(None, resolve_identity_by_uuid, identity_uuid, cfg)
+        return {"identity_uuid": user.identity_uuid, "email": user.email}
+    except RuntimeError as exc:
+        msg = str(exc).lower()
+        if "missing" in msg or "not found" in msg or "uuid" in msg:
+            return JSONResponse({"error": str(exc)}, status_code=404)
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
