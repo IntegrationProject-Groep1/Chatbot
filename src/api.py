@@ -239,18 +239,41 @@ async def dashboard_summary():
 
 @app.get("/api/mcp/tools")
 async def list_mcp_tools():
-    """All loaded MCP tools grouped by server label."""
+    """All loaded MCP tools grouped by server label, with live connection status."""
     client = mcp_client.get()
+    server_status = client.get_server_status()
     servers: dict[str, list[str]] = {}
     for namespaced, (_c, tool, orig) in client._registry.items():
         label = namespaced.split("__")[0]
         servers.setdefault(label, []).append(orig)
     return {
         "servers": [
-            {"id": label, "tools": tools, "count": len(tools)}
+            {
+                "id": label,
+                "tools": tools,
+                "count": len(tools),
+                "connected": server_status.get(label, False),
+            }
             for label, tools in servers.items()
         ],
         "total_tools": sum(len(t) for t in servers.values()),
+        "connected_count": sum(1 for ok in server_status.values() if ok),
+        "total_count": len(server_status),
+    }
+
+
+@app.get("/api/mcp/status")
+async def mcp_status():
+    """Live MCP connection status — which servers the chatbot can actually reach right now."""
+    client = mcp_client.get()
+    status = client.get_server_status()
+    return {
+        "servers": [
+            {"id": label, "connected": connected}
+            for label, connected in status.items()
+        ],
+        "connected_count": sum(1 for ok in status.values() if ok),
+        "total_count": len(status),
     }
 
 

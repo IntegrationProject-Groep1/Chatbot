@@ -32,7 +32,21 @@ _LOCAL_TOOLS = [
             "description": "Returns today's date and current time. Call this before answering any question that involves 'today', 'this week', 'this month', 'now', or any relative date.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_mcp_server_status",
+            "description": (
+                "Returns which MCP servers (frontend, kassa, crm, facturatie, monitoring) are "
+                "currently connected and reachable by the chatbot. "
+                "ALWAYS call this tool when the admin asks which services are online/offline, "
+                "or before claiming any service is available. "
+                "Do NOT rely on monitoring heartbeats alone for connection status."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 def _handle_local_tool(name: str) -> str | None:
@@ -46,6 +60,22 @@ def _handle_local_tool(name: str) -> str | None:
             "week_start": (now - __import__("datetime").timedelta(days=now.weekday())).strftime("%Y-%m-%d"),
             "month_start": now.strftime("%Y-%m-01"),
         })
+    if name == "get_mcp_server_status":
+        try:
+            client = mcp_client.get()
+            status = client.get_server_status()
+            connected = [label for label, ok in status.items() if ok]
+            disconnected = [label for label, ok in status.items() if not ok]
+            return json.dumps({
+                "servers": status,
+                "connected_count": len(connected),
+                "disconnected_count": len(disconnected),
+                "connected": connected,
+                "disconnected": disconnected,
+                "note": "This reflects live MCP socket connections, not Elasticsearch heartbeats.",
+            })
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
     return None
 
 
@@ -243,8 +273,11 @@ def _build_suggestions(session_id: str) -> list[str]:
 async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     session_store.append(session_id, {"role": "user", "content": user_message})
 
+    # Track (tool_name|args) pairs across ALL loop iterations so the same failing
+    # call is never retried with identical arguments in the same conversation turn.
+    called_tools: set[str] = set()
+
     for loop_idx in range(MAX_LOOPS):
-        called_tools: set[str] = set()  # reset each loop so the LLM can re-call tools with fresh data
         messages = session_store.get(session_id)
 
         # Inject live date into the system message for this call — never stored, always fresh

@@ -255,13 +255,17 @@ _SYSTEM_ROUTING = (
     "### Monitoring (service health, logs, metrics)\n\n"
 
     "Q: Platform health / quick check / how is everything?\n"
-    "  → `monitoring__get_platform_health_overview` (single most useful tool — health scores + top errors + 24h business metrics)\n\n"
+    "  → Step 1: `get_mcp_server_status` (live socket status — are the MCP servers reachable?)\n"
+    "  → Step 2: `monitoring__get_platform_health_overview` (health scores + top errors + 24h metrics from Elasticsearch)\n\n"
 
-    "Q: Service health / is X online?\n"
+    "Q: Are all services / MCP servers up? / Which services can the chatbot reach?\n"
+    "  → `get_mcp_server_status` ONLY — this is the authoritative answer for chatbot connectivity\n\n"
+
+    "Q: Service health / is X online? (from Elasticsearch/monitoring perspective)\n"
     "  → `monitoring__get_service_status`\n\n"
 
     "Q: Which services are offline?\n"
-    "  → `monitoring__get_offline_services`\n\n"
+    "  → First `get_mcp_server_status` (chatbot connectivity), then `monitoring__get_offline_services` (heartbeat data)\n\n"
 
     "Q: Health scores per service?\n"
     "  → `monitoring__get_health_scores`\n\n"
@@ -341,7 +345,13 @@ _SYSTEM_OUTPUT = (
     "5. Parallel tool calls for multi-service questions.\n"
     "6. Amounts → €X,XXX.XX format.\n"
     "7. Count questions → use stats/aggregate tools, not list tools.\n"
-    "8. If a tool returns an error, say so in one line and suggest what the admin can check."
+    "8. If a tool returns an error containing 'service unavailable' or 'not found' or '404', "
+    "do NOT retry that tool or call any other tool from the same service. "
+    "Report the unavailability in one sentence and stop.\n"
+    "9. When asked which services or MCP servers are online/offline/available, "
+    "ALWAYS call `get_mcp_server_status` first — never rely on monitoring heartbeats alone. "
+    "Monitoring heartbeats can be stale; `get_mcp_server_status` shows live socket connections.\n"
+    "10. Never claim all services are healthy without first calling `get_mcp_server_status`."
 )
 
 _SYSTEM_TEMPLATE = _SYSTEM_CONTEXT + _SYSTEM_ROUTING + _SYSTEM_OUTPUT

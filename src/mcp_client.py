@@ -207,6 +207,10 @@ class MCPClient:
 
         return json.dumps({"error": "Tool call failed after reconnect attempt", "status": "error"})
 
+    def get_server_status(self) -> dict[str, bool]:
+        """Return {label: connected} for every configured MCP server."""
+        return {label: label in self._label_clients for label in self._servers}
+
     def has_tools(self) -> bool:
         return bool(self._registry)
 
