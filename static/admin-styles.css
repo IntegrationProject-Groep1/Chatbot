@@ -582,7 +582,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   cursor: default;
   user-select: none;
 }
-.messages .msg-text, .messages .msg-text * { user-select: text; cursor: auto; }
+.messages .msg-text, .messages .msg-text * { user-select: text; cursor: default; }
+.messages .msg-body { user-select: text; }
 .messages textarea, .composer textarea { cursor: text; user-select: text; }
 .messages::-webkit-scrollbar { width: 8px; }
 .messages::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
@@ -701,12 +702,31 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--line);
   border-radius: 4px;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity .15s, color .15s;
+  opacity: 0.45;
+  transition: opacity .15s, color .15s, border-color .15s;
   z-index: 2;
 }
 .rich-block-wrap:hover .rich-copy-btn { opacity: 1; }
 .rich-copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Per-message copy button (in msg-meta line) */
+.msg-copy-btn {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--muted-2);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s, color .15s, border-color .15s;
+}
+.msg.assist:hover .msg-copy-btn { opacity: 1; }
+.msg-copy-btn:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ============================================================
    TOAST NOTIFICATIONS

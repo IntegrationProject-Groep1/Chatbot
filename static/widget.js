@@ -204,10 +204,13 @@
         break;
 
       case 'status':
-        ensureActiveBubble();
         if (ev.status === 'thinking') {
-          updateStatusLine('Thinking…');
+          // Keep the typing indicator visible; only create a bubble when there's real content
+          const typingLabel = $messages.querySelector('.chatbot-typing-label');
+          if (typingLabel) typingLabel.textContent = 'Thinking…';
+          else if (activeBubble) updateStatusLine('Thinking…');
         } else if (ev.status === 'executing_tools') {
+          ensureActiveBubble();
           const step = ev.step ? ` (step ${ev.step})` : '';
           updateStatusLine(`Running tools${step}…`);
         }
@@ -215,7 +218,7 @@
 
       case 'agent_thought':
         ensureActiveBubble();
-        addAgentThought(ev.thought || ev.content || '');
+        addAgentThought(ev.text || ev.thought || ev.content || '');
         break;
 
       case 'stream_token':

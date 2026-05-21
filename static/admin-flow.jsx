@@ -637,6 +637,12 @@ function BigStrip({ svc, tick }) {
 function FlowColumn({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, log, onClear, stats, tab, setTab }) {
   const [mcpMeta, setMcpMeta] = React.useState({ serverCount: 0, toolCount: 0 });
   const [connectedServers, setConnectedServers] = React.useState(new Set());
+  const logBodyRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const el = logBodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [log]);
 
   React.useEffect(() => {
     fetch("/api/mcp/tools")
@@ -690,18 +696,18 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, l
           Event log <span className="count">{log.length}</span>
           <button className="clear" onClick={onClear}>Clear</button>
         </div>
-        <div className="flow-log-body">
+        <div className="flow-log-body" ref={logBodyRef}>
           {log.length === 0 && (
             <div style={{ padding: "16px 18px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
               — waiting for events —
             </div>
           )}
-          {log.slice(-12).map((e) => (
+          {log.map((e) => (
             <div key={e.id} className={`log-row ${e.err ? "err" : ""}`} data-svc={e.svc || "audit"}>
               <span className="t">{e.time}</span>
               <span className="src">{e.src}</span>
               <span className="txt">{e.txt}</span>
-              <span className="dur">{e.dur || ""}</span>
+              <span className="dur">{e.dur && e.dur !== "—" ? e.dur : ""}</span>
             </div>
           ))}
         </div>

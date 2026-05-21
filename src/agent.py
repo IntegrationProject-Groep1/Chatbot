@@ -61,7 +61,7 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
         "model": _MODEL,
         "messages": messages,
         "temperature": 0.3,
-        "max_tokens": 1024,
+        "max_tokens": 4096,
         "stream": True,
     }
     if tools:

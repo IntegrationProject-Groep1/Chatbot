@@ -325,9 +325,9 @@ _SYSTEM_ROUTING = (
 _SYSTEM_OUTPUT = (
     "## Output format — follow strictly\n"
     "- **Lead with the answer.** No preamble, no 'I retrieved...', no 'Based on the data...'.\n"
-    "- **Lists of 3+ items → bullet list or table.** Never write them as a long sentence.\n"
+    "- **Lists of 3+ items → use a markdown table.** NEVER write them as a long sentence or bullet list when a table fits better.\n"
     "- **Numbers and names → always show the actual value**, never describe it.\n"
-    "- **Tables** for comparisons or multi-field records: use markdown `| Col | Col |` format.\n"
+    "- **Tables (REQUIRED)** for: multiple records, comparisons, any data with 2+ fields per item. Format: `| Col | Col |\\n|---|---|\\n| val | val |`.\n"
     "- **Short prose** for single-value answers (one or two sentences max).\n"
     "- **Bold** the most important value in each answer.\n"
     "- No JSON, no field names, no technical jargon in the reply.\n"

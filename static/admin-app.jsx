@@ -37,16 +37,31 @@ function ToastContainer({ toasts, onDismiss }) {
 }
 
 // ─── Copy button ──────────────────────────────────────────────────────────
-function CopyButton({ text }) {
+function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  // Fallback for http (non-HTTPS) contexts
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.cssText = "position:fixed;top:-999px;left:-999px;opacity:0";
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+  return Promise.resolve();
+}
+
+function CopyButton({ text, className }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    navigator.clipboard?.writeText(text).then(() => {
+    copyToClipboard(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     }).catch(() => {});
   };
   return (
-    <button className="rich-copy-btn" onClick={copy} title="Copy to clipboard">
+    <button className={className || "rich-copy-btn"} onClick={copy} title="Copy to clipboard">
       {copied ? "✓ Copied" : "Copy"}
     </button>
   );
@@ -385,6 +400,7 @@ function AssistantMessage({ text, streaming, cursor, cardEvents, suggestions, on
           <b>Admin Assistant</b>
           <span className="who-tag">llama-3.1-8b-instruct</span>
           <span>· {new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span>
+          {!streaming && text && <CopyButton text={text} className="msg-copy-btn" />}
         </div>
         <div className="msg-text">
           {renderRich(text)}
