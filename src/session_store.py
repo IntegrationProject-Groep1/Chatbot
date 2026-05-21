@@ -171,6 +171,9 @@ _SYSTEM_ROUTING = (
 
     "### Frontend (sessions, enrollments, Drupal accounts)\n\n"
 
+    "Q: Is the frontend / Drupal service reachable?\n"
+    "  → `frontend__check_drupal_status` — call this when frontend tools return errors\n\n"
+
     "Q: Sessions / events?\n"
     "  → `frontend__list_sessions` or `frontend__get_sessions_by_date_range`\n\n"
 
@@ -240,7 +243,13 @@ _SYSTEM_ROUTING = (
     "### Kassa (POS sales, live wallet balances)\n\n"
 
     "Q: POS sales / kassa revenue?\n"
-    "  → `kassa__get_sales_summary(date_from=..., date_to=...)`\n\n"
+    "  → `kassa__get_sales_summary(date_from=..., date_to=...)` (totals only)\n\n"
+
+    "Q: POS orders in a date range with customer detail?\n"
+    "  → `kassa__get_orders_by_date_range(date_from=..., date_to=...)` (full order list)\n\n"
+
+    "Q: Top spenders / who spent the most at the kassa?\n"
+    "  → `kassa__get_top_spenders(limit=10)` — optionally scoped with date_from/date_to\n\n"
 
     "Q: Member's POS orders?\n"
     "  → `kassa__get_orders_by_email(email=X)` — NOT CRM\n\n"
