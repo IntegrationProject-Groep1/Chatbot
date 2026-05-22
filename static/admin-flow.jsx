@@ -230,7 +230,7 @@ function MCPServerList() {
   );
 
   return (
-    <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
+    <div style={{ flex: 1, minHeight: 0, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
       {servers.map((s) => {
         const open = !!expanded[s.id];
         return (
@@ -288,11 +288,25 @@ function MonitoringPanel() {
   const [statusFilter, setStatusFilter] = useState(null);
 
   const fetchStatus = () => {
-    fetch("/api/monitoring/status")
-      .then(r => r.json())
-      .then(d => {
+    Promise.all([
+      fetch("/api/monitoring/status").then(r => r.json()),
+      fetch("/api/mcp/status").then(r => r.json()).catch(() => ({ servers: [] })),
+    ])
+      .then(([d, mcp]) => {
         if (d.error) { setError(d.error); return; }
-        setServices(d.services || []);
+        const monitoringMcpConnected = (mcp.servers || []).some(
+          s => s.id === "monitoring" && s.connected
+        );
+        // Monitoring can't classify itself via heartbeats — synthesize its
+        // status from whether the chatbot can reach its MCP server.
+        const svcs = (d.services || []).map(s => {
+          if (s.service !== "monitoring") return s;
+          if (monitoringMcpConnected) {
+            return { ...s, live: true, status: "online", last_seen: new Date().toISOString() };
+          }
+          return { ...s, live: false, status: "quarantine" };
+        });
+        setServices(svcs);
         setLastRefresh(new Date());
         setError(null);
       })
