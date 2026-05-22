@@ -20,9 +20,9 @@ _SYSTEM_CONTEXT = (
     "The current date and time are appended to this prompt automatically — use them for any question involving 'today', 'this week', 'this month', or relative dates. Never guess or invent a date.\n\n"
 
     "## Data ownership — one source of truth per concept\n"
-    "- Sessions / events (schedule, capacity, enrollment) → **Frontend** (Drupal)\n"
-    "- Website login accounts / Drupal users → **Frontend** (Drupal user_id UUID)\n"
-    "- Member profiles (wallet, badge, address, CRM status) → **CRM** (Salesforce master_uuid)\n"
+    "- Sessions / events (schedule, capacity, enrollment) → **Frontend** (planning_sessions table)\n"
+    "- Member profiles, user identity, wallet, badge, address → **CRM** (Salesforce master_uuid)\n"
+    "- Drupal website account management (block/unblock) → **Frontend** (`set_user_blocked` only)\n"
     "- Billing clients and authoritative invoiced revenue → **Facturatie** (FossBilling)\n"
     "- Live on-site POS sales and LIVE wallet balances during event → **Kassa** (Odoo)\n"
     "- Service health, errors, heartbeats → **Monitoring** (Elasticsearch)\n"
@@ -31,12 +31,9 @@ _SYSTEM_CONTEXT = (
     "## Term disambiguation — when a question is ambiguous, use this mapping\n\n"
 
     "'users' / 'people' / 'who is registered' / 'how many users/members'\n"
-    "  → MEMBER PROFILES (wallet, badge, address, CRM data) → CRM\n"
-    "  → WEBSITE ACCOUNTS (login, Drupal roles, site access) → Frontend\n"
-    "  → Generic 'show me users' / 'how many users' with no further context → CRM ONLY (more complete profiles) — NEVER Frontend\n"
-    "  → 'who registered on the website recently' → Frontend `get_recent_registrations`\n"
-    "  → 'show member details / profile' → CRM\n\n"
-    "NEVER call Frontend for generic user/member count or listing questions.\n\n"
+    "  → ALWAYS CRM — `crm__search_members`, `crm__list_members`, `crm__get_member_stats`\n"
+    "  → NEVER Frontend for user queries — Frontend has no user listing tools\n"
+    "  → Exception: blocking/unblocking a Drupal website account → `frontend__set_user_blocked`\n\n"
 
     "'activity' / 'recent events' / 'history' / 'what happened'\n"
     "  → Human-readable curated log (check-ins, payments, registrations) → CRM `get_recent_tasks`\n"
@@ -50,7 +47,6 @@ _SYSTEM_CONTEXT = (
 
     "'company' data\n"
     "  → Company billing account (FossBilling client_id) → Facturatie `get_company_billing_accounts`\n"
-    "  → Company website admins (Drupal roles) → Frontend `get_company_admin_users`\n"
     "  → Company member profiles → CRM `list_members(user_type='Bedrijf')`\n\n"
 
     "IMPORTANT: Drupal user_id (Frontend) ≠ CRM master_uuid — these are DIFFERENT identifiers\n"
@@ -203,28 +199,12 @@ _SYSTEM_ROUTING = (
 
     "Q: Session attendees / who is enrolled in a session?\n"
     "  → Step 1: get session_id from `frontend__list_sessions`\n"
-    "  → Step 2: `frontend__get_session_attendees(session_id=X)` — returns Drupal user_id, NOT CRM master_uuid\n\n"
+    "  → Step 2: `frontend__get_session_attendees(session_id=X)` — returns CRM master_uuid per attendee\n"
+    "  → Step 3: use `crm__get_member(master_uuid=X)` for full profile of each attendee\n\n"
 
     "Q: What sessions is person X enrolled in?\n"
-    "  → `frontend__get_user_enrolled_sessions_by_email(email=X)` — NOT CRM\n\n"
-
-    "Q: Drupal users with role X?\n"
-    "  → `frontend__get_users_by_role(role=...)`\n\n"
-
-    "Q: Blocked / deactivated website accounts?\n"
-    "  → `frontend__get_blocked_users`\n\n"
-
-    "Q: Users registered after a date?\n"
-    "  → `frontend__get_users_registered_after(date=...)`\n\n"
-
-    "Q: Registration stats / signups per day?\n"
-    "  → `frontend__get_registration_stats`\n\n"
-
-    "Q: Enroll a user in a session?\n"
-    "  → `frontend__enroll_user_in_session(session_id=..., email=...)` — WRITE OPERATION: confirm with admin first\n\n"
-
-    "Q: Remove / unenroll a user from a session?\n"
-    "  → `frontend__unenroll_user_from_session(session_id=..., email=...)` — WRITE OPERATION: confirm with admin first\n\n"
+    "  → Step 1: `crm__get_member_by_email(email=X)` to get master_uuid\n"
+    "  → Step 2: `frontend__get_user_enrolled_sessions(master_uuid=X)`\n\n"
 
     "Q: Change a session's status (cancel, activate)?\n"
     "  → `frontend__update_session_status(session_id=..., status=...)` — WRITE OPERATION: confirm with admin first\n\n"
@@ -233,12 +213,8 @@ _SYSTEM_ROUTING = (
     "  → `frontend__update_session_capacity(session_id=..., max_attendees=...)` — WRITE OPERATION: confirm with admin first\n"
     "  → Check current enrollment first with `frontend__get_session_attendees` before reducing\n\n"
 
-    "Q: Block or unblock a website account?\n"
+    "Q: Block or unblock a Drupal website account?\n"
     "  → `frontend__set_user_blocked(email=..., blocked=True/False)` — WRITE OPERATION: confirm with admin first\n\n"
-
-    "Q: Company website admins / who manages a company on the website?\n"
-    "  → `frontend__get_company_admin_users` (Drupal users with company_admin role)\n"
-    "  → NOT company billing entities — for those use `facturatie__get_company_billing_accounts`\n\n"
 
     "### Kassa (POS sales, live wallet balances)\n\n"
 
@@ -314,9 +290,9 @@ _SYSTEM_ROUTING = (
 
     "### Cross-domain\n\n"
 
-    "Q: 'Show me users' / 'list users' / 'how many users' (ambiguous)?\n"
-    "  → ALWAYS start with CRM: `crm__list_members` or `crm__get_member_stats`\n"
-    "  → NEVER call Frontend for user listings — no such tool exists there\n\n"
+    "Q: 'Show me users' / 'list users' / 'how many users' / 'find member X' (any user query)?\n"
+    "  → ALWAYS CRM: `crm__list_members`, `crm__get_member_stats`, `crm__search_members`\n"
+    "  → NEVER Frontend for user/member queries\n\n"
 
     "Q: 'Consumptions' / 'what did people order' / 'bar orders'?\n"
     "  → During event (live) → `kassa__get_recent_orders`\n"
@@ -325,8 +301,7 @@ _SYSTEM_ROUTING = (
 
     "Q: 'Company' data?\n"
     "  → Billing account → `facturatie__get_company_billing_accounts`\n"
-    "  → Member profiles → `crm__list_members(user_type='Bedrijf')`\n"
-    "  → Website admins → `frontend__get_company_admin_users`\n\n"
+    "  → Member profiles → `crm__list_members(user_type='Bedrijf')`\n\n"
 
     "Q: Multiple domains in one question?\n"
     "  → Call ALL relevant tools IN PARALLEL (multiple tool_use blocks in one response)\n\n"
