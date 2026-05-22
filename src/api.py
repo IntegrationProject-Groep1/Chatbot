@@ -26,7 +26,7 @@ def _serve_index(filename: str) -> HTMLResponse:
         html = f.read()
     # Append ?v=<version> to every /static/*.{js,jsx,css,svg} reference
     html = re.sub(
-        r'(/static/[A-Za-z0-9_\-./]+\.(?:js|jsx|css|svg))',
+        r'(/static/[A-Za-z0-9_\-./]+\.(?:jsx|js|css|svg))',
         lambda m: f"{m.group(1)}?v={_ASSET_VERSION}",
         html,
     )
