@@ -790,10 +790,21 @@ function SidebarItem({ h, activeConvId, onPick, onPin, onDelete }) {
 }
 
 // ─── Topbar ────────────────────────────────────────────────────────────────
-function Topbar({ identity, connected, serverCount, onSettings }) {
+function Topbar({ identity, connected, serverCount, onSettings, sidebarOpen, onToggleSidebar, flowOpen, onToggleFlow }) {
   const initials = identity ? (identity.email || "AD").split("@")[0].slice(0,2).toUpperCase() : "??";
   return (
     <header className="topbar">
+      <button
+        className="icon-btn"
+        title={sidebarOpen ? "Hide conversations" : "Show conversations"}
+        onClick={onToggleSidebar}
+        style={{ opacity: sidebarOpen ? 1 : 0.55 }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <line x1="9" y1="4" x2="9" y2="20" />
+        </svg>
+      </button>
       <div className="brand">
         <div className="brand-mark">SF</div>
         <span className="brand-name">Shift Festival</span>
@@ -805,6 +816,17 @@ function Topbar({ identity, connected, serverCount, onSettings }) {
         <span className="label">{connected ? "Online" : "Reconnecting…"}</span>
         {connected && <span style={{color:"var(--muted-2)"}}>· /ws · {serverCount} MCP servers</span>}
       </span>
+      <button
+        className="icon-btn"
+        title={flowOpen ? "Hide MCP topology" : "Show MCP topology"}
+        onClick={onToggleFlow}
+        style={{ opacity: flowOpen ? 1 : 0.55 }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <line x1="15" y1="4" x2="15" y2="20" />
+        </svg>
+      </button>
       <button className="icon-btn" title="Settings" onClick={onSettings}>{I.cog}</button>
       <div className="user-chip">
         <span className="av">{initials}</span>
@@ -947,6 +969,8 @@ function App() {
   // ─── Settings (localStorage-backed) ──────────────────────────────────────
   const [settings, setSettings] = useState(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [flowOpen, setFlowOpen] = useState(true);
 
   const changeSetting = useCallback((key, val) => {
     setSettings(s => {
@@ -1308,10 +1332,19 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <Topbar identity={identity} connected={connected} serverCount={mcpServerCount} onSettings={() => setShowSettings(true)} />
+    <div className={`app${sidebarOpen ? "" : " no-sidebar"}${flowOpen ? "" : " no-flow"}`}>
+      <Topbar
+        identity={identity}
+        connected={connected}
+        serverCount={mcpServerCount}
+        onSettings={() => setShowSettings(true)}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen(v => !v)}
+        flowOpen={flowOpen}
+        onToggleFlow={() => setFlowOpen(v => !v)}
+      />
 
-      <Sidebar
+      {sidebarOpen && <Sidebar
         history={history}
         activeConvId={activeConvId}
         onPick={onPick}
@@ -1320,7 +1353,7 @@ function App() {
         onNew={handleNew}
         mode={mode}
         setMode={setMode}
-      />
+      />}
 
       {mode === "agent" ? (
         <>
@@ -1379,7 +1412,7 @@ function App() {
             <Composer onSend={handleSend} busy={busy} disabled={!connected} />
           </main>
 
-          <FlowColumn
+          {flowOpen && <FlowColumn
             activeNodes={activeNodes}
             doneNodes={doneNodes}
             activeEdges={activeEdges}
@@ -1390,7 +1423,7 @@ function App() {
             stats={stats}
             tab={flowTab}
             setTab={setFlowTab}
-          />
+          />}
         </>
       ) : (
         <window.LogsScreen

@@ -7,8 +7,8 @@ const FLOW_W = 720;
 const FLOW_H = 460;
 
 const NODES = {
-  user:        { x: 290, y: 25,  label: "Admin",           meta: "",                   icon: "U", svc: "user" },
-  llama:       { x: 290, y: 120, label: "AI Agent",         meta: "Llama 3.3 · 70B",   icon: "L", svc: "llama", llama: true },
+  user:        { x: 305, y: 25,  label: "Admin",           meta: "",                   icon: "U", svc: "user" },
+  llama:       { x: 305, y: 120, label: "AI Agent",         meta: "Llama 3.3 · 70B",   icon: "L", svc: "llama", llama: true },
 
   frontend:    { x: 30,  y: 255, label: "Frontend MCP",    meta: "Sessions · Users",    icon: "W", svc: "frontend" },
   facturatie:  { x: 170, y: 255, label: "Facturatie MCP",  meta: "Invoicing",           icon: "€", svc: "facturatie" },

@@ -259,6 +259,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background:
     radial-gradient(1000px 600px at 100% 0%, rgba(31,58,138,.05) 0%, transparent 60%),
     var(--bg);
+  transition: grid-template-columns .2s ease;
+}
+.app.no-sidebar {
+  grid-template-columns: 0 1fr minmax(420px, 520px);
+}
+.app.no-flow {
+  grid-template-columns: 248px 1fr 0;
+}
+.app.no-sidebar.no-flow {
+  grid-template-columns: 0 1fr 0;
 }
 
 /* ============================================================
