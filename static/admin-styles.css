@@ -1528,13 +1528,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
    ============================================================ */
 .mon-pane {
   flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.mon-scroll {
+  flex: 1; min-height: 0;
   overflow-y: auto;
   padding: 14px;
   display: flex; flex-direction: column;
   gap: 12px;
 }
-.mon-pane::-webkit-scrollbar { width: 6px; }
-.mon-pane::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+.mon-scroll::-webkit-scrollbar { width: 6px; }
+.mon-scroll::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
 
 .mon-hero {
   display: flex; align-items: center;
@@ -1733,9 +1738,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 .mon-footer {
+  flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 4px 4px 0;
+  padding: 8px 14px;
   font-size: 11px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
 }
 .mon-link {
   background: none;

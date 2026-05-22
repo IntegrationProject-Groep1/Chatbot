@@ -358,63 +358,65 @@ function MonitoringPanel() {
 
   return (
     <div className="mon-pane">
-      <div className={`mon-hero ${overallStatus}`}>
-        <div className="mon-hero-dot"></div>
-        <div className="mon-hero-text">
-          <b>{error ? "Monitoring MCP unavailable" : summaryLabel}</b>
-          <span>
-            {error
-              ? <span style={{ color: "var(--hot)", fontSize: 10 }}>{error.slice(0, 60)}</span>
-              : <span>Last updated <span className="mono">{lastRefresh ? lastRefresh.toLocaleTimeString([], { hour12: false }) : "—"}</span> · polling every 5s</span>
-            }
-          </span>
+      <div className="mon-scroll">
+        <div className={`mon-hero ${overallStatus}`}>
+          <div className="mon-hero-dot"></div>
+          <div className="mon-hero-text">
+            <b>{error ? "Monitoring MCP unavailable" : summaryLabel}</b>
+            <span>
+              {error
+                ? <span style={{ color: "var(--hot)", fontSize: 10 }}>{error.slice(0, 60)}</span>
+                : <span>Last updated <span className="mono">{lastRefresh ? lastRefresh.toLocaleTimeString([], { hour12: false }) : "—"}</span> · polling every 5s</span>
+              }
+            </span>
+          </div>
+          <span className="mon-hero-time mono">{new Date().toLocaleTimeString([], { hour12: false })}</span>
         </div>
-        <span className="mon-hero-time mono">{new Date().toLocaleTimeString([], { hour12: false })}</span>
-      </div>
 
-      <div className="mon-kpis">
-        <button className={`mon-kpi${statusFilter === null ? " active" : ""}`} onClick={() => setStatusFilter(null)}>
-          <div className="v mono">{normed.length}</div>
-          <div className="l">Services</div>
-        </button>
-        <button className={`mon-kpi${statusFilter === "online" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "online" ? null : "online")}>
-          <div className="v mono ok">{online}</div>
-          <div className="l">Online</div>
-        </button>
-        <button className={`mon-kpi${statusFilter === "degraded" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "degraded" ? null : "degraded")}>
-          <div className="v mono warn">{degraded}</div>
-          <div className="l">Degraded</div>
-        </button>
-        <button className={`mon-kpi${statusFilter === "offline-all" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "offline-all" ? null : "offline-all")}>
-          <div className="v mono hot">{offlineAll}</div>
-          <div className="l">Offline / Unknown</div>
-        </button>
-      </div>
-
-      <div className="mon-list">
-        <div className="mon-list-head">
-          <span>Service</span>
-          <span>Heartbeat · last 60s</span>
-          <span style={{ textAlign: "right" }}>Status</span>
+        <div className="mon-kpis">
+          <button className={`mon-kpi${statusFilter === null ? " active" : ""}`} onClick={() => setStatusFilter(null)}>
+            <div className="v mono">{normed.length}</div>
+            <div className="l">Services</div>
+          </button>
+          <button className={`mon-kpi${statusFilter === "online" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "online" ? null : "online")}>
+            <div className="v mono ok">{online}</div>
+            <div className="l">Online</div>
+          </button>
+          <button className={`mon-kpi${statusFilter === "degraded" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "degraded" ? null : "degraded")}>
+            <div className="v mono warn">{degraded}</div>
+            <div className="l">Degraded</div>
+          </button>
+          <button className={`mon-kpi${statusFilter === "offline-all" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "offline-all" ? null : "offline-all")}>
+            <div className="v mono hot">{offlineAll}</div>
+            <div className="l">Offline / Unknown</div>
+          </button>
         </div>
-        <div className="mon-list-body">
-          {normed.length === 0 && !error && (
-            <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
-              {lastRefresh ? "No heartbeats received yet." : "Loading…"}
-            </div>
-          )}
-          {normed.filter(s => {
-            if (statusFilter === null) return true;
-            if (statusFilter === "offline-all") return s.status === "quarantine" || s.status === "unknown";
-            return s.status === statusFilter;
-          }).map((s) => (
-            <MonRow key={s.id} svc={s} tick={tick} onOpen={() => setSelected(s)} />
-          ))}
-          {statusFilter !== null && normed.filter(s => statusFilter === "offline-all" ? (s.status === "quarantine" || s.status === "unknown") : s.status === statusFilter).length === 0 && (
-            <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
-              No {statusFilter} services.
-            </div>
-          )}
+
+        <div className="mon-list">
+          <div className="mon-list-head">
+            <span>Service</span>
+            <span>Heartbeat · last 60s</span>
+            <span style={{ textAlign: "right" }}>Status</span>
+          </div>
+          <div className="mon-list-body">
+            {normed.length === 0 && !error && (
+              <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+                {lastRefresh ? "No heartbeats received yet." : "Loading…"}
+              </div>
+            )}
+            {normed.filter(s => {
+              if (statusFilter === null) return true;
+              if (statusFilter === "offline-all") return s.status === "quarantine" || s.status === "unknown";
+              return s.status === statusFilter;
+            }).map((s) => (
+              <MonRow key={s.id} svc={s} tick={tick} onOpen={() => setSelected(s)} />
+            ))}
+            {statusFilter !== null && normed.filter(s => statusFilter === "offline-all" ? (s.status === "quarantine" || s.status === "unknown") : s.status === statusFilter).length === 0 && (
+              <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+                No {statusFilter} services.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
