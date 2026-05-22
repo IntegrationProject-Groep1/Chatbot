@@ -488,7 +488,7 @@ function DashboardStrip({ kpis, onOpenMonitoring }) {
           onClick={clickable ? onOpenMonitoring : undefined}
           title={clickable ? "Open Monitoring panel" : undefined}
           style={{
-            display: "flex", alignItems: "center", gap: 8, padding: "7px 16px",
+            display: "flex", alignItems: "center", gap: 8, padding: "9px 16px 11px",
             borderRight: "1px solid var(--line)", fontSize: 12,
             background: "none", border: "none", borderRight: "1px solid var(--line)",
             cursor: clickable ? "pointer" : "default",
