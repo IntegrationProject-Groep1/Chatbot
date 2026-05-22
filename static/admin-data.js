@@ -7,20 +7,20 @@ const FLOW_W = 720;
 const FLOW_H = 460;
 
 const NODES = {
-  user:        { x: 305, y: 25,  label: "Admin",           meta: "",                   icon: "U", svc: "user" },
-  llama:       { x: 305, y: 120, label: "AI Agent",         meta: "Llama 3.3 · 70B",   icon: "L", svc: "llama", llama: true },
+  user:        { x: 310, y: 25,  label: "Admin",           meta: "",                   icon: "U", svc: "user" },
+  llama:       { x: 310, y: 120, label: "AI Agent",         meta: "Llama 3.3 · 70B",   icon: "L", svc: "llama", llama: true },
 
   frontend:    { x: 30,  y: 255, label: "Frontend MCP",    meta: "Sessions · Users",    icon: "W", svc: "frontend" },
   facturatie:  { x: 170, y: 255, label: "Facturatie MCP",  meta: "Invoicing",           icon: "€", svc: "facturatie" },
   crm:         { x: 310, y: 255, label: "CRM MCP",         meta: "Members",             icon: "C", svc: "crm" },
   kassa:       { x: 450, y: 255, label: "Kassa MCP",       meta: "Orders · Sales",      icon: "K", svc: "kassa" },
-  monitoring:  { x: 580, y: 255, label: "Monitoring MCP",  meta: "Health · Logs",       icon: "M", svc: "monitoring" },
+  monitoring:  { x: 590, y: 255, label: "Monitoring MCP",  meta: "Health · Logs",       icon: "M", svc: "monitoring" },
 
   drupal:      { x: 30,  y: 375, label: "Drupal",          meta: "Content platform",    icon: "D", svc: "frontend" },
   facturatieDb:{ x: 170, y: 375, label: "FossBilling",     meta: "Billing database",    icon: "B", svc: "facturatie" },
   crmDb:       { x: 310, y: 375, label: "Salesforce",      meta: "CRM platform",        icon: "S", svc: "crm" },
   kassaDb:     { x: 450, y: 375, label: "Odoo",            meta: "Point of sale",       icon: "O", svc: "kassa" },
-  elastic:     { x: 580, y: 375, label: "Elasticsearch",   meta: "Search engine",       icon: "E", svc: "monitoring" },
+  elastic:     { x: 590, y: 375, label: "Elasticsearch",   meta: "Search engine",       icon: "E", svc: "monitoring" },
 };
 
 const EDGES = [

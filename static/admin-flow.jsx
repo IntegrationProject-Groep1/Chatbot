@@ -347,13 +347,14 @@ function MonitoringPanel() {
   const unknown    = normed.filter(s => s.status === "unknown").length;
   const offlineAll = quarantined + unknown;
 
-  const overallStatus = (quarantined > 0 || unknown > 0) ? "hot"
-                      : degraded > 0 ? "warn" : "ok";
+  const overallStatus = quarantined > 0 ? "hot"
+                      : (degraded > 0 || unknown > 0) ? "warn"
+                      : "ok";
   const summaryLabel = overallStatus === "ok"
-    ? "All systems operational"
+    ? `All systems operational · ${online} online`
     : overallStatus === "warn"
-      ? `${degraded} degraded · ${online} online`
-      : `${quarantined} offline · ${degraded} degraded`;
+      ? `${degraded ? degraded + " degraded · " : ""}${unknown ? unknown + " unknown · " : ""}${online} online`
+      : `${quarantined} offline · ${degraded} degraded · ${online} online`;
 
   return (
     <div className="mon-pane">
@@ -436,11 +437,20 @@ function MonRow({ svc, tick, onOpen }) {
   const [loaded, setLoaded] = React.useState(false);
 
   React.useEffect(() => {
+    // Monitoring can't heartbeat itself — synthesize a strip matching its
+    // synthesized MCP-reachability status instead of fetching (which returns
+    // an all-miss/red strip).
+    if (svc.id === "monitoring") {
+      const status = svc.status === "online" ? "ok" : "miss";
+      setCells(Array(60).fill({ status }));
+      setLoaded(true);
+      return;
+    }
     fetch(`/api/monitoring/heartbeat/${svc.id}?hours=1`)
       .then(r => r.json())
       .then(d => { setCells(d.cells || []); setLoaded(true); })
       .catch(() => setLoaded(true));
-  }, [svc.id]);
+  }, [svc.id, svc.status]);
 
   const shifted = useMemo(() => {
     if (!loaded) return Array(60).fill({ status: "ok" });
