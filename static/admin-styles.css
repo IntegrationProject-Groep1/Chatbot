@@ -1606,8 +1606,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow: hidden;
 }
 .mon-list-body {
-  overflow-y: visible;
+  max-height: calc(100vh - 520px);
+  min-height: 180px;
+  overflow-y: auto;
 }
+.mon-list-body::-webkit-scrollbar { width: 6px; }
+.mon-list-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
 .mon-list-head {
   display: grid;
   grid-template-columns: 145px 1fr 105px;
