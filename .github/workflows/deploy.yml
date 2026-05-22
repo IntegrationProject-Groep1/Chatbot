@@ -58,7 +58,8 @@ jobs:
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "tag=latest"         >> $GITHUB_OUTPUT
             echo "extra_tag=$V_TAG"   >> $GITHUB_OUTPUT
-          elif [[ "$BRANCH" == "main" ]]; then
+          elif [[ "$MANUAL" == "true" && "$BRANCH" == "main" ]]; then
+            # ⚠️  Handmatige dispatch op main — omzeilt tag-gebaseerde flow
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "tag=latest"         >> $GITHUB_OUTPUT
             echo "extra_tag="         >> $GITHUB_OUTPUT
