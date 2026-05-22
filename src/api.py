@@ -1,10 +1,12 @@
 import asyncio
 import json
 import os
+import re
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -13,6 +15,28 @@ import session_store
 import agent
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+# Cache-bust token: changes on every container start, so a fresh pod always
+# serves fresh asset URLs to bypass Cloudflare / browser caches.
+_ASSET_VERSION = os.environ.get("ASSET_VERSION") or str(int(time.time()))
+
+
+def _serve_index(filename: str) -> HTMLResponse:
+    path = os.path.join(_STATIC_DIR, filename)
+    with open(path, "r", encoding="utf-8") as f:
+        html = f.read()
+    # Append ?v=<version> to every /static/*.{js,jsx,css,svg} reference
+    html = re.sub(
+        r'(/static/[A-Za-z0-9_\-./]+\.(?:js|jsx|css|svg))',
+        lambda m: f"{m.group(1)}?v={_ASSET_VERSION}",
+        html,
+    )
+    return HTMLResponse(
+        html,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @asynccontextmanager
@@ -84,7 +108,7 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 async def root():
     index = os.path.join(_STATIC_DIR, "index.html")
     if os.path.exists(index):
-        return FileResponse(index)
+        return _serve_index("index.html")
     return FileResponse(os.path.join(_STATIC_DIR, "test.html"))
 
 
