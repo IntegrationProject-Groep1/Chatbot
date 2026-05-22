@@ -398,7 +398,7 @@ function AssistantMessage({ text, streaming, cursor, cardEvents, suggestions, on
       <div className="msg-body">
         <div className="msg-meta">
           <b>Admin Assistant</b>
-          <span className="who-tag">llama-3.1-8b-instruct</span>
+          <span className="who-tag">llama-3.3-70b-instruct</span>
           <span>· {new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span>
           {!streaming && text && <CopyButton text={text} className="msg-copy-btn" />}
         </div>
@@ -841,6 +841,7 @@ function App() {
   });
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
 
   // Chat history — array of message objects
   const [messages, setMessages] = useState([]);
@@ -957,8 +958,8 @@ function App() {
   const activateServer = useCallback((toolName) => {
     const svc = serverFromTool(toolName);
     const flow = svc && SERVER_FLOW[svc];
-    const nodes = flow ? flow.nodes : ["user", "api", "llama"];
-    const edges = flow ? flow.edges : ["user->api", "api->llama"];
+    const nodes = flow ? flow.nodes : ["user", "llama"];
+    const edges = flow ? flow.edges : ["user->llama"];
     setActiveNodes(new Set(nodes));
     setActiveEdges(new Set(edges));
     setLitNodes(prev => new Set([...prev, ...nodes]));
@@ -1015,6 +1016,7 @@ function App() {
         break;
 
       case "tool_start": {
+        setIsThinking(false);
         const svc = activateServer(ev.tool);
         pushLog({ src: svc || "llama", svc: svc || "llama", txt: `→ ${ev.tool}`, dur: "—" });
         setStats(s => ({ ...s, tools: s.tools + 1 }));
@@ -1066,6 +1068,7 @@ function App() {
       }
 
       case "stream_token": {
+        setIsThinking(false);
         setStats(s => ({ ...s, tokens: s.tokens + 1 }));
         streamRef.current.text += ev.token;
         const txt = streamRef.current.text;
@@ -1103,17 +1106,18 @@ function App() {
       }
 
       case "done":
+        setIsThinking(false);
         clearActive(); // stops the traveling dot; lit paths stay highlighted
-        if (streamRef.current.msgId) {
-          setMessages(msgs => msgs.map(m => m.id === streamRef.current.msgId ? { ...m, streaming: false } : m));
-        }
+        setMessages(msgs => msgs.map(m => m.kind === "assistant" ? { ...m, streaming: false } : m));
         streamRef.current = { text: "", cards: [], msgId: null };
         toolBundleRef.current = null;
         setBusy(false);
         break;
 
       case "error":
+        setIsThinking(false);
         clearActive();
+        setMessages(msgs => msgs.map(m => m.kind === "assistant" ? { ...m, streaming: false } : m));
         setBusy(false);
         if (ev.message) {
           const errId = "err-" + Date.now();
@@ -1167,6 +1171,7 @@ function App() {
     setLitEdges(new Set());
     clearActive();
     pushLog({ src: "user", svc: "user", txt: `chat → "${text.slice(0, 50)}"`, dur: "—" });
+    setIsThinking(true);
     wsRef.current?.send(JSON.stringify({ type: "chat", message: text }));
   };
 
@@ -1332,7 +1337,8 @@ function App() {
 
               {messages.map(m => {
                 if (m.kind === "user")      return <UserMessage key={m.id} text={m.text} email={identity?.email} />;
-                if (m.kind === "bundle")    return <ToolBundle key={m.id} tools={m.tools} />;
+                // if (m.kind === "bundle")    return <ToolBundle key={m.id} tools={m.tools} />;
+                if (m.kind === "bundle")    return null;
                 if (m.kind === "assistant") return (
                   <AssistantMessage key={m.id}
                     text={m.text} streaming={m.streaming}
@@ -1344,9 +1350,7 @@ function App() {
                 return null;
               })}
 
-              {busy && !messages.some(m => m.kind === "assistant" && m.streaming) && !messages.some(m => m.kind === "bundle" && m.tools.some(t => t.state === "running")) && (
-                <ThinkingBubble label="thinking…" />
-              )}
+              {isThinking && <ThinkingBubble label="thinking…" />}
             </div>
 
             <Composer onSend={handleSend} busy={busy} disabled={!connected} />

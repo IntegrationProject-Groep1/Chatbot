@@ -1040,6 +1040,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Typing */
 .typing {
   display: inline-flex; gap: 4px; align-items: center;
+  align-self: flex-start;
   padding: 6px 12px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1235,6 +1236,58 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .flow-canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 
 /* ----- Flow nodes ----- */
+/* ============================================================
+   SERVER CARD (Servers tab expandable list)
+   ============================================================ */
+.srv-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+  --svc: var(--muted-2);
+  --svc-soft: var(--surface-3);
+}
+.srv-card[data-svc="frontend"]   { --svc: var(--svc-frontend);   --svc-soft: var(--svc-frontend-soft); }
+.srv-card[data-svc="facturatie"] { --svc: var(--svc-facturatie); --svc-soft: var(--svc-facturatie-soft); }
+.srv-card[data-svc="crm"]        { --svc: var(--svc-crm);        --svc-soft: var(--svc-crm-soft); }
+.srv-card[data-svc="kassa"]      { --svc: var(--svc-kassa);      --svc-soft: var(--svc-kassa-soft); }
+.srv-card[data-svc="monitoring"] { --svc: var(--svc-monitoring); --svc-soft: var(--svc-monitoring-soft); }
+
+.srv-card-head {
+  width: 100%;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.srv-card-head:hover { background: var(--svc-soft); }
+
+.srv-chevron {
+  font-size: 8px;
+  color: var(--muted-2);
+  flex-shrink: 0;
+}
+
+.srv-tools {
+  border-top: 1px solid var(--line);
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--bg);
+}
+.srv-tool {
+  font-size: 10.5px;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+}
+
 .fnode-html {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1265,6 +1318,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-color: var(--svc);
   background: var(--svc-soft);
 }
+.srv-card-head .dot,
 .fnode-html .dot {
   width: 18px; height: 18px;
   border-radius: 5px;
@@ -1280,11 +1334,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: var(--svc);
   color: white;
 }
+.srv-card-head .text,
 .fnode-html .text {
   display: flex; flex-direction: column;
   min-width: 0;
   line-height: 1.15;
 }
+.srv-card-head .name,
 .fnode-html .name {
   font-size: 11.5px;
   font-weight: 600;
@@ -1292,6 +1348,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--ink);
   white-space: nowrap;
 }
+.srv-card-head .meta,
 .fnode-html .meta {
   font-size: 9.5px;
   font-family: var(--font-mono);
@@ -1549,11 +1606,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow: hidden;
 }
 .mon-list-body {
-  max-height: 320px;
-  overflow-y: auto;
+  overflow-y: visible;
 }
-.mon-list-body::-webkit-scrollbar { width: 5px; }
-.mon-list-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
 .mon-list-head {
   display: grid;
   grid-template-columns: 145px 1fr 105px;

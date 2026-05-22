@@ -63,15 +63,15 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges, litNodes, litEdges,
           </linearGradient>
         </defs>
 
-        {/* Group brackets for MCP servers row */}
+        {/* Group brackets for MCP servers + backends */}
         <g>
-          <rect x="14" y="305" width={FLOW_W - 28} height="155"
+          <rect x="8" y="238" width={FLOW_W - 16} height="192"
             rx="14" ry="14"
             fill="rgba(243,244,250,0.55)"
             stroke="#E5E8F0"
             strokeDasharray="4 4" />
-          <rect x="28" y="297" width="92" height="16" rx="3" fill="#F2F4FA" />
-          <text x="36" y="308"
+          <rect x="22" y="230" width="92" height="16" rx="3" fill="#F2F4FA" />
+          <text x="30" y="241"
             fontFamily="JetBrains Mono, monospace"
             fontSize="9.5"
             letterSpacing="0.12em"
@@ -200,9 +200,14 @@ function TravelingDot({ path, t }) {
   );
 }
 
+function fmtTool(name) {
+  return name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function MCPServerList() {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState({});
 
   useEffect(() => {
     fetch("/api/mcp/tools")
@@ -210,6 +215,8 @@ function MCPServerList() {
       .then(d => { setServers(d.servers || []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  const toggle = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
 
   if (loading) return (
     <div style={{ padding: "20px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
@@ -224,34 +231,29 @@ function MCPServerList() {
 
   return (
     <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
-      {servers.map((s) => (
-        <div key={s.id}
-          className="fnode-html"
-          data-svc={s.id}
-          style={{ width: "100%", padding: "8px 10px" }}
-        >
-          <div className="dot">{s.id[0].toUpperCase()}</div>
-          <div className="text" style={{ flex: 1 }}>
-            <span className="name" style={{ textTransform: "capitalize" }}>{s.id}</span>
-            <span className="meta">{s.count} tool{s.count !== 1 ? "s" : ""} loaded</span>
-          </div>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 180 }}>
-            {(s.tools || []).slice(0, 2).map((t) => (
-              <span key={t} className="mono" style={{
-                fontSize: 9.5, padding: "1px 6px", borderRadius: 999,
-                background: "var(--surface-2)", border: "1px solid var(--line)",
-                color: "var(--muted)",
-              }}>{t}</span>
-            ))}
-            {(s.tools || []).length > 2 && (
-              <span className="mono" style={{
-                fontSize: 9.5, padding: "1px 6px", borderRadius: 999,
-                background: "var(--surface-3)", color: "var(--muted)",
-              }}>+{s.tools.length - 2}</span>
+      {servers.map((s) => {
+        const open = !!expanded[s.id];
+        return (
+          <div key={s.id} className="srv-card" data-svc={s.id}>
+            <button className="srv-card-head" onClick={() => toggle(s.id)}>
+              <div className="dot" style={{ flexShrink: 0 }}>{s.id[0].toUpperCase()}</div>
+              <div className="text" style={{ flex: 1 }}>
+                <span className="name" style={{ textTransform: "capitalize" }}>{s.id}</span>
+                <span className="meta">{s.count} tool{s.count !== 1 ? "s" : ""}</span>
+              </div>
+              <span className="srv-chevron">{open ? "▲" : "▼"}</span>
+            </button>
+
+            {open && (
+              <div className="srv-tools">
+                {(s.tools || []).map((t) => (
+                  <span key={t} className="srv-tool mono">{fmtTool(t)}</span>
+                ))}
+              </div>
             )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

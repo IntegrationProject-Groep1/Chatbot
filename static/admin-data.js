@@ -4,42 +4,37 @@
    ============================================================ */
 
 const FLOW_W = 720;
-const FLOW_H = 640;
+const FLOW_H = 460;
 
 const NODES = {
-  user:       { x: 290, y: 22,  label: "Admin",         meta: "you@shift.be",   icon: "U", svc: "user" },
-  api:        { x: 290, y: 100, label: "Chatbot API",   meta: "FastAPI · WS",   icon: "A", svc: "user" },
-  llama:      { x: 290, y: 195, label: "Llama 3.1 8B",  meta: "NVIDIA NIM",     icon: "L", svc: "llama", llama: true },
+  user:        { x: 290, y: 25,  label: "Admin",           meta: "",                   icon: "U", svc: "user" },
+  llama:       { x: 290, y: 120, label: "AI Agent",         meta: "Llama 3.3 · 70B",   icon: "L", svc: "llama", llama: true },
 
-  frontend:    { x: 30,  y: 320, label: "Frontend MCP",   meta: ":8006/mcp",     icon: "W", svc: "frontend" },
-  facturatie:  { x: 170, y: 320, label: "Facturatie MCP", meta: ":8007/mcp",     icon: "€", svc: "facturatie" },
-  crm:         { x: 310, y: 320, label: "CRM MCP",        meta: ":8008/mcp",     icon: "C", svc: "crm" },
-  kassa:       { x: 450, y: 320, label: "Kassa MCP",      meta: ":8004/mcp",     icon: "K", svc: "kassa" },
-  monitoring:  { x: 580, y: 320, label: "Monitoring MCP", meta: ":8005/mcp",     icon: "M", svc: "monitoring" },
+  frontend:    { x: 30,  y: 255, label: "Frontend MCP",    meta: "Sessions · Users",    icon: "W", svc: "frontend" },
+  facturatie:  { x: 170, y: 255, label: "Facturatie MCP",  meta: "Invoicing",           icon: "€", svc: "facturatie" },
+  crm:         { x: 310, y: 255, label: "CRM MCP",         meta: "Members",             icon: "C", svc: "crm" },
+  kassa:       { x: 450, y: 255, label: "Kassa MCP",       meta: "Orders · Sales",      icon: "K", svc: "kassa" },
+  monitoring:  { x: 580, y: 255, label: "Monitoring MCP",  meta: "Health · Logs",       icon: "M", svc: "monitoring" },
 
-  drupal:      { x: 30,  y: 440, label: "Drupal JSON:API", meta: "frontend",     icon: "D", svc: "frontend" },
-  facturatieDb:{ x: 170, y: 440, label: "FossBilling",     meta: "MySQL",        icon: "B", svc: "facturatie" },
-  crmDb:       { x: 310, y: 440, label: "Salesforce",      meta: "CRM",          icon: "S", svc: "crm" },
-  kassaDb:     { x: 450, y: 440, label: "Odoo",            meta: "Kassa",        icon: "O", svc: "kassa" },
-  elastic:     { x: 580, y: 440, label: "Elasticsearch",   meta: "logs-*",       icon: "E", svc: "monitoring" },
-
-  audit:       { x: 290, y: 555, label: "RabbitMQ audit",  meta: "audit.events", icon: "Q", svc: "user" },
+  drupal:      { x: 30,  y: 375, label: "Drupal",          meta: "Content platform",    icon: "D", svc: "frontend" },
+  facturatieDb:{ x: 170, y: 375, label: "FossBilling",     meta: "Billing database",    icon: "B", svc: "facturatie" },
+  crmDb:       { x: 310, y: 375, label: "Salesforce",      meta: "CRM platform",        icon: "S", svc: "crm" },
+  kassaDb:     { x: 450, y: 375, label: "Odoo",            meta: "Point of sale",       icon: "O", svc: "kassa" },
+  elastic:     { x: 580, y: 375, label: "Elasticsearch",   meta: "Search engine",       icon: "E", svc: "monitoring" },
 };
 
 const EDGES = [
-  ["user", "api",              "WebSocket"],
-  ["api",  "llama",            "completion"],
-  ["llama", "frontend",        "MCP"],
-  ["llama", "facturatie",      "MCP"],
-  ["llama", "crm",             "MCP"],
-  ["llama", "kassa",           "MCP"],
-  ["llama", "monitoring",      "MCP"],
-  ["frontend",   "drupal",       "GET"],
-  ["facturatie", "facturatieDb", "GET"],
-  ["crm",        "crmDb",        "GET"],
-  ["kassa",      "kassaDb",      "GET"],
-  ["monitoring", "elastic",      "_search"],
-  ["api", "audit",             "publish"],
+  ["user",       "llama",         "chat"],
+  ["llama",      "frontend",      "MCP"],
+  ["llama",      "facturatie",    "MCP"],
+  ["llama",      "crm",           "MCP"],
+  ["llama",      "kassa",         "MCP"],
+  ["llama",      "monitoring",    "MCP"],
+  ["frontend",   "drupal",        "GET"],
+  ["facturatie", "facturatieDb",  "GET"],
+  ["crm",        "crmDb",         "GET"],
+  ["kassa",      "kassaDb",       "GET"],
+  ["monitoring", "elastic",       "search"],
 ];
 
 const MCP_SERVERS = [
@@ -52,11 +47,11 @@ const MCP_SERVERS = [
 
 // Active nodes per MCP server (tool name prefix → nodes to highlight)
 const SERVER_FLOW = {
-  frontend:   { nodes: ["user", "api", "llama", "frontend", "drupal"],    edges: ["user->api", "api->llama", "llama->frontend", "frontend->drupal"] },
-  facturatie: { nodes: ["user", "api", "llama", "facturatie", "facturatieDb"], edges: ["user->api", "api->llama", "llama->facturatie", "facturatie->facturatieDb"] },
-  crm:        { nodes: ["user", "api", "llama", "crm", "crmDb"],          edges: ["user->api", "api->llama", "llama->crm", "crm->crmDb"] },
-  kassa:      { nodes: ["user", "api", "llama", "kassa", "kassaDb"],      edges: ["user->api", "api->llama", "llama->kassa", "kassa->kassaDb"] },
-  monitoring: { nodes: ["user", "api", "llama", "monitoring", "elastic"], edges: ["user->api", "api->llama", "llama->monitoring", "monitoring->elastic"] },
+  frontend:   { nodes: ["user", "llama", "frontend", "drupal"],         edges: ["user->llama", "llama->frontend", "frontend->drupal"] },
+  facturatie: { nodes: ["user", "llama", "facturatie", "facturatieDb"], edges: ["user->llama", "llama->facturatie", "facturatie->facturatieDb"] },
+  crm:        { nodes: ["user", "llama", "crm", "crmDb"],               edges: ["user->llama", "llama->crm", "crm->crmDb"] },
+  kassa:      { nodes: ["user", "llama", "kassa", "kassaDb"],           edges: ["user->llama", "llama->kassa", "kassa->kassaDb"] },
+  monitoring: { nodes: ["user", "llama", "monitoring", "elastic"],      edges: ["user->llama", "llama->monitoring", "monitoring->elastic"] },
 };
 
 const SUGGESTIONS_INITIAL = [

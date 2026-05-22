@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Rounded square background -->
+  <rect width="32" height="32" rx="8" fill="#1F3A8A"/>
+  <!-- Chat bubble body -->
+  <path d="M7 8.5C7 7.12 8.12 6 9.5 6h13C23.88 6 25 7.12 25 8.5v10c0 1.38-1.12 2.5-2.5 2.5H18l-3.5 4-3.5-4H9.5C8.12 21 7 19.88 7 18.5v-10z" fill="white"/>
+  <!-- Lightning bolt spark inside bubble -->
+  <path d="M17.5 9.5l-3.5 5h3l-1 4.5 4.5-6h-3.2z" fill="#1F3A8A"/>
+</svg>
