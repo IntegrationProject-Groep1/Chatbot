@@ -693,6 +693,7 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, l
       {tab === "servers"    && <MCPServerList active={[...activeNodes][0]} />}
       {tab === "monitoring" && <MonitoringPanel />}
 
+      {tab === "graph" && (
       <div className="flow-log">
         <div className="flow-log-head">
           Event log <span className="count">{log.length}</span>
@@ -714,6 +715,7 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, l
           ))}
         </div>
       </div>
+      )}
 
       <div className="flow-stats">
         <div className="flow-stat">

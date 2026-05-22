@@ -510,7 +510,7 @@ function DashboardStrip({ kpis, onOpenMonitoring }) {
 
 // ─── Settings (localStorage-backed, replaces TweaksPanel) ─────────────────
 const SETTINGS_KEY = "shift_admin_settings";
-const SETTINGS_DEFAULTS = { theme: "light", accent: "navy", density: "comfy" };
+const SETTINGS_DEFAULTS = { theme: "light", accent: "navy", density: "comfy", showBundle: false };
 const ACCENT_MAP = {
   navy:   { c: "#1F3A8A", dk: "#172A63", soft: "#EEF1F9", line: "#D7DEF0" },
   teal:   { c: "#0E7C66", dk: "#0A5C4D", soft: "#E6F4F1", line: "#BCDED5" },
@@ -577,13 +577,37 @@ function SettingsModal({ settings, onChange, onClose }) {
           </div>
         </div>
 
-        <div style={{ ...row, marginBottom: 0 }}>
+        <div style={row}>
           <span style={lbl}>Density</span>
           <div style={{ display: "flex", gap: 6 }}>
             {DENSITIES.map(d => (
               <button key={d} style={{ ...pill(settings.density === d), flex: 1 }} onClick={() => onChange("density", d)}>{d}</button>
             ))}
           </div>
+        </div>
+
+        <div style={{ ...row, marginBottom: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <span style={{ ...lbl, marginBottom: 4 }}>Show tool call output</span>
+            <div style={{ fontSize: 11, color: "var(--muted-2)", lineHeight: 1.4 }}>
+              Display raw JSON returned by MCP tools in the chat.
+            </div>
+          </div>
+          <button
+            onClick={() => onChange("showBundle", !settings.showBundle)}
+            style={{
+              width: 38, height: 22, borderRadius: 11, border: "none", cursor: "pointer", padding: 0, flexShrink: 0,
+              background: settings.showBundle ? "var(--primary)" : "var(--line)",
+              position: "relative", transition: "background .15s",
+            }}
+            aria-pressed={settings.showBundle}
+          >
+            <span style={{
+              position: "absolute", top: 2, left: settings.showBundle ? 18 : 2,
+              width: 18, height: 18, borderRadius: "50%", background: "var(--surface)",
+              boxShadow: "0 1px 3px rgba(0,0,0,.2)", transition: "left .15s",
+            }} />
+          </button>
         </div>
       </div>
     </div>
@@ -1337,8 +1361,7 @@ function App() {
 
               {messages.map(m => {
                 if (m.kind === "user")      return <UserMessage key={m.id} text={m.text} email={identity?.email} />;
-                // if (m.kind === "bundle")    return <ToolBundle key={m.id} tools={m.tools} />;
-                if (m.kind === "bundle")    return null;
+                if (m.kind === "bundle")    return settings.showBundle ? <ToolBundle key={m.id} tools={m.tools} /> : null;
                 if (m.kind === "assistant") return (
                   <AssistantMessage key={m.id}
                     text={m.text} streaming={m.streaming}

@@ -1606,9 +1606,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow: hidden;
 }
 .mon-list-body {
-  max-height: calc(100vh - 520px);
-  min-height: 180px;
-  overflow-y: auto;
+  overflow-y: visible;
 }
 .mon-list-body::-webkit-scrollbar { width: 6px; }
 .mon-list-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
