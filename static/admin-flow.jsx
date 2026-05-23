@@ -363,6 +363,52 @@ function MCPServerList() {
   );
 }
 
+// ---------- MCP Servers section — connection status from /api/mcp/status ----------
+function MCPServersSection() {
+  const [servers, setServers] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const load = () =>
+      fetch("/api/mcp/status")
+        .then(r => r.json())
+        .then(d => { setServers(d.servers || []); setLoading(false); })
+        .catch(() => setLoading(false));
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (loading && servers.length === 0) return null;
+
+  const _MCP_LABELS = { frontend: "Frontend", facturatie: "Facturatie", crm: "CRM", kassa: "Kassa", monitoring: "Monitoring" };
+
+  return (
+    <div className="mcp-svc-section">
+      <div className="mcp-svc-head">MCP SERVERS</div>
+      <div className="mcp-svc-grid">
+        {servers.map(s => (
+          <div key={s.id} className={`mcp-svc-card ${s.connected ? "ok" : "off"}`}>
+            <div className="mcp-svc-dot"></div>
+            <div className="mcp-svc-info">
+              <b>{_MCP_LABELS[s.id] || s.id}</b>
+              <span className="mono">{s.connected ? `${s.tool_count ?? "?"} tools` : "disconnected"}</span>
+            </div>
+            <span className={`mon-pill ${s.connected ? "online" : "quarantine"}`}>
+              {s.connected ? "connected" : "offline"}
+            </span>
+          </div>
+        ))}
+        {servers.length === 0 && (
+          <div style={{ padding: "10px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+            No MCP servers connected.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Monitoring panel: live data from /api/monitoring/status ----------
 function _secsSince(ts) {
   if (!ts) return null;
@@ -396,21 +442,36 @@ function MonitoringPanel() {
     Promise.all([
       fetch("/api/monitoring/status").then(r => r.json()),
       fetch("/api/mcp/status").then(r => r.json()).catch(() => ({ servers: [] })),
+      fetch("/api/health").then(r => r.json()).catch(() => null),
     ])
-      .then(([d, mcp]) => {
+      .then(([d, mcp, health]) => {
         if (d.error) { setError(d.error); return; }
         const monitoringMcpConnected = (mcp.servers || []).some(
           s => s.id === "monitoring" && s.connected
         );
         // Monitoring can't classify itself via heartbeats — synthesize its
         // status from whether the chatbot can reach its MCP server.
-        const svcs = (d.services || []).map(s => {
+        let svcs = (d.services || []).map(s => {
           if (s.service !== "monitoring") return s;
           if (monitoringMcpConnected) {
             return { ...s, live: true, status: "online", last_seen: new Date().toISOString() };
           }
           return { ...s, live: false, status: "quarantine" };
         });
+        // Inject chatbot as a service if not already present (heartbeat tracked here, not by monitoring itself)
+        if (!svcs.some(s => s.service === "chatbot")) {
+          svcs = [
+            {
+              service: "chatbot",
+              status: health ? "online" : "quarantine",
+              live: !!health,
+              uptime_seconds: health ? health.uptime_seconds : null,
+              last_seen: health ? health.last_seen : null,
+              synthetic: true,
+            },
+            ...svcs,
+          ];
+        }
         setServices(svcs);
         setLastRefresh(new Date());
         setError(null);
@@ -437,7 +498,7 @@ function MonitoringPanel() {
     return "unknown";
   };
 
-  const _svcLabel = { "identity-service": "Identity", "iot_gateway": "IoT Gateway" };
+  const _svcLabel = { "identity-service": "Identity", "iot_gateway": "IoT Gateway", "chatbot": "Chatbot" };
   const normed = services.map(s => ({
     id: s.service,
     label: _svcLabel[s.service] || (s.service.charAt(0).toUpperCase() + s.service.slice(1)),
@@ -477,6 +538,8 @@ function MonitoringPanel() {
           </div>
           <span className="mon-hero-time mono">{new Date().toLocaleTimeString([], { hour12: false })}</span>
         </div>
+
+        <MCPServersSection />
 
         <div className="mon-kpis">
           <button className={`mon-kpi${statusFilter === null ? " active" : ""}`} onClick={() => setStatusFilter(null)}>
@@ -527,7 +590,7 @@ function MonitoringPanel() {
 
       <div className="mon-footer">
         <span className="mono" style={{ color: "var(--muted-2)" }}>
-          source: heartbeats-* via Monitoring MCP · {normed.length} services
+          source: heartbeats-* via Monitoring MCP · {normed.length} services (chatbot + monitoring: synthetic)
         </span>
         <button className="mon-link mono" onClick={fetchStatus}>Refresh now →</button>
       </div>
@@ -550,6 +613,13 @@ function MonRow({ svc, tick, onOpen }) {
     if (svc.id === "monitoring") {
       const status = svc.status === "online" ? "ok" : "miss";
       setCells(Array(60).fill({ status }));
+      setLoaded(true);
+      return;
+    }
+    // Chatbot heartbeat is tracked here (not by monitoring itself).
+    // Show all-ok since if this panel is visible, the chatbot API is alive.
+    if (svc.id === "chatbot") {
+      setCells(Array(60).fill({ status: svc.status === "online" ? "ok" : "miss" }));
       setLoaded(true);
       return;
     }
@@ -615,13 +685,24 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
   }, [svc.id]);
 
   React.useEffect(() => {
+    if (svc.id === "monitoring" || svc.id === "chatbot") {
+      const status = svc.status === "online" ? "ok" : "miss";
+      const now = new Date();
+      setHeartbeatCells(Array.from({ length: 10 }, (_, i) => ({
+        status,
+        count: status === "ok" ? 60 : 0,
+        timestamp: new Date(now - i * 60000).toISOString(),
+      })));
+      return;
+    }
     fetch(`/api/monitoring/heartbeat/${svc.id}?hours=1`)
       .then(r => r.json())
       .then(d => setHeartbeatCells((d.cells || []).slice(-10).reverse()))
       .catch(() => setHeartbeatCells([]));
-  }, [svc.id]);
+  }, [svc.id, svc.status]);
 
   const meta = {
+    chatbot:    { host: "chatbot.shift.be",          port: 8000, deps: ["nvidia-api", "rabbitmq", "mcp-servers"] },
     crm:        { host: "crm-prod-01.shift.be",      port: 8080, deps: ["salesforce", "identity"] },
     facturatie: { host: "facturatie-prod.shift.be",  port: 8443, deps: ["mysql", "identity"]      },
     frontend:   { host: "www.shift.be",              port: 443,  deps: ["nginx", "redis"]          },
@@ -747,11 +828,17 @@ function BigStrip({ svc, tick }) {
   const [loaded, setLoaded] = React.useState(false);
 
   React.useEffect(() => {
+    if (svc.id === "monitoring" || svc.id === "chatbot") {
+      const status = svc.status === "online" ? "ok" : "miss";
+      setCells(Array(60).fill({ status }));
+      setLoaded(true);
+      return;
+    }
     fetch(`/api/monitoring/heartbeat/${svc.id}?hours=1`)
       .then(r => r.json())
       .then(d => { setCells(d.cells || []); setLoaded(true); })
       .catch(() => setLoaded(true));
-  }, [svc.id]);
+  }, [svc.id, svc.status]);
 
   const shifted = useMemo(() => {
     if (!loaded) return Array(60).fill({ status: "ok" });
