@@ -1986,6 +1986,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: 13px; font-weight: 600;
   color: var(--ink); letter-spacing: -.005em;
 }
+.svc-stat .v.ok   { color: var(--ok); }
+.svc-stat .v.warn { color: var(--warn); }
+.svc-stat .v.hot  { color: var(--hot); }
+.svc-stat .l.hot  { color: var(--hot); }
 
 .svc-section {
   display: flex; flex-direction: column;
