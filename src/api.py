@@ -270,6 +270,33 @@ async def monitoring_heartbeat(service: str, hours: int = 1):
     }
 
 
+@app.get("/api/monitoring/service/{service_id}")
+async def monitoring_service_detail(service_id: str):
+    """Rich per-service detail: uptime, 24h availability, health score, error density."""
+    uptime_result, avail_result, scores_result = await asyncio.gather(
+        _call_mcp("monitoring__get_service_uptime",        {"service": service_id}),
+        _call_mcp("monitoring__get_service_availability",  {"service": service_id, "hours": 24}),
+        _call_mcp("monitoring__get_health_scores"),
+    )
+    score_entry = next(
+        (s for s in scores_result.get("scores", []) if s.get("service") == service_id),
+        None,
+    )
+    return {
+        "service":          service_id,
+        "uptime_seconds":   uptime_result.get("uptime_seconds"),
+        "uptime_human":     uptime_result.get("uptime_human"),
+        "last_heartbeat":   uptime_result.get("last_heartbeat"),
+        "availability_24h": avail_result.get("availability_pct"),
+        "heartbeats_24h":   avail_result.get("heartbeats_received"),
+        "health_score":     score_entry.get("health_score")  if score_entry else None,
+        "error_density":    score_entry.get("error_density") if score_entry else None,
+        "errors_24h":       round((score_entry.get("error_density", 0) or 0)
+                                  * (score_entry.get("heartbeats", 0) or 0) / 1000.0)
+                            if score_entry else None,
+    }
+
+
 @app.get("/api/dashboard/summary")
 async def dashboard_summary():
     """Aggregated KPIs from monitoring for the dashboard strip."""
