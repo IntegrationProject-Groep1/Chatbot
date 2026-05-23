@@ -42,9 +42,8 @@ const TOPO = [
   { from: "facturatie",       to: "crm"              },  // invoice_status, payment_registered
   { from: "facturatie",       to: "mailing"          },  // send_mailing
   { from: "facturatie",       to: "frontend"         },  // invoice_available
-  // Planning outgoing
-  { from: "planning",         to: "crm"              },  // session_created/updated/deleted
-  { from: "planning",         to: "frontend"         },  // session events + calendar_invite_confirmed
+  // Planning outgoing — no DB, frontend owns all session data
+  { from: "planning",         to: "frontend"         },  // calendar_invite_confirmed
   { from: "planning",         to: "mailing"          },  // email notifications
   // Identity outgoing
   { from: "identity-service", to: "crm"              },  // user_event fanout

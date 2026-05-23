@@ -350,11 +350,9 @@ _FLOW_ROUTES: dict[tuple[str, str], list[str]] = {
     ("facturatie",       "invoice_available"):["frontend"],    # notify portal
 
     # ── Planning → outgoing ────────────────────────────────────────────────────
-    ("planning",         "calendar"):        ["frontend"],     # calendar_invite_confirmed (confirmed by ES log)
-    ("planning",         "session"):         ["crm", "frontend"],  # session_created/updated/deleted
-    ("planning",         "session_created"): ["crm", "frontend"],
-    ("planning",         "session_updated"): ["crm", "frontend"],
-    ("planning",         "session_deleted"): ["crm", "frontend"],
+    # Planning has no DB; frontend owns all session data.
+    # Planning only confirms calendar invites back to frontend and sends emails.
+    ("planning",         "calendar"):        ["frontend"],     # calendar_invite_confirmed
     ("planning",         "email"):           ["mailing"],
 
     # ── Identity → outgoing ────────────────────────────────────────────────────
