@@ -1,34 +1,29 @@
 name: Deploy Pipeline
 
-# Flow:
-#   dev branch  → CI runt → deploy triggert (workflow_run, branches: dev)    → latest-dev
-#   v* tag      → CI runt → deploy triggert (workflow_run, branches: "v*")   → latest + v-tag
-#   main branch → CI runt → deploy triggert NIET (niet in branch filter)
+# Triggered automatisch na CI Pipeline. Gaat alleen door als CI slaagt
+# EN de branch/tag overeenkomt met een deploy-target.
 #
-# CI moet altijd eerst slagen — workflow_run garandeert dit voor alle gevallen.
-# workflow_dispatch is een noodmaatregel en omzeilt de tag-gebaseerde flow.
+# ⚠️  workflow_dispatch is STERK AFGERADEN — gebruik dit alleen als
+#     uiterste maatregel en alleen als je de volledige deploy-flow begrijpt.
+#     Handmatige dispatches omzeilen het normale tag-gebaseerde release-proces.
 
 on:
   workflow_run:
     workflows: ["CI Pipeline"]
     types:
       - completed
-    branches:
-      - dev    # auto-deploy na CI op dev
-      - "v*"   # prod release: head_branch = tag naam bij tag-triggered CI
   workflow_dispatch:
 
 jobs:
   build-and-push:
     name: Build and Push Docker Image
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
 
     steps:
       - name: Checkout code
@@ -47,7 +42,8 @@ jobs:
           else
             BRANCH="${{ github.event.workflow_run.head_branch }}"
             V_TAG=$(git tag --points-at HEAD | grep -E '^v' | head -1 || true)
-            # head_branch is de tag naam zelf bij een tag-triggered CI run
+            # Fallback: bij een GitHub Release tag push is head_branch de tag-naam zelf.
+            # fetch-depth=1 op een specifieke SHA haalt tags niet altijd op.
             if [[ -z "$V_TAG" && "$BRANCH" =~ ^v[0-9] ]]; then
               V_TAG="$BRANCH"
             fi
@@ -62,7 +58,8 @@ jobs:
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "tag=latest"         >> $GITHUB_OUTPUT
             echo "extra_tag=$V_TAG"   >> $GITHUB_OUTPUT
-          elif [[ "$MANUAL" == "true" ]]; then
+          elif [[ "$MANUAL" == "true" && "$BRANCH" == "main" ]]; then
+            # ⚠️  Handmatige dispatch op main — omzeilt tag-gebaseerde flow
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "tag=latest"         >> $GITHUB_OUTPUT
             echo "extra_tag="         >> $GITHUB_OUTPUT
@@ -106,7 +103,7 @@ jobs:
             ghcr.io/${{ steps.repo_name.outputs.value }}:${{ steps.vars.outputs.extra_tag }}
             ghcr.io/${{ steps.repo_name.outputs.value }}:${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Build and push Docker image (handmatige dispatch)
+      - name: Build and push Docker image (prod — handmatige dispatch)
         if: steps.vars.outputs.tag == 'latest' && steps.vars.outputs.extra_tag == ''
         uses: docker/build-push-action@v5
         with:
