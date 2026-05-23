@@ -363,6 +363,75 @@ async def dashboard_summary():
     }
 
 
+# ── Service metadata — previously hardcoded in admin-flow.jsx ────────────────
+_SERVICE_METADATA = {
+    "chatbot":           { "host": "chatbot.shift.be",          "port": 8000,  "deps": ["nvidia-api", "rabbitmq", "mcp-servers"] },
+    "crm":               { "host": "crm-prod-01.shift.be",      "port": 8080,  "deps": ["salesforce", "identity"] },
+    "facturatie":        { "host": "facturatie-prod.shift.be",  "port": 8443,  "deps": ["mysql", "identity"] },
+    "frontend":          { "host": "www.shift.be",              "port": 443,   "deps": ["nginx", "frontend-db"] },
+    "kassa":             { "host": "kassa-prod.shift.be",       "port": 8090,  "deps": ["odoo", "facturatie"] },
+    "mailing":           { "host": "mailing.shift.be",          "port": 8080,  "deps": ["rabbitmq", "sendgrid"] },
+    "monitoring":        { "host": "monitoring-prod.shift.be",  "port": 8200,  "deps": ["elasticsearch"] },
+    "identity-service":  { "host": "identity-prod.shift.be",    "port": 8443,  "deps": ["postgres"] },
+    "frontend-mcp":      { "host": "frontend-mcp-service",      "port": 8006,  "deps": ["frontend-drupal", "frontend-db"] },
+    "kassa-mcp":         { "host": "kassa-mcp-service",         "port": 8004,  "deps": ["kassa-web"] },
+    "facturatie-mcp":    { "host": "facturatie-mcp-service",    "port": 8007,  "deps": ["fossbilling"] },
+    "crm-mcp":           { "host": "crm-mcp-service",           "port": 8008,  "deps": ["crm"] },
+    "monitoring-mcp":    { "host": "monitoring-mcp-service",    "port": 8005,  "deps": ["elasticsearch"] },
+}
+
+
+@app.get("/api/services/metadata")
+async def services_metadata():
+    """Complete service topology with host, port, and dependencies.
+    
+    Combines hardcoded metadata with live health status from monitoring.
+    Used by Overview dashboard to display rich service cards.
+    """
+    status_result = await _call_mcp("monitoring__get_service_status")
+    services = status_result.get("services", []) if isinstance(status_result, dict) else []
+    
+    # Remap last_heartbeat → last_seen if needed (same as monitoring_status endpoint)
+    for svc in services:
+        if "last_heartbeat" in svc and "last_seen" not in svc:
+            svc["last_seen"] = svc.pop("last_heartbeat")
+    
+    # Build a health lookup
+    health_by_svc = {s.get("service"): s for s in services}
+    
+    # Enrich metadata with live health
+    enriched = []
+    for svc_id, meta in _SERVICE_METADATA.items():
+        health = health_by_svc.get(svc_id, {})
+        enriched.append({
+            "id": svc_id,
+            "host": meta["host"],
+            "port": meta["port"],
+            "deps": meta["deps"],
+            "status": health.get("status", "unknown"),
+            "live": health.get("live", False),
+            "uptime_seconds": health.get("uptime_seconds"),
+            "last_seen": health.get("last_seen"),
+        })
+    
+    # Also include services from monitoring that aren't in the hardcoded list (e.g., custom services)
+    for svc in services:
+        svc_id = svc.get("service")
+        if svc_id and svc_id not in _SERVICE_METADATA:
+            enriched.append({
+                "id": svc_id,
+                "host": "—",
+                "port": 0,
+                "deps": [],
+                "status": svc.get("status", "unknown"),
+                "live": svc.get("live", False),
+                "uptime_seconds": svc.get("uptime_seconds"),
+                "last_seen": svc.get("last_seen"),
+            })
+    
+    return {"services": enriched, "count": len(enriched)}
+
+
 @app.get("/api/mcp/tools")
 async def list_mcp_tools():
     """All loaded MCP tools grouped by server label, with live connection status."""

@@ -599,6 +599,133 @@ function MCPServersSection() {
   );
 }
 
+// ---------- Service Card Component — for Overview dashboard ─────────────────
+function ServiceCard({ svc, metadata, onOpen }) {
+  if (!svc) return null;
+  const meta = metadata || {};
+  const isOnline = svc.status === "online";
+  const isDegraded = svc.status === "degraded";
+  
+  return (
+    <div className={`svc-card ${svc.status}`} onClick={onOpen}>
+      <div className="svc-card-header">
+        <span className={`svc-card-status`}>
+          {isOnline ? "●" : isDegraded ? "◐" : "○"}
+        </span>
+        <span className="svc-card-name">{svc.label}</span>
+      </div>
+      <div className="svc-card-body">
+        <div className="svc-card-row">
+          <span className="label">Host</span>
+          <span className="value mono">{meta.host || "—"}</span>
+        </div>
+        <div className="svc-card-row">
+          <span className="label">Port</span>
+          <span className="value mono">{meta.port || "—"}</span>
+        </div>
+        {svc.uptime && (
+          <div className="svc-card-row">
+            <span className="label">Uptime</span>
+            <span className="value mono">{svc.uptime}</span>
+          </div>
+        )}
+        {svc.lastSeen != null && (
+          <div className="svc-card-row">
+            <span className="label">Last seen</span>
+            <span className="value mono">{_sinceLabel(svc.lastSeen)}</span>
+          </div>
+        )}
+      </div>
+      {meta.deps && meta.deps.length > 0 && (
+        <div className="svc-card-footer">
+          <div className="svc-card-deps">
+            {meta.deps.slice(0, 2).map((d, i) => (
+              <span key={i} className="svc-dep mono">●{d}</span>
+            ))}
+            {meta.deps.length > 2 && (
+              <span className="svc-dep mono">+{meta.deps.length - 2}</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Enhanced Overview Dashboard ────────────────────────────────────
+function OverviewDashboard({ services, metadata, onOpenService }) {
+  const [loading, setLoading] = React.useState(false);
+  
+  if (!metadata || metadata.length === 0) {
+    return (
+      <div style={{ padding: "16px", fontSize: 12, color: "var(--muted-2)" }}>
+        Loading service topology…
+      </div>
+    );
+  }
+
+  // Group services by status for cleaner layout
+  const online = services.filter(s => s.status === "online");
+  const degraded = services.filter(s => s.status === "degraded");
+  const offline = services.filter(s => s.status === "quarantine" || s.status === "unknown");
+
+  // Create lookup for metadata by service id
+  const metaById = {};
+  metadata.forEach(m => { metaById[m.id] = m; });
+
+  return (
+    <div className="overview-dashboard">
+      {online.length > 0 && (
+        <section className="overview-section">
+          <h3 className="overview-section-title ok">● Online ({online.length})</h3>
+          <div className="overview-grid">
+            {online.map(svc => (
+              <ServiceCard 
+                key={svc.id} 
+                svc={svc} 
+                metadata={metaById[svc.id]}
+                onOpen={() => onOpenService(svc)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      
+      {degraded.length > 0 && (
+        <section className="overview-section">
+          <h3 className="overview-section-title warn">◐ Degraded ({degraded.length})</h3>
+          <div className="overview-grid">
+            {degraded.map(svc => (
+              <ServiceCard 
+                key={svc.id} 
+                svc={svc} 
+                metadata={metaById[svc.id]}
+                onOpen={() => onOpenService(svc)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      
+      {offline.length > 0 && (
+        <section className="overview-section">
+          <h3 className="overview-section-title hot">○ Offline / Unknown ({offline.length})</h3>
+          <div className="overview-grid">
+            {offline.map(svc => (
+              <ServiceCard 
+                key={svc.id} 
+                svc={svc} 
+                metadata={metaById[svc.id]}
+                onOpen={() => onOpenService(svc)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 // ---------- Monitoring panel: live data from /api/monitoring/status ----------
 function _secsSince(ts) {
   if (!ts) return null;
@@ -622,6 +749,7 @@ function _sinceLabel(secs) {
 
 function MonitoringPanel() {
   const [services, setServices] = useState([]);
+  const [metadata, setMetadata] = useState([]);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [error, setError] = useState(null);
   const [tick, setTick] = useState(0);
@@ -633,8 +761,9 @@ function MonitoringPanel() {
       fetch("/api/monitoring/status").then(r => r.json()),
       fetch("/api/mcp/status").then(r => r.json()).catch(() => ({ servers: [] })),
       fetch("/api/health").then(r => r.json()).catch(() => null),
+      fetch("/api/services/metadata").then(r => r.json()).catch(() => ({ services: [] })),
     ])
-      .then(([d, mcp, health]) => {
+      .then(([d, mcp, health, meta]) => {
         if (d.error) { setError(d.error); return; }
         const monitoringMcpConnected = (mcp.servers || []).some(
           s => s.id === "monitoring" && s.connected
@@ -663,6 +792,7 @@ function MonitoringPanel() {
           ];
         }
         setServices(svcs);
+        setMetadata(meta.services || []);
         setLastRefresh(new Date());
         setError(null);
       })
@@ -689,13 +819,22 @@ function MonitoringPanel() {
   };
 
   const _svcLabel = { "identity-service": "Identity", "iot_gateway": "IoT Gateway", "chatbot": "Chatbot" };
-  const normed = services.map(s => ({
-    id: s.service,
-    label: _svcLabel[s.service] || (s.service.charAt(0).toUpperCase() + s.service.slice(1)),
-    status: normalise(s),
-    uptime: _uptimeLabel(s.uptime_seconds),
-    lastSeen: _secsSince(s.last_seen),
-  }));
+  
+  // Build metadata lookup
+  const metaById = {};
+  metadata.forEach(m => { metaById[m.id] = m; });
+  
+  const normed = services.map(s => {
+    const meta = metaById[s.service] || { host: "—", port: 0, deps: [] };
+    return {
+      id: s.service,
+      label: _svcLabel[s.service] || (s.service.charAt(0).toUpperCase() + s.service.slice(1)),
+      status: normalise(s),
+      uptime: _uptimeLabel(s.uptime_seconds),
+      lastSeen: _secsSince(s.last_seen),
+      metadata: { host: meta.host, port: meta.port, deps: meta.deps },
+    };
+  });
 
   const online     = normed.filter(s => s.status === "online").length;
   const degraded   = normed.filter(s => s.status === "degraded").length;
@@ -716,7 +855,6 @@ function MonitoringPanel() {
     <div className="mon-pane">
       <div className="infra-sub-tabs mon-sub-tabs">
         <button className={`infra-sub-tab ${sub === "overview" ? "active" : ""}`} onClick={() => setSub("overview")}>Overview</button>
-        <button className={`infra-sub-tab ${sub === "servers" ? "active" : ""}`} onClick={() => setSub("servers")}>Servers</button>
         <button className={`infra-sub-tab ${sub === "heartbeats" ? "active" : ""}`} onClick={() => setSub("heartbeats")}>Heartbeats</button>
       </div>
       <div className="mon-scroll">
@@ -754,10 +892,17 @@ function MonitoringPanel() {
               <div className="l">Offline / Unknown</div>
             </button>
           </div>
+
+          <div style={{ marginTop: "24px" }}>
+            <OverviewDashboard 
+              services={normed} 
+              metadata={metadata}
+              onOpenService={setSelected}
+            />
+          </div>
           </>
         )}
 
-        {sub === "servers" && <MCPServersSection />}
         {sub === "heartbeats" && <InfraHeartbeats onOpenService={setSelected} />}
       </div>
 
@@ -885,21 +1030,9 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
       .catch(() => {});
   }, [svc.id]);
 
-  const meta = {
-    chatbot:    { host: "chatbot.shift.be",          port: 8000, deps: ["nvidia-api", "rabbitmq", "mcp-servers"] },
-    crm:        { host: "crm-prod-01.shift.be",      port: 8080, deps: ["salesforce", "identity"] },
-    facturatie: { host: "facturatie-prod.shift.be",  port: 8443, deps: ["mysql", "identity"]      },
-    frontend:   { host: "www.shift.be",              port: 443,  deps: ["nginx", "frontend-db"]    },
-    kassa:      { host: "kassa-prod.shift.be",       port: 8090, deps: ["odoo", "facturatie"]     },
-    mailing:    { host: "mailing.shift.be",          port: 8080, deps: ["rabbitmq", "sendgrid"]   },
-    monitoring: { host: "monitoring-prod.shift.be",  port: 8200, deps: ["elasticsearch"]           },
-    "identity-service": { host: "identity-prod.shift.be", port: 8443, deps: ["postgres"]            },
-    "frontend-mcp":   { host: "frontend-mcp-service",   port: 8006, deps: ["frontend-drupal", "frontend-db"] },
-    "kassa-mcp":      { host: "kassa-mcp-service",      port: 8004, deps: ["kassa-web"] },
-    "facturatie-mcp": { host: "facturatie-mcp-service", port: 8007, deps: ["fossbilling"] },
-    "crm-mcp":        { host: "crm-mcp-service",        port: 8008, deps: ["crm"] },
-    "monitoring-mcp": { host: "monitoring-mcp-service", port: 8005, deps: ["elasticsearch"] },
-  }[svc.id] || { host: "—", port: 0, deps: [] };
+  // Get metadata from the service (enriched in MonitoringPanel)
+  // Fallback to minimal metadata if not found
+  const meta = svc.metadata || { host: "—", port: 0, deps: [] };
 
   const uptimeHuman = detail?.uptime_human || svc.uptime;
   const avail       = detail?.availability_24h;

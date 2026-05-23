@@ -3484,6 +3484,154 @@ body[data-theme="slate"] .mf-canvas-wrap {
 .mf-fbtn:hover { color: var(--ink); }
 .mf-fbtn.on { background: var(--primary-soft); color: var(--primary); border-color: var(--primary-line); }
 
+/* ============================================================
+   OVERVIEW DASHBOARD — Service cards & grid
+   ============================================================ */
+.overview-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.overview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overview-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.overview-section-title.ok { color: var(--ok); }
+.overview-section-title.warn { color: var(--warn); }
+.overview-section-title.hot { color: var(--hot); }
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.svc-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  transition: all .12s var(--ease);
+  cursor: pointer;
+}
+
+.svc-card:hover {
+  border-color: var(--muted-2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.svc-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.svc-card-status {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.svc-card.online .svc-card-status {
+  color: var(--ok);
+}
+
+.svc-card.degraded .svc-card-status {
+  color: var(--warn);
+}
+
+.svc-card.quarantine .svc-card-status,
+.svc-card.unknown .svc-card-status {
+  color: var(--hot);
+}
+
+.svc-card-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svc-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.svc-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.svc-card-row .label {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.svc-card-row .value {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-align: right;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svc-card-footer {
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.svc-card-deps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.svc-dep {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── Dark / slate theme fix ── */
 body[data-theme="dark"] .mf-tooltip,
 body[data-theme="slate"] .mf-tooltip {
