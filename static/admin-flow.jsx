@@ -663,15 +663,18 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
   const tone = isHot ? "hot" : isWarn ? "warn" : "ok";
   const [realLogs, setRealLogs] = React.useState(null);
   const [heartbeatCells, setHeartbeatCells] = React.useState(null);
+  const [detail, setDetail] = React.useState(null);   // from /api/monitoring/service/{id}
+
+  const isSynthetic = svc.id === "monitoring" || svc.id === "chatbot";
 
   React.useEffect(() => {
-    fetch("/api/monitoring/errors?limit=100")
+    fetch("/api/monitoring/errors?limit=200")
       .then((r) => r.json())
       .then((d) => {
         const all = d.errors || [];
         const filtered = all
           .filter((e) => (e.source || "").toLowerCase() === svc.id.toLowerCase())
-          .slice(0, 8)
+          .slice(0, 10)
           .map((e) => ({
             lvl: e.level || "info",
             t: e["@timestamp"]
@@ -685,7 +688,7 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
   }, [svc.id]);
 
   React.useEffect(() => {
-    if (svc.id === "monitoring" || svc.id === "chatbot") {
+    if (isSynthetic) {
       const status = svc.status === "online" ? "ok" : "miss";
       const now = new Date();
       setHeartbeatCells(Array.from({ length: 10 }, (_, i) => ({
@@ -701,19 +704,36 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
       .catch(() => setHeartbeatCells([]));
   }, [svc.id, svc.status]);
 
+  React.useEffect(() => {
+    if (isSynthetic) return;
+    fetch(`/api/monitoring/service/${svc.id}`)
+      .then(r => r.json())
+      .then(d => setDetail(d))
+      .catch(() => {});
+  }, [svc.id]);
+
   const meta = {
     chatbot:    { host: "chatbot.shift.be",          port: 8000, deps: ["nvidia-api", "rabbitmq", "mcp-servers"] },
     crm:        { host: "crm-prod-01.shift.be",      port: 8080, deps: ["salesforce", "identity"] },
     facturatie: { host: "facturatie-prod.shift.be",  port: 8443, deps: ["mysql", "identity"]      },
     frontend:   { host: "www.shift.be",              port: 443,  deps: ["nginx", "redis"]          },
     kassa:      { host: "kassa-prod.shift.be",       port: 8090, deps: ["odoo", "facturatie"]     },
+    mailing:    { host: "mailing.shift.be",          port: 8080, deps: ["rabbitmq", "sendgrid"]   },
     monitoring: { host: "monitoring-prod.shift.be",  port: 8200, deps: ["elasticsearch"]           },
     identity:   { host: "identity-prod.shift.be",    port: 8443, deps: ["postgres"]                },
   }[svc.id] || { host: "—", port: 0, deps: [] };
 
+  const uptimeHuman = detail?.uptime_human || svc.uptime;
+  const avail       = detail?.availability_24h;
+  const healthScore = detail?.health_score;
+  const errDensity  = detail?.error_density;
+  const hb24h       = detail?.heartbeats_24h;
+
+  const _scoreColor = (s) => s >= 8 ? "ok" : s >= 5 ? "warn" : "hot";
+  const _availColor = (a) => a >= 99 ? "ok" : a >= 90 ? "warn" : "hot";
+
   const logs = realLogs !== null ? realLogs : [];
 
-  // Lock body scroll? simple: stopPropagation
   return (
     <div className="svc-drawer-backdrop" onClick={onClose}>
       <aside className={`svc-drawer ${tone}`} onClick={(e) => e.stopPropagation()}>
@@ -730,19 +750,23 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
         </header>
 
         <div className="svc-drawer-body">
-          {/* Quick stats */}
+          {/* Quick stats — real data from /api/monitoring/service/{id} */}
           <div className="svc-stats">
             <div className="svc-stat">
               <div className="l">Uptime</div>
-              <div className="v">{svc.uptime}</div>
+              <div className="v mono">{uptimeHuman || "—"}</div>
             </div>
             <div className="svc-stat">
-              <div className="l">Host</div>
-              <div className="v mono" style={{ fontSize: 10 }}>{meta.host}</div>
+              <div className="l">Availability 24h</div>
+              <div className={`v mono ${avail != null ? _availColor(avail) : ""}`}>
+                {avail != null ? `${avail.toFixed(1)}%` : isSynthetic ? "n/a" : "…"}
+              </div>
             </div>
             <div className="svc-stat">
-              <div className="l">Port</div>
-              <div className="v mono">{meta.port || "—"}</div>
+              <div className="l">Health score</div>
+              <div className={`v mono ${healthScore != null ? _scoreColor(healthScore) : ""}`}>
+                {healthScore != null ? `${healthScore}/10` : isSynthetic ? "n/a" : "…"}
+              </div>
             </div>
             <div className="svc-stat">
               <div className="l">Last seen</div>
@@ -750,16 +774,36 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
             </div>
           </div>
 
-          {/* Heartbeat sparkline · last 60s — bigger version of the row strip */}
+          {/* Error density + heartbeats if available */}
+          {detail && (errDensity != null || hb24h != null) && (
+            <div className="svc-stats" style={{ marginTop: 0 }}>
+              {hb24h != null && (
+                <div className="svc-stat">
+                  <div className="l">Heartbeats 24h</div>
+                  <div className="v mono">{hb24h.toLocaleString()}</div>
+                </div>
+              )}
+              {errDensity != null && (
+                <div className="svc-stat">
+                  <div className={`l ${errDensity > 50 ? "hot" : ""}`}>Error density</div>
+                  <div className={`v mono ${errDensity > 50 ? "hot" : errDensity > 10 ? "warn" : "ok"}`}>
+                    {errDensity.toFixed(1)}‰
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Heartbeat sparkline · last 60 min */}
           <section className="svc-section">
-            <h4>Heartbeat · last 60s</h4>
+            <h4>Heartbeat · last 60 min</h4>
             <BigStrip svc={svc} tick={tick} />
-            <div className="svc-section-foot mono">last 60 min · 1-min buckets</div>
+            <div className="svc-section-foot mono">1-min buckets{isSynthetic ? " · synthesized" : " · from Elasticsearch"}</div>
           </section>
 
-          {/* Last 10 heartbeats */}
+          {/* Last 10 heartbeat buckets */}
           <section className="svc-section">
-            <h4>Last 10 heartbeats</h4>
+            <h4>Last 10 min — heartbeat buckets</h4>
             <div className="svc-hb-list">
               {heartbeatCells === null && (
                 <div style={{ fontSize: 11, color: "var(--muted-2)", padding: "8px 0", fontFamily: "var(--font-mono)" }}>Loading…</div>
