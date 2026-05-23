@@ -363,6 +363,199 @@ function MCPServerList() {
   );
 }
 
+// ---------- Infrastructure panel — heartbeats + logs dashboard ----------
+const _INFRA_SYSTEMS = [
+  { id: "chatbot",        label: "Chatbot",          group: "core" },
+  { id: "frontend",       label: "Frontend",         group: "core" },
+  { id: "kassa",          label: "Kassa",            group: "core" },
+  { id: "facturatie",     label: "Facturatie",       group: "core" },
+  { id: "crm",            label: "CRM",              group: "core" },
+  { id: "planning",       label: "Planning",         group: "core" },
+  { id: "mailing",        label: "Mailing",          group: "core" },
+  { id: "identity-service", label: "Identity",       group: "core" },
+  { id: "monitoring",     label: "Monitoring (ES)",  group: "core" },
+  { id: "frontend-mcp",   label: "Frontend MCP",     group: "mcp"  },
+  { id: "kassa-mcp",      label: "Kassa MCP",        group: "mcp"  },
+  { id: "facturatie-mcp", label: "Facturatie MCP",   group: "mcp"  },
+  { id: "crm-mcp",        label: "CRM MCP",          group: "mcp"  },
+  { id: "monitoring-mcp", label: "Monitoring MCP",   group: "mcp"  },
+];
+
+function InfraHeartbeatRow({ sys, statusMap, mcpMap }) {
+  const [cells, setCells] = React.useState([]);
+
+  React.useEffect(() => {
+    if (sys.group === "mcp") {
+      const connected = (mcpMap[sys.id.replace("-mcp", "")] || {}).connected;
+      setCells(Array(15).fill({ status: connected ? "ok" : "miss" }));
+      return;
+    }
+    fetch(`/api/monitoring/heartbeat/${sys.id}?hours=1`)
+      .then(r => r.json())
+      .then(d => setCells((d.cells || []).slice(-15)))
+      .catch(() => {});
+  }, [sys.id, sys.group, JSON.stringify(mcpMap)]);
+
+  const svc = statusMap[sys.id] || {};
+  const live = svc.live !== undefined ? svc.live : (cells.length > 0 && cells[cells.length - 1]?.status === "ok");
+  const status = live ? "online" : (svc.status === "no_data" ? "unknown" : "offline");
+  const pill = status === "online" ? "ok" : status === "unknown" ? "warn" : "hot";
+  const uptime = svc.uptime_seconds != null ? _uptimeLabel(svc.uptime_seconds) : "—";
+  const lastSeen = svc.last_seen ? _secsSince(svc.last_seen) : "—";
+
+  return (
+    <div className="infra-hb-row">
+      <div className="infra-hb-name">
+        <span className={`infra-hb-dot ${pill}`}></span>
+        {sys.label}
+      </div>
+      <div className="infra-hb-cells">
+        {cells.map((c, i) => (
+          <div key={i} className={`infra-hb-cell ${c.status === "ok" ? "ok" : "miss"}`}></div>
+        ))}
+        {cells.length === 0 && <span style={{ fontSize: 10, color: "var(--muted-2)" }}>loading…</span>}
+      </div>
+      <div className="infra-hb-meta mono">
+        <span className={`mon-pill ${pill === "ok" ? "online" : pill === "warn" ? "degraded" : "quarantine"}`}>{status}</span>
+        <span style={{ color: "var(--muted-2)" }}>{uptime}</span>
+        <span style={{ color: "var(--muted-3)" }}>{lastSeen}</span>
+      </div>
+    </div>
+  );
+}
+
+function InfraHeartbeats() {
+  const [statusMap, setStatusMap] = React.useState({});
+  const [mcpMap, setMcpMap] = React.useState({});
+
+  React.useEffect(() => {
+    const load = () => Promise.all([
+      fetch("/api/monitoring/status").then(r => r.json()).catch(() => ({ services: [] })),
+      fetch("/api/mcp/status").then(r => r.json()).catch(() => ({ servers: [] })),
+    ]).then(([d, mcp]) => {
+      const sm = {};
+      (d.services || []).forEach(s => { sm[s.service] = s; });
+      const mm = {};
+      (mcp.servers || []).forEach(s => { mm[s.id] = s; });
+      setStatusMap(sm);
+      setMcpMap(mm);
+    });
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  const core = _INFRA_SYSTEMS.filter(s => s.group === "core");
+  const mcp  = _INFRA_SYSTEMS.filter(s => s.group === "mcp");
+
+  const onlineCore = core.filter(s => statusMap[s.id]?.live).length;
+  const onlineMcp  = mcp.filter(s => (mcpMap[s.id.replace("-mcp", "")] || {}).connected).length;
+
+  return (
+    <div className="infra-hb-wrap">
+      <div className="infra-kpi-row">
+        <div className="infra-kpi"><div className="v mono ok">{onlineCore}/{core.length}</div><div className="l">Core online</div></div>
+        <div className="infra-kpi"><div className="v mono ok">{onlineMcp}/{mcp.length}</div><div className="l">MCP online</div></div>
+        <div className="infra-kpi"><div className="v mono">{core.length + mcp.length}</div><div className="l">Total tracked</div></div>
+      </div>
+
+      <div className="infra-group-label">CORE SERVICES</div>
+      <div className="infra-hb-list">
+        <div className="infra-hb-head">
+          <span>Service</span><span>Last 15 min (1 bar = 1 min)</span><span>Status · Uptime · Last seen</span>
+        </div>
+        {core.map(s => <InfraHeartbeatRow key={s.id} sys={s} statusMap={statusMap} mcpMap={mcpMap} />)}
+      </div>
+
+      <div className="infra-group-label" style={{ marginTop: 14 }}>MCP SERVERS</div>
+      <div className="infra-hb-list">
+        <div className="infra-hb-head">
+          <span>Server</span><span>Last 15 min (1 bar = 1 min)</span><span>Status · Uptime · Last seen</span>
+        </div>
+        {mcp.map(s => <InfraHeartbeatRow key={s.id} sys={s} statusMap={statusMap} mcpMap={mcpMap} />)}
+      </div>
+    </div>
+  );
+}
+
+const _LOG_LEVELS   = ["all", "info", "warning", "error"];
+const _LOG_SERVICES = ["all", ...new Set(_INFRA_SYSTEMS.map(s => s.id))];
+
+function InfraLogs() {
+  const [logs, setLogs]             = React.useState([]);
+  const [loading, setLoading]       = React.useState(true);
+  const [levelFilter, setLevel]     = React.useState("all");
+  const [serviceFilter, setService] = React.useState("all");
+
+  React.useEffect(() => {
+    const load = () =>
+      fetch("/api/monitoring/errors?limit=100")
+        .then(r => r.json())
+        .then(d => { setLogs(d.errors || []); setLoading(false); })
+        .catch(() => setLoading(false));
+    load();
+    const t = setInterval(load, 8000);
+    return () => clearInterval(t);
+  }, []);
+
+  const visible = logs.filter(e => {
+    if (levelFilter   !== "all" && e.level   !== levelFilter)   return false;
+    if (serviceFilter !== "all" && e.source  !== serviceFilter) return false;
+    return true;
+  });
+
+  const _lvlClass = { error: "hot", warning: "warn", info: "ok" };
+
+  return (
+    <div className="infra-log-wrap">
+      <div className="infra-log-filters">
+        <label className="infra-filter-label">Level</label>
+        <select className="infra-select" value={levelFilter} onChange={e => setLevel(e.target.value)}>
+          {_LOG_LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+        <label className="infra-filter-label">Service</label>
+        <select className="infra-select" value={serviceFilter} onChange={e => setService(e.target.value)}>
+          {_LOG_SERVICES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <span className="mono" style={{ color: "var(--muted-2)", fontSize: 10 }}>{visible.length} entries · auto-refresh 8s</span>
+      </div>
+
+      {loading && <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>Loading logs…</div>}
+
+      <div className="infra-log-list">
+        {!loading && visible.length === 0 && (
+          <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>No log entries match the filter.</div>
+        )}
+        {visible.map((e, i) => (
+          <div key={i} className="infra-log-row">
+            <span className={`infra-log-lvl ${_lvlClass[e.level] || ""}`}>{(e.level || "?").toUpperCase().slice(0, 4)}</span>
+            <span className="infra-log-src mono">{e.source || "—"}</span>
+            <span className="infra-log-act mono">{e.action || "—"}</span>
+            <span className="infra-log-msg">{e.message || "—"}</span>
+            <span className="infra-log-ts mono">{e["@timestamp"] ? new Date(e["@timestamp"]).toLocaleTimeString([], { hour12: false }) : "—"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InfraPanel() {
+  const [sub, setSub] = React.useState("heartbeats");
+  return (
+    <div className="infra-pane">
+      <div className="infra-sub-tabs">
+        <button className={`infra-sub-tab ${sub === "heartbeats" ? "active" : ""}`} onClick={() => setSub("heartbeats")}>Heartbeats</button>
+        <button className={`infra-sub-tab ${sub === "logs"       ? "active" : ""}`} onClick={() => setSub("logs")}>Logs</button>
+      </div>
+      <div className="infra-scroll">
+        {sub === "heartbeats" && <InfraHeartbeats />}
+        {sub === "logs"       && <InfraLogs />}
+      </div>
+    </div>
+  );
+}
+
 // ---------- MCP Servers section — connection status from /api/mcp/status ----------
 function MCPServersSection() {
   const [servers, setServers] = React.useState([]);
@@ -940,6 +1133,9 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, l
         <button className={`flow-tab ${tab === "monitoring" ? "is-active" : ""}`} onClick={() => setTab("monitoring")}>
           Monitoring
         </button>
+        <button className={`flow-tab ${tab === "infra" ? "is-active" : ""}`} onClick={() => setTab("infra")}>
+          Infra
+        </button>
       </div>
 
       {tab === "graph" && (
@@ -954,6 +1150,7 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, l
       )}
       {tab === "servers"    && <MCPServerList active={[...activeNodes][0]} />}
       {tab === "monitoring" && <MonitoringPanel />}
+      {tab === "infra"      && <InfraPanel />}
 
       {tab === "graph" && (
       <div className="flow-log">
