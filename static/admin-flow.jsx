@@ -717,7 +717,7 @@ function MonitoringPanel() {
     <div className="mon-pane">
       <div className="infra-sub-tabs mon-sub-tabs">
         <button className={`infra-sub-tab ${sub === "overview" ? "active" : ""}`} onClick={() => setSub("overview")}>Overview</button>
-        <button className={`infra-sub-tab ${sub === "heartbeats" ? "active" : ""}`} onClick={() => setSub("heartbeats")}>Heartbeats</button>
+        <button className={`infra-sub-tab ${sub === "heartbeats" ? "active" : ""}`} onClick={() => setSub("heartbeats")}>Infra</button>
         <button className={`infra-sub-tab ${sub === "logs" ? "active" : ""}`} onClick={() => setSub("logs")}>Logs</button>
       </div>
       <div className="mon-scroll">

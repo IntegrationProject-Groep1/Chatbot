@@ -1614,6 +1614,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex: 1; min-height: 0;
   display: flex; flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 .mon-scroll {
   flex: 1; min-height: 0;
@@ -1763,7 +1764,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow: hidden;
 }
 .mon-list-body {
-  overflow-y: visible;
+  overflow-y: auto;
+  max-height: 400px;
 }
 .mon-list-body::-webkit-scrollbar { width: 6px; }
 .mon-list-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
@@ -1893,7 +1895,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
    ============================================================ */
 .svc-drawer-backdrop {
   position: absolute;
-  inset: 91px 0 0 0; /* below tabs */
+  inset: 91px 0 0 0;
   background: rgba(12, 17, 53, 0.32);
   backdrop-filter: blur(2px);
   z-index: 20;
@@ -2848,6 +2850,7 @@ button.mon-row:focus-visible {
   overflow-x: hidden;
   padding: 12px 0 16px;
   scrollbar-width: thin;
+  min-height: 0;
 }
 .mf-section-head {
   padding: 4px 14px 6px;
@@ -3088,6 +3091,7 @@ button.mon-row:focus-visible {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 .mf-feed-head {
   padding: 12px 14px 8px;
@@ -3136,6 +3140,7 @@ button.mon-row:focus-visible {
   overflow-x: hidden;
   scrollbar-width: thin;
   padding: 0 0 12px;
+  max-height: 100%;
 }
 .mf-feed-empty {
   padding: 20px 14px;
@@ -3657,6 +3662,15 @@ body[data-density="loose"] .tool-call { padding: 14px 16px; }
 }
 
 .infra-sub-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.mon-sub-tabs {
   display: flex;
   gap: 2px;
   padding: 8px 12px 0;
