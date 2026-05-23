@@ -626,7 +626,6 @@ function MonitoringPanel() {
   const [error, setError] = useState(null);
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState(null);
-  const [statusFilter, setStatusFilter] = useState(null);
   const [sub, setSub] = useState("overview");
 
   const fetchStatus = () => {
@@ -717,8 +716,8 @@ function MonitoringPanel() {
     <div className="mon-pane">
       <div className="infra-sub-tabs mon-sub-tabs">
         <button className={`infra-sub-tab ${sub === "overview" ? "active" : ""}`} onClick={() => setSub("overview")}>Overview</button>
-        <button className={`infra-sub-tab ${sub === "heartbeats" ? "active" : ""}`} onClick={() => setSub("heartbeats")}>Infra</button>
-        <button className={`infra-sub-tab ${sub === "logs" ? "active" : ""}`} onClick={() => setSub("logs")}>Logs</button>
+        <button className={`infra-sub-tab ${sub === "servers" ? "active" : ""}`} onClick={() => setSub("servers")}>Servers</button>
+        <button className={`infra-sub-tab ${sub === "heartbeats" ? "active" : ""}`} onClick={() => setSub("heartbeats")}>Heartbeats</button>
       </div>
       <div className="mon-scroll">
         {sub === "overview" && (
@@ -737,63 +736,34 @@ function MonitoringPanel() {
             <span className="mon-hero-time mono">{new Date().toLocaleTimeString([], { hour12: false })}</span>
           </div>
 
-          <MCPServersSection />
-
           <div className="mon-kpis">
-            <button className={`mon-kpi${statusFilter === null ? " active" : ""}`} onClick={() => setStatusFilter(null)}>
+            <button className={`mon-kpi`}>
               <div className="v mono">{normed.length}</div>
               <div className="l">Services</div>
             </button>
-            <button className={`mon-kpi${statusFilter === "online" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "online" ? null : "online")}>
+            <button className={`mon-kpi`}>
               <div className="v mono ok">{online}</div>
               <div className="l">Online</div>
             </button>
-            <button className={`mon-kpi${statusFilter === "degraded" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "degraded" ? null : "degraded")}>
+            <button className={`mon-kpi`}>
               <div className="v mono warn">{degraded}</div>
               <div className="l">Degraded</div>
             </button>
-            <button className={`mon-kpi${statusFilter === "offline-all" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "offline-all" ? null : "offline-all")}>
+            <button className={`mon-kpi`}>
               <div className="v mono hot">{offlineAll}</div>
               <div className="l">Offline / Unknown</div>
             </button>
           </div>
-
-          <div className="mon-list">
-            <div className="mon-list-head">
-              <span>Service</span>
-              <span>Heartbeat · last 60s</span>
-              <span style={{ textAlign: "right" }}>Status</span>
-            </div>
-            <div className="mon-list-body">
-              {normed.length === 0 && !error && (
-                <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
-                  {lastRefresh ? "No heartbeats received yet." : "Loading…"}
-                </div>
-              )}
-              {normed.filter(s => {
-                if (statusFilter === null) return true;
-                if (statusFilter === "offline-all") return s.status === "quarantine" || s.status === "unknown";
-                return s.status === statusFilter;
-              }).map((s) => (
-                <MonRow key={s.id} svc={s} tick={tick} onOpen={() => setSelected(s)} />
-              ))}
-              {statusFilter !== null && normed.filter(s => statusFilter === "offline-all" ? (s.status === "quarantine" || s.status === "unknown") : s.status === statusFilter).length === 0 && (
-                <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
-                  No {statusFilter} services.
-                </div>
-              )}
-            </div>
-          </div>
           </>
         )}
 
+        {sub === "servers" && <MCPServersSection />}
         {sub === "heartbeats" && <InfraHeartbeats onOpenService={setSelected} />}
-        {sub === "logs" && <InfraLogs />}
       </div>
 
       <div className="mon-footer">
         <span className="mono" style={{ color: "var(--muted-2)" }}>
-          source: heartbeats-* via Monitoring MCP · {normed.length} services (chatbot + monitoring: synthetic)
+          source: heartbeats-* via Monitoring MCP · {normed.length} services
         </span>
         <button className="mon-link mono" onClick={fetchStatus}>Refresh now →</button>
       </div>
