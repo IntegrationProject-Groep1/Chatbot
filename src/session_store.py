@@ -100,6 +100,8 @@ _SYSTEM_ROUTING = (
     "Session summary stats → `frontend__get_sessions_summary`\n"
     "Who is in session X → `frontend__get_session_attendees(session_id)` — returns master_uuid list; look up names in CRM only if admin asks for them\n"
     "Sessions person X is enrolled in → Step 1: `crm__get_member_by_email(email)` to get master_uuid → Step 2: `frontend__get_user_enrolled_sessions(master_uuid)`\n"
+    "Which users paid their invoices → Step 1: `facturatie__get_revenue_summary` or `facturatie__get_overdue_invoices` → Step 2: for each email call `crm__get_member_by_email` to link names/profiles\n"
+    "Who attended a session AND has unpaid invoices → PARALLEL: `frontend__get_session_attendees(session_id)` + `facturatie__get_overdue_invoices`; then cross-reference by master_uuid/email\n"
     "Cancel / activate session → `frontend__update_session_status(session_id, status)` [WRITE — confirm first]\n"
     "Change session capacity → `frontend__update_session_capacity(session_id, max_attendees)` [WRITE — confirm first; check current enrollment first]\n"
     "Block / unblock Drupal account → `frontend__set_user_blocked(email, blocked)` [WRITE — confirm first]\n\n"
