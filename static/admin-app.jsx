@@ -617,9 +617,8 @@ function SettingsModal({ settings, onChange, onClose }) {
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [needsPassword, setNeedsPassword] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true); // starts true while checking cookie
+  const [loading, setLoading] = useState(true);
 
   // On mount: check if a valid session cookie exists → skip login entirely
   useEffect(() => {
@@ -638,27 +637,19 @@ function LoginScreen({ onLogin }) {
 
   const doLogin = async () => {
     const em = email.trim().toLowerCase();
-    if (!em) { setError("Please enter your email address."); return; }
+    if (!em) { setError("Vul je e-mailadres in."); return; }
     setLoading(true); setError("");
     try {
-      const body = { email: em };
-      if (password) body.password = password;
       const res = await fetch("/api/identify", {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(body)
+        body: JSON.stringify({ email: em, password })
       });
       const data = await res.json();
-      if (res.status === 401) {
-        // Server has ADMIN_CREDENTIALS configured — show password field
-        setNeedsPassword(true);
-        setError(data.error || "Incorrect email or password.");
-        return;
-      }
-      if (!res.ok || data.error) { setError(data.error || "User not found."); return; }
+      if (!res.ok || data.error) { setError(data.error || "Ongeldig e-mailadres of wachtwoord."); return; }
       sessionStorage.setItem("admin_identity", JSON.stringify(data));
       onLogin(data);
     } catch {
-      setError("Could not reach server. Is it running?");
+      setError("Server niet bereikbaar.");
     } finally {
       setLoading(false);
     }
@@ -668,7 +659,7 @@ function LoginScreen({ onLogin }) {
 
   if (loading) return (
     <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)"}}>
-      <div style={{fontFamily:"var(--font-mono)",fontSize:12,color:"var(--muted-2)"}}>Checking session…</div>
+      <div style={{fontFamily:"var(--font-mono)",fontSize:12,color:"var(--muted-2)"}}>Sessie controleren…</div>
     </div>
   );
 
@@ -684,34 +675,32 @@ function LoginScreen({ onLogin }) {
         </div>
 
         <div className="login-card" style={{background:"var(--surface)",border:"1px solid var(--line)",borderRadius:18,padding:"36px 32px",boxShadow:"var(--shadow-lg)"}}>
-          <div style={{fontSize:20,fontWeight:700,marginBottom:4,letterSpacing:"-.01em"}}>Sign in to Admin Console</div>
+          <div style={{fontSize:20,fontWeight:700,marginBottom:4,letterSpacing:"-.01em"}}>Aanmelden</div>
           <div style={{fontSize:13,color:"var(--muted)",marginBottom:28,lineHeight:1.5}}>
-            {needsPassword ? "Enter your password to continue." : "Enter your work email to access the event management assistant."}
+            Vul je werkmail en wachtwoord in.
           </div>
 
-          <div style={{marginBottom:16}}>
-            <label style={{display:"block",fontSize:11,fontWeight:600,color:"var(--muted)",marginBottom:6,letterSpacing:".06em",textTransform:"uppercase"}}>Work email</label>
+          <div style={{marginBottom:14}}>
+            <label style={{display:"block",fontSize:11,fontWeight:600,color:"var(--muted)",marginBottom:6,letterSpacing:".06em",textTransform:"uppercase"}}>E-mail</label>
             <input
-              type="email" value={email} placeholder="you@shiftfestival.be"
+              type="email" value={email} placeholder="jij@shiftfestival.be"
               onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") needsPassword ? document.getElementById("pw-field")?.focus() : doLogin(); }}
+              onKeyDown={e => e.key === "Enter" && document.getElementById("pw-field")?.focus()}
               style={inputStyle}
+              autoFocus
             />
           </div>
 
-          {needsPassword && (
-            <div style={{marginBottom:16}}>
-              <label style={{display:"block",fontSize:11,fontWeight:600,color:"var(--muted)",marginBottom:6,letterSpacing:".06em",textTransform:"uppercase"}}>Password</label>
-              <input
-                id="pw-field"
-                type="password" value={password} placeholder="••••••••"
-                autoFocus
-                onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && doLogin()}
-                style={inputStyle}
-              />
-            </div>
-          )}
+          <div style={{marginBottom:20}}>
+            <label style={{display:"block",fontSize:11,fontWeight:600,color:"var(--muted)",marginBottom:6,letterSpacing:".06em",textTransform:"uppercase"}}>Wachtwoord</label>
+            <input
+              id="pw-field"
+              type="password" value={password} placeholder="••••••••"
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && doLogin()}
+              style={inputStyle}
+            />
+          </div>
 
           {error && (
             <div style={{fontSize:12,color:"var(--hot)",marginBottom:14,background:"var(--hot-soft)",border:"1px solid rgba(214,58,74,.15)",borderRadius:8,padding:"8px 12px"}}>
@@ -723,7 +712,7 @@ function LoginScreen({ onLogin }) {
             onClick={doLogin} disabled={loading}
             style={{width:"100%",padding:"11px 16px",background:"var(--primary)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:600,fontFamily:"var(--font)",cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}
           >
-            {loading ? "Checking…" : "Continue →"}
+            {loading ? "Bezig…" : "Aanmelden →"}
           </button>
         </div>
       </div>
