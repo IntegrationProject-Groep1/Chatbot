@@ -1077,10 +1077,10 @@ function App() {
   useEffect(() => { document.body.dataset.density = settings.density; }, [settings.density]);
   useEffect(() => {
     const c = ACCENT_MAP[settings.accent] || ACCENT_MAP.navy;
-    const r = document.documentElement.style;
+    const r = document.body.style;
     r.setProperty("--primary", c.c); r.setProperty("--primary-dk", c.dk);
     r.setProperty("--primary-soft", c.soft); r.setProperty("--primary-line", c.line);
-  }, [settings.accent]);
+  }, [settings.accent, settings.theme]);
 
   const messagesRef = useRef(null);
   useEffect(() => {
@@ -1191,7 +1191,6 @@ function App() {
       case "tool_complete": {
         const svc = serverFromTool(ev.tool);
         setDoneNodes(d => new Set([...d, ...(SERVER_FLOW[svc]?.nodes || [])]));
-        clearActive();
 
         const ok = !ev.error;
         setStats(s => ({ ...s, ok: s.ok + (ok ? 1 : 0), warn: s.warn + (!ok ? 1 : 0) }));

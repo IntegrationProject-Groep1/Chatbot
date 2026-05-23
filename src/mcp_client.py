@@ -7,7 +7,7 @@ from typing import Any
 
 _log = logging.getLogger(__name__)
 
-_CACHE_TTL = float(os.getenv("MCP_CACHE_TTL", "3"))   # seconds; 0 to disable
+_CACHE_TTL = float(os.getenv("MCP_CACHE_TTL", "0"))   # seconds; 0 to disable (default off — DB is source of truth)
 _NO_CACHE = ("create", "update", "delete", "refund", "write", "send", "post", "patch", "remove", "set_")
 
 _instance: "MCPClient | None" = None
