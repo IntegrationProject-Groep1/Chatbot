@@ -17,6 +17,7 @@ import agent
 
 _log = logging.getLogger(__name__)
 
+_START_TIME = time.time()
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 # Cache-bust token: changes on every container start, so a fresh pod always
 # serves fresh asset URLs to bypass Cloudflare / browser caches.
@@ -78,6 +79,18 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 # Set ADMIN_CREDENTIALS=email:password,email2:password2 in env to enforce passwords.
 # If ADMIN_CREDENTIALS is not set, password is ignored and any known email can log in.
 from auth import verify_credentials, create_token, verify_token, _COOKIE, _CREDS_RAW
+
+
+@app.get("/api/health")
+async def health():
+    """Lightweight health probe — used by the monitoring panel to show chatbot status."""
+    return {
+        "service":        "chatbot",
+        "status":         "online",
+        "live":           True,
+        "uptime_seconds": int(time.time() - _START_TIME),
+        "last_seen":      time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
 
 
 @app.get("/api/me")
