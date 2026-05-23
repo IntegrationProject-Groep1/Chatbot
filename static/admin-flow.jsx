@@ -381,7 +381,7 @@ const _INFRA_SYSTEMS = [
   { id: "monitoring-mcp", label: "Monitoring MCP",   group: "mcp"  },
 ];
 
-function InfraHeartbeatRow({ sys, statusMap, mcpMap }) {
+function InfraHeartbeatRow({ sys, statusMap, mcpMap, onOpen }) {
   const [cells, setCells] = React.useState([]);
 
   React.useEffect(() => {
@@ -397,14 +397,27 @@ function InfraHeartbeatRow({ sys, statusMap, mcpMap }) {
   }, [sys.id, sys.group, JSON.stringify(mcpMap)]);
 
   const svc = statusMap[sys.id] || {};
-  const live = svc.live !== undefined ? svc.live : (cells.length > 0 && cells[cells.length - 1]?.status === "ok");
+  const mcpStatus = sys.group === "mcp" ? (mcpMap[sys.id.replace("-mcp", "")] || {}) : null;
+  const live = sys.group === "mcp"
+    ? !!mcpStatus?.connected || !!svc.live
+    : (svc.live !== undefined ? svc.live : (cells.length > 0 && cells[cells.length - 1]?.status === "ok"));
   const status = live ? "online" : (svc.status === "no_data" ? "unknown" : "offline");
   const pill = status === "online" ? "ok" : status === "unknown" ? "warn" : "hot";
   const uptime = svc.uptime_seconds != null ? _uptimeLabel(svc.uptime_seconds) : "—";
   const lastSeen = svc.last_seen ? _secsSince(svc.last_seen) : "—";
+  const detailSvc = {
+    id: sys.id,
+    label: sys.label,
+    status: status === "offline" ? "quarantine" : status,
+    uptime,
+    lastSeen: typeof lastSeen === "number" ? lastSeen : null,
+    note: sys.group === "mcp"
+      ? `${mcpStatus?.connected ? "MCP connected" : "MCP disconnected"}${mcpStatus?.tool_count != null ? ` · ${mcpStatus.tool_count} tools` : ""}`
+      : undefined,
+  };
 
   return (
-    <div className="infra-hb-row">
+    <button className="infra-hb-row" type="button" onClick={() => onOpen?.(detailSvc)}>
       <div className="infra-hb-name">
         <span className={`infra-hb-dot ${pill}`}></span>
         {sys.label}
@@ -420,11 +433,11 @@ function InfraHeartbeatRow({ sys, statusMap, mcpMap }) {
         <span style={{ color: "var(--muted-2)" }}>{uptime}</span>
         <span style={{ color: "var(--muted-3)" }}>{lastSeen}</span>
       </div>
-    </div>
+    </button>
   );
 }
 
-function InfraHeartbeats() {
+function InfraHeartbeats({ onOpenService }) {
   const [statusMap, setStatusMap] = React.useState({});
   const [mcpMap, setMcpMap] = React.useState({});
 
@@ -464,7 +477,7 @@ function InfraHeartbeats() {
         <div className="infra-hb-head">
           <span>Service</span><span>Last 15 min (1 bar = 1 min)</span><span>Status · Uptime · Last seen</span>
         </div>
-        {core.map(s => <InfraHeartbeatRow key={s.id} sys={s} statusMap={statusMap} mcpMap={mcpMap} />)}
+        {core.map(s => <InfraHeartbeatRow key={s.id} sys={s} statusMap={statusMap} mcpMap={mcpMap} onOpen={onOpenService} />)}
       </div>
 
       <div className="infra-group-label" style={{ marginTop: 14 }}>MCP SERVERS</div>
@@ -472,7 +485,7 @@ function InfraHeartbeats() {
         <div className="infra-hb-head">
           <span>Server</span><span>Last 15 min (1 bar = 1 min)</span><span>Status · Uptime · Last seen</span>
         </div>
-        {mcp.map(s => <InfraHeartbeatRow key={s.id} sys={s} statusMap={statusMap} mcpMap={mcpMap} />)}
+        {mcp.map(s => <InfraHeartbeatRow key={s.id} sys={s} statusMap={statusMap} mcpMap={mcpMap} onOpen={onOpenService} />)}
       </div>
     </div>
   );
@@ -535,22 +548,6 @@ function InfraLogs() {
             <span className="infra-log-ts mono">{e["@timestamp"] ? new Date(e["@timestamp"]).toLocaleTimeString([], { hour12: false }) : "—"}</span>
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function InfraPanel() {
-  const [sub, setSub] = React.useState("heartbeats");
-  return (
-    <div className="infra-pane">
-      <div className="infra-sub-tabs">
-        <button className={`infra-sub-tab ${sub === "heartbeats" ? "active" : ""}`} onClick={() => setSub("heartbeats")}>Heartbeats</button>
-        <button className={`infra-sub-tab ${sub === "logs"       ? "active" : ""}`} onClick={() => setSub("logs")}>Logs</button>
-      </div>
-      <div className="infra-scroll">
-        {sub === "heartbeats" && <InfraHeartbeats />}
-        {sub === "logs"       && <InfraLogs />}
       </div>
     </div>
   );
@@ -630,6 +627,7 @@ function MonitoringPanel() {
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState(null);
   const [statusFilter, setStatusFilter] = useState(null);
+  const [sub, setSub] = useState("overview");
 
   const fetchStatus = () => {
     Promise.all([
@@ -717,68 +715,80 @@ function MonitoringPanel() {
 
   return (
     <div className="mon-pane">
+      <div className="infra-sub-tabs mon-sub-tabs">
+        <button className={`infra-sub-tab ${sub === "overview" ? "active" : ""}`} onClick={() => setSub("overview")}>Overview</button>
+        <button className={`infra-sub-tab ${sub === "heartbeats" ? "active" : ""}`} onClick={() => setSub("heartbeats")}>Heartbeats</button>
+        <button className={`infra-sub-tab ${sub === "logs" ? "active" : ""}`} onClick={() => setSub("logs")}>Logs</button>
+      </div>
       <div className="mon-scroll">
-        <div className={`mon-hero ${overallStatus}`}>
-          <div className="mon-hero-dot"></div>
-          <div className="mon-hero-text">
-            <b>{error ? "Monitoring MCP unavailable" : summaryLabel}</b>
-            <span>
-              {error
-                ? <span style={{ color: "var(--hot)", fontSize: 10 }}>{error.slice(0, 60)}</span>
-                : <span>Last updated <span className="mono">{lastRefresh ? lastRefresh.toLocaleTimeString([], { hour12: false }) : "—"}</span> · polling every 5s</span>
-              }
-            </span>
+        {sub === "overview" && (
+          <>
+          <div className={`mon-hero ${overallStatus}`}>
+            <div className="mon-hero-dot"></div>
+            <div className="mon-hero-text">
+              <b>{error ? "Monitoring MCP unavailable" : summaryLabel}</b>
+              <span>
+                {error
+                  ? <span style={{ color: "var(--hot)", fontSize: 10 }}>{error.slice(0, 60)}</span>
+                  : <span>Last updated <span className="mono">{lastRefresh ? lastRefresh.toLocaleTimeString([], { hour12: false }) : "—"}</span> · polling every 5s</span>
+                }
+              </span>
+            </div>
+            <span className="mon-hero-time mono">{new Date().toLocaleTimeString([], { hour12: false })}</span>
           </div>
-          <span className="mon-hero-time mono">{new Date().toLocaleTimeString([], { hour12: false })}</span>
-        </div>
 
-        <MCPServersSection />
+          <MCPServersSection />
 
-        <div className="mon-kpis">
-          <button className={`mon-kpi${statusFilter === null ? " active" : ""}`} onClick={() => setStatusFilter(null)}>
-            <div className="v mono">{normed.length}</div>
-            <div className="l">Services</div>
-          </button>
-          <button className={`mon-kpi${statusFilter === "online" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "online" ? null : "online")}>
-            <div className="v mono ok">{online}</div>
-            <div className="l">Online</div>
-          </button>
-          <button className={`mon-kpi${statusFilter === "degraded" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "degraded" ? null : "degraded")}>
-            <div className="v mono warn">{degraded}</div>
-            <div className="l">Degraded</div>
-          </button>
-          <button className={`mon-kpi${statusFilter === "offline-all" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "offline-all" ? null : "offline-all")}>
-            <div className="v mono hot">{offlineAll}</div>
-            <div className="l">Offline / Unknown</div>
-          </button>
-        </div>
-
-        <div className="mon-list">
-          <div className="mon-list-head">
-            <span>Service</span>
-            <span>Heartbeat · last 60s</span>
-            <span style={{ textAlign: "right" }}>Status</span>
+          <div className="mon-kpis">
+            <button className={`mon-kpi${statusFilter === null ? " active" : ""}`} onClick={() => setStatusFilter(null)}>
+              <div className="v mono">{normed.length}</div>
+              <div className="l">Services</div>
+            </button>
+            <button className={`mon-kpi${statusFilter === "online" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "online" ? null : "online")}>
+              <div className="v mono ok">{online}</div>
+              <div className="l">Online</div>
+            </button>
+            <button className={`mon-kpi${statusFilter === "degraded" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "degraded" ? null : "degraded")}>
+              <div className="v mono warn">{degraded}</div>
+              <div className="l">Degraded</div>
+            </button>
+            <button className={`mon-kpi${statusFilter === "offline-all" ? " active" : ""}`} onClick={() => setStatusFilter(f => f === "offline-all" ? null : "offline-all")}>
+              <div className="v mono hot">{offlineAll}</div>
+              <div className="l">Offline / Unknown</div>
+            </button>
           </div>
-          <div className="mon-list-body">
-            {normed.length === 0 && !error && (
-              <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
-                {lastRefresh ? "No heartbeats received yet." : "Loading…"}
-              </div>
-            )}
-            {normed.filter(s => {
-              if (statusFilter === null) return true;
-              if (statusFilter === "offline-all") return s.status === "quarantine" || s.status === "unknown";
-              return s.status === statusFilter;
-            }).map((s) => (
-              <MonRow key={s.id} svc={s} tick={tick} onOpen={() => setSelected(s)} />
-            ))}
-            {statusFilter !== null && normed.filter(s => statusFilter === "offline-all" ? (s.status === "quarantine" || s.status === "unknown") : s.status === statusFilter).length === 0 && (
-              <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
-                No {statusFilter} services.
-              </div>
-            )}
+
+          <div className="mon-list">
+            <div className="mon-list-head">
+              <span>Service</span>
+              <span>Heartbeat · last 60s</span>
+              <span style={{ textAlign: "right" }}>Status</span>
+            </div>
+            <div className="mon-list-body">
+              {normed.length === 0 && !error && (
+                <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+                  {lastRefresh ? "No heartbeats received yet." : "Loading…"}
+                </div>
+              )}
+              {normed.filter(s => {
+                if (statusFilter === null) return true;
+                if (statusFilter === "offline-all") return s.status === "quarantine" || s.status === "unknown";
+                return s.status === statusFilter;
+              }).map((s) => (
+                <MonRow key={s.id} svc={s} tick={tick} onOpen={() => setSelected(s)} />
+              ))}
+              {statusFilter !== null && normed.filter(s => statusFilter === "offline-all" ? (s.status === "quarantine" || s.status === "unknown") : s.status === statusFilter).length === 0 && (
+                <div style={{ padding: "16px 14px", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
+                  No {statusFilter} services.
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+          </>
+        )}
+
+        {sub === "heartbeats" && <InfraHeartbeats onOpenService={setSelected} />}
+        {sub === "logs" && <InfraLogs />}
       </div>
 
       <div className="mon-footer">
@@ -909,11 +919,16 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
     chatbot:    { host: "chatbot.shift.be",          port: 8000, deps: ["nvidia-api", "rabbitmq", "mcp-servers"] },
     crm:        { host: "crm-prod-01.shift.be",      port: 8080, deps: ["salesforce", "identity"] },
     facturatie: { host: "facturatie-prod.shift.be",  port: 8443, deps: ["mysql", "identity"]      },
-    frontend:   { host: "www.shift.be",              port: 443,  deps: ["nginx", "redis"]          },
+    frontend:   { host: "www.shift.be",              port: 443,  deps: ["nginx", "frontend-db"]    },
     kassa:      { host: "kassa-prod.shift.be",       port: 8090, deps: ["odoo", "facturatie"]     },
     mailing:    { host: "mailing.shift.be",          port: 8080, deps: ["rabbitmq", "sendgrid"]   },
     monitoring: { host: "monitoring-prod.shift.be",  port: 8200, deps: ["elasticsearch"]           },
-    identity:   { host: "identity-prod.shift.be",    port: 8443, deps: ["postgres"]                },
+    "identity-service": { host: "identity-prod.shift.be", port: 8443, deps: ["postgres"]            },
+    "frontend-mcp":   { host: "frontend-mcp-service",   port: 8006, deps: ["frontend-drupal", "frontend-db"] },
+    "kassa-mcp":      { host: "kassa-mcp-service",      port: 8004, deps: ["kassa-web"] },
+    "facturatie-mcp": { host: "facturatie-mcp-service", port: 8007, deps: ["fossbilling"] },
+    "crm-mcp":        { host: "crm-mcp-service",        port: 8008, deps: ["crm"] },
+    "monitoring-mcp": { host: "monitoring-mcp-service", port: 8005, deps: ["elasticsearch"] },
   }[svc.id] || { host: "—", port: 0, deps: [] };
 
   const uptimeHuman = detail?.uptime_human || svc.uptime;
@@ -935,6 +950,7 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
           <div className="svc-drawer-title">
             <b>{svc.label}</b>
             <span className="mono">{meta.host}:{meta.port}</span>
+            {svc.note && <span className="mono">{svc.note}</span>}
           </div>
           <span className={`mon-pill ${svc.status}`}>{svc.status}</span>
           <button className="svc-drawer-close" onClick={onClose} aria-label="Close">
@@ -1133,9 +1149,6 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, l
         <button className={`flow-tab ${tab === "monitoring" ? "is-active" : ""}`} onClick={() => setTab("monitoring")}>
           Monitoring
         </button>
-        <button className={`flow-tab ${tab === "infra" ? "is-active" : ""}`} onClick={() => setTab("infra")}>
-          Infra
-        </button>
       </div>
 
       {tab === "graph" && (
@@ -1150,7 +1163,6 @@ function FlowColumn({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, l
       )}
       {tab === "servers"    && <MCPServerList active={[...activeNodes][0]} />}
       {tab === "monitoring" && <MonitoringPanel />}
-      {tab === "infra"      && <InfraPanel />}
 
       {tab === "graph" && (
       <div className="flow-log">

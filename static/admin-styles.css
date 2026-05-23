@@ -3735,9 +3735,21 @@ body[data-density="loose"] .tool-call { padding: 14px 16px; }
   padding: 7px 12px;
   border-bottom: 1px solid var(--line);
   gap: 8px;
+  width: 100%;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-family: var(--font);
 }
 .infra-hb-row:last-child { border-bottom: none; }
 .infra-hb-row:hover { background: var(--surface-3); }
+.infra-hb-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
 
 .infra-hb-name {
   font-size: 11.5px;
