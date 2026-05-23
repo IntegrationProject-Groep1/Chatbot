@@ -1,9 +1,25 @@
 /* eslint-disable no-undef */
 /* ============================================================
    Live Berichtenflow — inter-service message topology
-   Rebuilt: true live feed, full topology, hover tooltips
    ============================================================ */
 const { useEffect, useRef, useState, useCallback, useMemo } = React;
+
+// Error boundary — shows the actual error instead of a blank screen
+class MFBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (this.state.err) return (
+      <div style={{ gridRow: 2, gridColumn: "2/4", padding: 40, color: "var(--hot)", fontFamily: "monospace", fontSize: 13 }}>
+        <b>Berichtenflow fout:</b> {this.state.err.message}
+        <pre style={{ marginTop: 8, fontSize: 10, opacity: 0.7, whiteSpace: "pre-wrap", maxWidth: 600 }}>
+          {this.state.err.stack}
+        </pre>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 
 // ─── Node layout (cx/cy = centre of each node) ───────────────────────────────
 // Hub layout: CRM at center; inputs top; processing sides; output bottom.
@@ -142,6 +158,25 @@ function edgePath(fromId, toId) {
   }
 }
 
+// Renders the count+rate badge mid-edge (extracted from FlowGraph to avoid IIFE in JSX)
+function renderEdgeBadge(e, mid, col) {
+  const txt = e.count > 9999 ? "9999+" : String(e.count);
+  const rate = fmtRate(e.rate);
+  const bw = Math.max(28, txt.length * 7 + 12);
+  return (
+    <g transform={`translate(${mid.x - bw / 2}, ${mid.y - 12})`}>
+      <rect x="0" y="0" width={bw} height="14" rx="5"
+        fill="var(--surface)" stroke={col} strokeWidth="1" opacity="0.96" />
+      <text x={bw / 2} y="10" textAnchor="middle" fontSize="9.5"
+        fontFamily="JetBrains Mono, monospace" fill={col} fontWeight="700">{txt}</text>
+      {rate && (
+        <text x={bw / 2} y="24" textAnchor="middle" fontSize="8"
+          fontFamily="JetBrains Mono, monospace" fill="var(--muted-2)">{rate}</text>
+      )}
+    </g>
+  );
+}
+
 // ─── Edge visual props ────────────────────────────────────────────────────────
 function edgeVis(count, errors) {
   if (!count) return { w: 0.9, op: 0.3, dash: "6 4", n: 0 };
@@ -239,12 +274,10 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover }
               markerEnd={e.count ? `url(#mf-arr-${from})` : "url(#mf-arr-idle)"}
             />
 
-            {/* Dashed-edge crawl animation when inactive */}
+            {/* Dashed-edge crawl animation when inactive (CSS only — no SMIL child on path) */}
             {!e.count && (
               <path d={path} fill="none" stroke="var(--line-3)" strokeWidth={0.9}
-                strokeDasharray="6 4" opacity={0.3}>
-                <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="3s" repeatCount="indefinite" />
-              </path>
+                strokeDasharray="6 4" opacity={0.3} className="mf-dash-crawl" />
             )}
 
             {/* Animated packets on active edges */}
@@ -261,23 +294,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover }
             ))}
 
             {/* Count + rate badge on active edges */}
-            {e.count > 0 && (() => {
-              const txt  = e.count > 9999 ? "9999+" : String(e.count);
-              const rate = fmtRate(e.rate);
-              const bw   = Math.max(28, txt.length * 7 + 12);
-              return (
-                <g transform={`translate(${mid.x - bw/2}, ${mid.y - 12})`}>
-                  <rect x="0" y="0" width={bw} height="14" rx="5"
-                    fill="var(--surface)" stroke={col} strokeWidth="1" opacity="0.96" />
-                  <text x={bw/2} y="10" textAnchor="middle" fontSize="9.5"
-                    fontFamily="JetBrains Mono, monospace" fill={col} fontWeight="700">{txt}</text>
-                  {rate && (
-                    <text x={bw/2} y="24" textAnchor="middle" fontSize="8"
-                      fontFamily="JetBrains Mono, monospace" fill="var(--muted-2)">{rate}</text>
-                  )}
-                </g>
-              );
-            })()}
+            {e.count > 0 && renderEdgeBadge(e, mid, col)}
 
             {/* "Geen logs" label on silent TOPO edges */}
             {!e.count && (
@@ -323,11 +340,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover }
             />
 
             {/* Color accent bar */}
-            <clipPath id={`clip-${id}`}>
-              <rect x="0" y="0" width="5" height={NH} rx="2" />
-            </clipPath>
             <rect x="0" y="0" width="5" height={NH} rx="2" fill={nodeCol} />
-            <rect x="0" y={NH/2} width="5" height={NH/2} fill={nodeCol} /> {/* square-off bottom-left */}
 
             {/* Health ring + dot */}
             {status === "online" && (
@@ -906,4 +919,12 @@ function MessageFlowScreen() {
   );
 }
 
-Object.assign(window, { MessageFlowScreen });
+function MessageFlowScreenWithBoundary() {
+  return (
+    <MFBoundary>
+      <MessageFlowScreen />
+    </MFBoundary>
+  );
+}
+
+Object.assign(window, { MessageFlowScreen: MessageFlowScreenWithBoundary });

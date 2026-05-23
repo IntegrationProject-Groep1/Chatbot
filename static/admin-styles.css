@@ -3314,6 +3314,14 @@ body[data-theme="slate"] .mf-canvas-wrap {
 .mf-svc-pulse { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: mf-pulse 2s ease-in-out infinite; flex-shrink: 0; }
 .mf-svc-status { font-size: 9.5px; font-family: var(--font-mono); color: var(--muted-3); }
 
+/* SVG dash-crawl for inactive TOPO edges */
+.mf-dash-crawl {
+  animation: mf-dash-crawl-anim 3s linear infinite;
+}
+@keyframes mf-dash-crawl-anim {
+  to { stroke-dashoffset: -20; }
+}
+
 /* ── Dark / slate theme fix ── */
 body[data-theme="dark"] .mf-tooltip,
 body[data-theme="slate"] .mf-tooltip {
