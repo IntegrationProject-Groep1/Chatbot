@@ -1,15 +1,16 @@
 """
-Admin authentication — HTTP cookie-based login.
+Admin authentication — cookie helpers used by /api/identify and /api/me.
 
-HOW TO ENABLE:
-  1. Add these to your .env:
-       ADMIN_SECRET=<run: python -c "import secrets; print(secrets.token_hex(32))">
-       ADMIN_CREDENTIALS=alice:mypassword,bob:otherpassword
-  2. In src/api.py, uncomment the three lines marked "# AUTH".
-  3. Restart the server. Unauthenticated browsers are redirected to /admin/login.
+SETUP:
+  Add to env (or K8s secrets):
+    ADMIN_SECRET=<run: python -c "import secrets; print(secrets.token_hex(32))">
+    ADMIN_CREDENTIALS=you@shiftfestival.be:YourPassword,other@shiftfestival.be:OtherPass
 
-ADMIN_CREDENTIALS: comma-separated "username:password" pairs (plain text in .env).
-ADMIN_SECRET:      random 32-byte hex string — used to sign session tokens.
+  ADMIN_CREDENTIALS: comma-separated "email:password" pairs.
+  ADMIN_SECRET:      random 32-byte hex — signs the session cookie.
+
+  If ADMIN_CREDENTIALS is not set, the password field is ignored and any
+  email known to the identity service can log in.
 """
 
 import base64
@@ -18,18 +19,10 @@ import hmac
 import os
 import time
 
-from fastapi import Request
-from fastapi.responses import JSONResponse, RedirectResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-
 _SECRET: bytes = os.getenv("ADMIN_SECRET", "change-me-before-enabling").encode()
 _CREDS_RAW: str = os.getenv("ADMIN_CREDENTIALS", "")
 _TOKEN_TTL: int = 60 * 60 * 8   # 8 hours
 _COOKIE: str = "admin_token"
-
-# Paths that are always reachable without a token
-_PUBLIC_PREFIXES = ("/health", "/api/admin/login", "/api/admin/logout", "/admin/login", "/static/")
-
 
 def _parse_creds() -> dict[str, str]:
     result: dict[str, str] = {}
@@ -78,22 +71,3 @@ def verify_token(token: str) -> str | None:
         return None
 
 
-def _is_public(path: str) -> bool:
-    return any(path == p or path.startswith(p) for p in _PUBLIC_PREFIXES)
-
-
-class AdminAuthMiddleware(BaseHTTPMiddleware):
-    """Reject unauthenticated requests: API → 401, pages → redirect to /admin/login."""
-
-    async def dispatch(self, request: Request, call_next):
-        if _is_public(request.url.path):
-            return await call_next(request)
-
-        token = request.cookies.get(_COOKIE)
-        if token and verify_token(token):
-            return await call_next(request)
-
-        is_api = request.url.path.startswith("/api/") or request.url.path.startswith("/ws/")
-        if is_api:
-            return JSONResponse({"error": "Unauthorized — please log in at /admin/login"}, status_code=401)
-        return RedirectResponse(url="/admin/login")

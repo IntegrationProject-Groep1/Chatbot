@@ -7,29 +7,99 @@ const { useEffect, useMemo, useRef, useState } = React;
 // MCP server node ids — used to detect "disconnected" state
 const MCP_NODE_IDS = new Set(["frontend", "facturatie", "crm", "kassa", "monitoring"]);
 
+const NODE_W = 130;
+const NODE_H = 44;
+// Backend node for each MCP server — included when that server is active
+const _BACKEND_MAP = {
+  frontend:   "drupal",
+  facturatie: "facturatieDb",
+  crm:        "crmDb",
+  kassa:      "kassaDb",
+  monitoring: "elastic",
+};
+// Tight default: trims the empty SVG space outside the actual node bounds
+const _DEFAULT_VB = { x: 5, y: 10, w: 710, h: 424 };
+
+function _computeTargetVB(activeNodes) {
+  if (!activeNodes || activeNodes.size === 0) return _DEFAULT_VB;
+  // Always show user + llama; add backends for active MCP servers
+  const ids = new Set(["user", "llama", ...activeNodes]);
+  for (const id of activeNodes) {
+    const b = _BACKEND_MAP[id];
+    if (b) ids.add(b);
+  }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const id of ids) {
+    const n = NODES[id];
+    if (!n) continue;
+    minX = Math.min(minX, n.x);
+    minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + NODE_W);
+    maxY = Math.max(maxY, n.y + NODE_H);
+  }
+  const padX = 50, padY = 40;
+  const rawW = maxX - minX + padX * 2;
+  const rawH = maxY - minY + padY * 2;
+  // Minimum viewport keeps the graph readable; maximum caps the zoom at default
+  return {
+    x: minX - padX,
+    y: minY - padY,
+    w: Math.min(Math.max(rawW, 260), FLOW_W),
+    h: Math.min(Math.max(rawH, 220), FLOW_H),
+  };
+}
+
+function _easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
 function FlowTopology({ activeNodes, doneNodes, activeEdges, litNodes, litEdges, connectedServers = new Set() }) {
   // Build edge data once
   const edges = useMemo(() => {
     return EDGES.map(([from, to, label]) => {
       const a = NODES[from];
       const b = NODES[to];
-      // Anchor at node center horizontally and at top/bottom edges vertically
-      const nodeW = 130;
-      const nodeH = 36;
-      const ax = a.x + nodeW / 2;
-      const bx = b.x + nodeW / 2;
-      const ay = a.y + nodeH;          // bottom of `from`
-      const by = b.y;                   // top of `to`
-
-      // Curve control points: vertical bend with smooth S
+      const ax = a.x + NODE_W / 2;
+      const bx = b.x + NODE_W / 2;
+      const ay = a.y + NODE_H;
+      const by = b.y;
       const dy = Math.abs(by - ay);
       const c1y = ay + dy * 0.55;
       const c2y = by - dy * 0.55;
       const path = `M ${ax} ${ay} C ${ax} ${c1y}, ${bx} ${c2y}, ${bx} ${by}`;
-
       return { from, to, label, path, ax, ay, bx, by };
     });
   }, []);
+
+  // ── Animated viewBox ───────────────────────────────────────────────────────
+  const vbRef = useRef({ ..._DEFAULT_VB });
+  const [viewBox, setViewBox] = useState(_DEFAULT_VB);
+  const animRef = useRef(null);
+
+  useEffect(() => {
+    const target = _computeTargetVB(activeNodes);
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    const start = performance.now();
+    const DURATION = 480;
+    const from = { ...vbRef.current };
+
+    const step = (now) => {
+      const t = _easeInOut(Math.min((now - start) / DURATION, 1));
+      const cur = {
+        x: from.x + (target.x - from.x) * t,
+        y: from.y + (target.y - from.y) * t,
+        w: from.w + (target.w - from.w) * t,
+        h: from.h + (target.h - from.h) * t,
+      };
+      vbRef.current = cur;
+      setViewBox({ ...cur });
+      if (t < 1) animRef.current = requestAnimationFrame(step);
+    };
+    animRef.current = requestAnimationFrame(step);
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
+  }, [activeNodes]);
+
+  const vbStr = `${viewBox.x.toFixed(1)} ${viewBox.y.toFixed(1)} ${viewBox.w.toFixed(1)} ${viewBox.h.toFixed(1)}`;
 
   // Animate traveling dots on active edges
   const [tick, setTick] = useState(0);
@@ -47,7 +117,7 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges, litNodes, litEdges,
 
   return (
     <div className="flow-canvas">
-      <svg viewBox={`0 0 ${FLOW_W} ${FLOW_H}`} preserveAspectRatio="xMidYMid meet">
+      <svg viewBox={vbStr} preserveAspectRatio="xMidYMid meet">
         <defs>
           <marker id="arr-idle" viewBox="0 0 10 10" refX="9" refY="5"
             markerWidth="5" markerHeight="5" orient="auto-start-reverse">
@@ -206,14 +276,33 @@ function fmtTool(name) {
 
 function MCPServerList() {
   const [servers, setServers] = useState([]);
+  const [liveStatus, setLiveStatus] = useState({});
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState({});
+  const [lastPoll, setLastPoll] = useState(null);
 
-  useEffect(() => {
+  const fetchTools = () =>
     fetch("/api/mcp/tools")
       .then(r => r.json())
       .then(d => { setServers(d.servers || []); setLoading(false); })
       .catch(() => setLoading(false));
+
+  const fetchStatus = () =>
+    fetch("/api/mcp/status")
+      .then(r => r.json())
+      .then(d => {
+        const m = {};
+        (d.servers || []).forEach(s => { m[s.id] = s.connected; });
+        setLiveStatus(m);
+        setLastPoll(new Date());
+      })
+      .catch(() => {});
+
+  useEffect(() => {
+    fetchTools();
+    fetchStatus();
+    const poll = setInterval(fetchStatus, 5000);
+    return () => clearInterval(poll);
   }, []);
 
   const toggle = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
@@ -229,31 +318,47 @@ function MCPServerList() {
     </div>
   );
 
-  return (
-    <div style={{ flex: 1, minHeight: 0, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
-      {servers.map((s) => {
-        const open = !!expanded[s.id];
-        return (
-          <div key={s.id} className="srv-card" data-svc={s.id}>
-            <button className="srv-card-head" onClick={() => toggle(s.id)}>
-              <div className="dot" style={{ flexShrink: 0 }}>{s.id[0].toUpperCase()}</div>
-              <div className="text" style={{ flex: 1 }}>
-                <span className="name" style={{ textTransform: "capitalize" }}>{s.id}</span>
-                <span className="meta">{s.count} tool{s.count !== 1 ? "s" : ""}</span>
-              </div>
-              <span className="srv-chevron">{open ? "▲" : "▼"}</span>
-            </button>
+  const online  = servers.filter(s => liveStatus[s.id] === true).length;
+  const offline = servers.filter(s => liveStatus[s.id] === false).length;
 
-            {open && (
-              <div className="srv-tools">
-                {(s.tools || []).map((t) => (
-                  <span key={t} className="srv-tool mono">{fmtTool(t)}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="srv-status-bar">
+        <span className="srv-status-pill ok">{online} online</span>
+        {offline > 0 && <span className="srv-status-pill hot">{offline} offline</span>}
+        <span className="srv-status-time mono">
+          {lastPoll ? lastPoll.toLocaleTimeString([], { hour12: false }) : "—"}
+        </span>
+        <button className="srv-status-refresh mono" onClick={() => { fetchStatus(); }}>↺</button>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, padding: "8px 14px 12px", display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
+        {servers.map((s) => {
+          const open = !!expanded[s.id];
+          const connected = liveStatus[s.id];
+          const connClass = connected === true ? "ok" : connected === false ? "hot" : "unknown";
+          return (
+            <div key={s.id} className="srv-card" data-svc={s.id}>
+              <button className="srv-card-head" onClick={() => toggle(s.id)}>
+                <div className="dot" style={{ flexShrink: 0 }}>{s.id[0].toUpperCase()}</div>
+                <div className="text" style={{ flex: 1 }}>
+                  <span className="name" style={{ textTransform: "capitalize" }}>{s.id}</span>
+                  <span className="meta">{s.count} tool{s.count !== 1 ? "s" : ""}</span>
+                </div>
+                <span className={`srv-conn-dot ${connClass}`} title={connected === true ? "Connected" : connected === false ? "Unreachable" : "Unknown"} />
+                <span className="srv-chevron">{open ? "▲" : "▼"}</span>
+              </button>
+
+              {open && (
+                <div className="srv-tools">
+                  {(s.tools || []).map((t) => (
+                    <span key={t} className="srv-tool mono">{fmtTool(t)}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

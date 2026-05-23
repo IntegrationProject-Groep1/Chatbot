@@ -14,7 +14,6 @@ const I = {
   cog:    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
   help:   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
   send:   <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>,
-  attach: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>,
   search: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
 };
 
@@ -617,19 +616,44 @@ function SettingsModal({ settings, onChange, onClose }) {
 // ─── Login screen ──────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [needsPassword, setNeedsPassword] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // starts true while checking cookie
+
+  // On mount: check if a valid session cookie exists → skip login entirely
+  useEffect(() => {
+    fetch("/api/me")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.identity_uuid) {
+          sessionStorage.setItem("admin_identity", JSON.stringify(data));
+          onLogin(data);
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch(() => setLoading(false));
+  }, [onLogin]);
 
   const doLogin = async () => {
     const em = email.trim().toLowerCase();
     if (!em) { setError("Please enter your email address."); return; }
     setLoading(true); setError("");
     try {
+      const body = { email: em };
+      if (password) body.password = password;
       const res = await fetch("/api/identify", {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ email: em })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
+      if (res.status === 401) {
+        // Server has ADMIN_CREDENTIALS configured — show password field
+        setNeedsPassword(true);
+        setError(data.error || "Incorrect email or password.");
+        return;
+      }
       if (!res.ok || data.error) { setError(data.error || "User not found."); return; }
       sessionStorage.setItem("admin_identity", JSON.stringify(data));
       onLogin(data);
@@ -640,8 +664,16 @@ function LoginScreen({ onLogin }) {
     }
   };
 
-  return (
+  const inputStyle = {width:"100%",padding:"10px 13px",background:"var(--surface)",border:"1px solid var(--line)",borderRadius:8,color:"var(--ink)",fontSize:14,fontFamily:"var(--font)",outline:"none",boxSizing:"border-box"};
+
+  if (loading) return (
     <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)"}}>
+      <div style={{fontFamily:"var(--font-mono)",fontSize:12,color:"var(--muted-2)"}}>Checking session…</div>
+    </div>
+  );
+
+  return (
+    <div className="login-wrap" style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)"}}>
       <div style={{width:"100%",maxWidth:420,padding:"24px"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:32,justifyContent:"center"}}>
           <div style={{width:40,height:40,borderRadius:10,background:"linear-gradient(160deg, var(--primary), var(--ink-2))",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 12px rgba(31,58,138,.35)"}}>
@@ -651,19 +683,35 @@ function LoginScreen({ onLogin }) {
           <span style={{fontSize:10,fontWeight:600,letterSpacing:".08em",textTransform:"uppercase",padding:"2px 8px",borderRadius:99,background:"var(--primary-soft)",color:"var(--primary)",border:"1px solid rgba(31,58,138,.15)"}}>Admin</span>
         </div>
 
-        <div style={{background:"var(--surface)",border:"1px solid var(--line)",borderRadius:18,padding:"36px 32px",boxShadow:"var(--shadow-lg)"}}>
+        <div className="login-card" style={{background:"var(--surface)",border:"1px solid var(--line)",borderRadius:18,padding:"36px 32px",boxShadow:"var(--shadow-lg)"}}>
           <div style={{fontSize:20,fontWeight:700,marginBottom:4,letterSpacing:"-.01em"}}>Sign in to Admin Console</div>
-          <div style={{fontSize:13,color:"var(--muted)",marginBottom:28,lineHeight:1.5}}>Enter your work email to access the event management assistant.</div>
+          <div style={{fontSize:13,color:"var(--muted)",marginBottom:28,lineHeight:1.5}}>
+            {needsPassword ? "Enter your password to continue." : "Enter your work email to access the event management assistant."}
+          </div>
 
           <div style={{marginBottom:16}}>
             <label style={{display:"block",fontSize:11,fontWeight:600,color:"var(--muted)",marginBottom:6,letterSpacing:".06em",textTransform:"uppercase"}}>Work email</label>
             <input
               type="email" value={email} placeholder="you@shiftfestival.be"
               onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && doLogin()}
-              style={{width:"100%",padding:"10px 13px",background:"var(--surface)",border:"1px solid var(--line)",borderRadius:8,color:"var(--ink)",fontSize:14,fontFamily:"var(--font)",outline:"none"}}
+              onKeyDown={e => { if (e.key === "Enter") needsPassword ? document.getElementById("pw-field")?.focus() : doLogin(); }}
+              style={inputStyle}
             />
           </div>
+
+          {needsPassword && (
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:11,fontWeight:600,color:"var(--muted)",marginBottom:6,letterSpacing:".06em",textTransform:"uppercase"}}>Password</label>
+              <input
+                id="pw-field"
+                type="password" value={password} placeholder="••••••••"
+                autoFocus
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && doLogin()}
+                style={inputStyle}
+              />
+            </div>
+          )}
 
           {error && (
             <div style={{fontSize:12,color:"var(--hot)",marginBottom:14,background:"var(--hot-soft)",border:"1px solid rgba(214,58,74,.15)",borderRadius:8,padding:"8px 12px"}}>
@@ -673,7 +721,7 @@ function LoginScreen({ onLogin }) {
 
           <button
             onClick={doLogin} disabled={loading}
-            style={{width:"100%",padding:"11px 16px",background:"var(--primary)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:600,fontFamily:"var(--font)",cursor:loading?"not-allowed":"pointer",opacity:loading?.5:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}
+            style={{width:"100%",padding:"11px 16px",background:"var(--primary)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:600,fontFamily:"var(--font)",cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}
           >
             {loading ? "Checking…" : "Continue →"}
           </button>
@@ -840,15 +888,47 @@ function Topbar({ identity, connected, serverCount, onSettings, sidebarOpen, onT
   );
 }
 
+// ─── Slash commands ───────────────────────────────────────────────────────
+const SLASH_COMMANDS = [
+  { cmd: "/delete",  hint: "Delete a session or user account",         fill: "/delete "  },
+  { cmd: "/block",   hint: "Block a user from the platform",           fill: "/block "   },
+  { cmd: "/unblock", hint: "Unblock a previously blocked user",        fill: "/unblock " },
+  { cmd: "/refund",  hint: "Refund an invoice or order",               fill: "/refund "  },
+  { cmd: "/status",  hint: "Check service health and MCP connectivity",fill: "/status"   },
+  { cmd: "/enroll",  hint: "Enroll a user in a session",               fill: "/enroll "  },
+  { cmd: "/cancel",  hint: "Cancel an enrollment or booking",          fill: "/cancel "  },
+  { cmd: "/lookup",  hint: "Look up a user by email or UUID",          fill: "/lookup "  },
+];
+
 // ─── Composer ──────────────────────────────────────────────────────────────
 function Composer({ onSend, busy, disabled }) {
   const [draft, setDraft] = useState("");
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashIdx, setSlashIdx] = useState(0);
   const taRef = useRef(null);
+
+  const slashMatches = useMemo(() => {
+    if (!draft.startsWith("/")) return [];
+    const q = draft.toLowerCase();
+    return SLASH_COMMANDS.filter(c => c.cmd.startsWith(q));
+  }, [draft]);
+
+  useEffect(() => {
+    setSlashOpen(slashMatches.length > 0 && draft !== slashMatches[0]?.fill?.trimEnd());
+    setSlashIdx(0);
+  }, [slashMatches.length, draft]);
+
+  const selectSlash = (item) => {
+    setDraft(item.fill);
+    setSlashOpen(false);
+    taRef.current?.focus();
+  };
 
   const submit = () => {
     if (draft.trim() && !busy && !disabled) {
       onSend(draft.trim());
       setDraft("");
+      setSlashOpen(false);
     }
   };
 
@@ -858,26 +938,47 @@ function Composer({ onSend, busy, disabled }) {
     taRef.current.style.height = Math.min(taRef.current.scrollHeight, 200) + "px";
   }, [draft]);
 
+  const handleKeyDown = (e) => {
+    if (slashOpen) {
+      if (e.key === "ArrowDown")  { e.preventDefault(); setSlashIdx(i => Math.min(i + 1, slashMatches.length - 1)); return; }
+      if (e.key === "ArrowUp")    { e.preventDefault(); setSlashIdx(i => Math.max(i - 1, 0)); return; }
+      if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); selectSlash(slashMatches[slashIdx]); return; }
+      if (e.key === "Escape")     { setSlashOpen(false); return; }
+    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+  };
+
   return (
     <div className="composer">
+      {slashOpen && (
+        <div className="slash-menu">
+          {slashMatches.map((item, i) => (
+            <button
+              key={item.cmd}
+              className={`slash-item${i === slashIdx ? " is-active" : ""}`}
+              onMouseDown={e => { e.preventDefault(); selectSlash(item); }}
+            >
+              <span className="slash-cmd">{item.cmd}</span>
+              <span className="slash-hint">{item.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="composer-inner">
         <textarea
           ref={taRef} rows="1"
-          placeholder={disabled ? "Connecting to server…" : "Ask about sessions, invoices, members, orders, or service health…"}
+          placeholder={disabled ? "Connecting to server…" : "Ask about sessions, invoices, members… or type / for commands"}
           value={draft}
           onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+          onKeyDown={handleKeyDown}
           disabled={busy || disabled}
         />
-        <div className="composer-tools">
-          <button className="composer-tool" title="Attach" type="button">{I.attach}</button>
-        </div>
         <button className="send-btn" onClick={submit} disabled={busy || disabled || !draft.trim()} aria-label="Send">
           {I.send}
         </button>
       </div>
       <div className="composer-hint">
-        Press <span className="kbd">↵</span> to send · <span className="kbd">⇧↵</span> for newline
+        Press <span className="kbd">↵</span> to send · <span className="kbd">⇧↵</span> for newline · <span className="kbd">/</span> for commands
       </div>
     </div>
   );

@@ -37,6 +37,7 @@ class MCPClient:
         self._registry: dict[str, tuple[str, Any, str]] = {}
         self._health_task: asyncio.Task | None = None
         self._cache: dict[str, tuple[float, str]] = {}   # key → (ts, result)
+        self._server_health: dict[str, bool] = {}        # label → confirmed-alive
 
     async def _connect_server(self, label: str, url: str) -> None:
         """Connect to one MCP server and register its tools. Idempotent — tears down existing connection first."""
@@ -60,6 +61,7 @@ class MCPClient:
         for tool in tools:
             namespaced = f"{label}__{tool.name}"
             self._registry[namespaced] = (label, tool, tool.name)
+        self._server_health[label] = True
         _log.info("MCP [%s] connected — %d tools: %s", label, len(tools), [t.name for t in tools])
 
     async def _reconnect_with_backoff(self, label: str) -> None:
@@ -77,26 +79,38 @@ class MCPClient:
                 _log.warning("MCP [%s] reconnect attempt failed (retrying in %ss): %s", label, wait, exc)
         _log.error("MCP [%s] could not reconnect after all retries — will retry at next health check", label)
 
+    async def _ping(self, label: str, url: str) -> bool:
+        """Lightweight HTTP GET to the MCP base URL — faster than list_tools()."""
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=4.0) as http:
+                r = await http.get(url.rstrip("/").rsplit("/mcp", 1)[0] + "/health"
+                                   if "/mcp" in url else url)
+                return r.status_code < 500
+        except Exception:
+            return False
+
     async def _health_loop(self) -> None:
         """Background task: ping every MCP server periodically and reconnect if dead."""
         while True:
             await asyncio.sleep(_HEALTH_INTERVAL)
             for label, url in list(self._servers.items()):
-                client = self._label_clients.get(label)
-                alive = False
-                if client is not None:
-                    try:
-                        await asyncio.wait_for(client.list_tools(), timeout=5.0)
-                        alive = True
-                    except Exception:
-                        pass
-                if not alive:
-                    _log.warning("MCP [%s] health check failed — reconnecting…", label)
-                    try:
-                        await self._connect_server(label, url)
-                        _log.info("MCP [%s] recovered", label)
-                    except Exception as exc:
-                        _log.warning("MCP [%s] recovery failed: %s", label, exc)
+                alive = await self._ping(label, url)
+                if alive:
+                    if not self._server_health.get(label):
+                        # Was down, now reachable — reconnect to refresh session
+                        try:
+                            await self._connect_server(label, url)
+                            _log.info("MCP [%s] recovered", label)
+                        except Exception as exc:
+                            _log.warning("MCP [%s] ping ok but reconnect failed: %s", label, exc)
+                            self._server_health[label] = False
+                    else:
+                        self._server_health[label] = True
+                else:
+                    if self._server_health.get(label, True):
+                        _log.warning("MCP [%s] health check failed — marking offline", label)
+                    self._server_health[label] = False
 
     async def init(self) -> None:
         self._servers = _parse_servers()
@@ -109,6 +123,7 @@ class MCPClient:
                 await self._connect_server(label, url)
             except Exception as exc:
                 _log.warning("MCP [%s] unavailable at %s: %s", label, url, exc)
+                self._server_health[label] = False
 
         self._health_task = asyncio.create_task(self._health_loop())
 
@@ -208,8 +223,9 @@ class MCPClient:
         return json.dumps({"error": "Tool call failed after reconnect attempt", "status": "error"})
 
     def get_server_status(self) -> dict[str, bool]:
-        """Return {label: connected} for every configured MCP server."""
-        return {label: label in self._label_clients for label in self._servers}
+        """Return {label: connected} for every configured MCP server.
+        Uses last-confirmed health rather than mere client presence."""
+        return {label: bool(self._server_health.get(label)) for label in self._servers}
 
     def has_tools(self) -> bool:
         return bool(self._registry)

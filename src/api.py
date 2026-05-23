@@ -71,36 +71,36 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NoCacheStaticMiddleware)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
-# ── Admin auth (disabled — see src/auth.py for setup instructions) ──────────
-# from auth import AdminAuthMiddleware, verify_credentials, create_token, _COOKIE   # AUTH
-# app.add_middleware(AdminAuthMiddleware)                                             # AUTH
-#
-# @app.get("/admin/login")
-# async def admin_login_page():
-#     return FileResponse(os.path.join(_STATIC_DIR, "admin-login.html"))
-#
-# @app.post("/api/admin/login")
-# async def admin_login(request: Request):
-#     try:
-#         body = await request.json()
-#     except Exception:
-#         return JSONResponse({"error": "invalid JSON"}, status_code=400)
-#     username = str(body.get("username", "")).strip()
-#     password = str(body.get("password", "")).strip()
-#     if not username or not password:
-#         return JSONResponse({"error": "username and password are required"}, status_code=400)
-#     if not verify_credentials(username, password):
-#         return JSONResponse({"error": "Invalid credentials"}, status_code=401)
-#     token = create_token(username)
-#     resp = JSONResponse({"ok": True, "user": username})
-#     resp.set_cookie(_COOKIE, token, httponly=True, samesite="lax", max_age=60 * 60 * 8)
-#     return resp
-#
-# @app.post("/api/admin/logout")
-# async def admin_logout():
-#     resp = JSONResponse({"ok": True})
-#     resp.delete_cookie(_COOKIE)
-#     return resp
+# ── Admin auth — combined: password check + identity resolve in one call ─────
+# Set ADMIN_CREDENTIALS=email:password,email2:password2 in env to enforce passwords.
+# If ADMIN_CREDENTIALS is not set, password is ignored and any known email can log in.
+from auth import verify_credentials, create_token, verify_token, _COOKIE, _CREDS_RAW
+
+
+@app.get("/api/me")
+async def get_me(request: Request):
+    """Return current admin identity from cookie (auto-login on page refresh)."""
+    token = request.cookies.get(_COOKIE)
+    if not token:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    email = verify_token(token)
+    if not email:
+        return JSONResponse({"error": "session expired"}, status_code=401)
+    try:
+        from downstream_tools import resolve_identity_by_email, DownstreamConfig
+        cfg = DownstreamConfig()
+        loop = asyncio.get_event_loop()
+        user = await loop.run_in_executor(None, resolve_identity_by_email, email, cfg)
+        return {"identity_uuid": user.identity_uuid, "email": user.email}
+    except Exception:
+        return JSONResponse({"error": "session expired"}, status_code=401)
+
+
+@app.post("/api/admin/logout")
+async def admin_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(_COOKIE, httponly=True, samesite="lax")
+    return resp
 # ────────────────────────────────────────────────────────────────────────────
 
 
@@ -114,7 +114,7 @@ async def root():
 
 @app.post("/api/identify")
 async def identify(request: Request):
-    """Resolve admin email → identity UUID via the identity service."""
+    """Resolve admin email → identity UUID. Checks password when ADMIN_CREDENTIALS is set."""
     try:
         body = await request.json()
     except Exception:
@@ -124,12 +124,22 @@ async def identify(request: Request):
     if not email:
         return JSONResponse({"error": "email is required"}, status_code=400)
 
+    # Password gate — only active when ADMIN_CREDENTIALS env var is configured
+    if _CREDS_RAW:
+        password = str(body.get("password", "")).strip()
+        if not verify_credentials(email, password):
+            return JSONResponse({"error": "Incorrect email or password."}, status_code=401)
+
     try:
         from downstream_tools import resolve_identity_by_email, DownstreamConfig
         cfg = DownstreamConfig()
         loop = asyncio.get_event_loop()
         user = await loop.run_in_executor(None, resolve_identity_by_email, email, cfg)
-        return {"identity_uuid": user.identity_uuid, "email": user.email}
+        result = {"identity_uuid": user.identity_uuid, "email": user.email}
+        resp = JSONResponse(result)
+        token = create_token(email)
+        resp.set_cookie(_COOKIE, token, httponly=True, samesite="lax", max_age=60 * 60 * 8)
+        return resp
     except RuntimeError as exc:
         msg = str(exc).lower()
         if "missing" in msg or "not found" in msg or "uuid" in msg:

@@ -1158,6 +1158,43 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: 10px;
 }
 
+/* ── Slash command palette ───────────────────────────────────────────── */
+.slash-menu {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.slash-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+  transition: background .1s;
+}
+.slash-item:last-child { border-bottom: none; }
+.slash-item:hover, .slash-item.is-active { background: var(--primary-soft); }
+.slash-cmd {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.slash-hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 /* ============================================================
    FLOW COLUMN — permanent MCP topology
    ============================================================ */
@@ -1289,6 +1326,53 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--muted-2);
   flex-shrink: 0;
 }
+
+/* ── MCP server live-status bar ─────────────────────────────────────── */
+.srv-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 6px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.srv-status-pill {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+.srv-status-pill.ok  { background: rgba(var(--ok-rgb, 56,161,105),.15);  color: var(--ok);  }
+.srv-status-pill.hot { background: rgba(var(--hot-rgb,229,62,62),.15);   color: var(--hot); }
+.srv-status-time {
+  flex: 1;
+  text-align: right;
+  font-size: 10px;
+  color: var(--muted-2);
+}
+.srv-status-refresh {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.srv-status-refresh:hover { color: var(--accent); }
+
+/* ── Per-card connection dot ─────────────────────────────────────────── */
+.srv-conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+.srv-conn-dot.ok      { background: var(--ok);  box-shadow: 0 0 4px var(--ok); }
+.srv-conn-dot.hot     { background: var(--hot); box-shadow: 0 0 4px var(--hot); }
+.srv-conn-dot.unknown { background: var(--muted-2); }
 
 .srv-tools {
   border-top: 1px solid var(--line);
@@ -3327,4 +3411,97 @@ body[data-theme="dark"] .mf-tooltip,
 body[data-theme="slate"] .mf-tooltip {
   background: var(--surface-2);
   border-color: var(--line-2);
+}
+
+/* ============================================================
+   DENSITY SETTING
+   cozy  — compact, information-dense
+   comfy — default balanced spacing
+   loose — extra breathing room
+   ============================================================ */
+body[data-density="cozy"] .messages {
+  padding: 14px 20px 8px;
+  gap: 10px;
+}
+body[data-density="cozy"] .msg { gap: 8px; }
+body[data-density="cozy"] .msg-av { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 7px; font-size: 10px; }
+body[data-density="cozy"] .msg-meta { font-size: 11px; margin-bottom: 2px; }
+body[data-density="cozy"] .msg-text { font-size: 13px; }
+body[data-density="cozy"] .composer { padding: 10px 20px 14px; }
+body[data-density="cozy"] .tool-call { padding: 8px 10px; }
+body[data-density="cozy"] .tc-head { gap: 6px; }
+
+body[data-density="comfy"] .messages {
+  padding: 28px 28px 12px;
+  gap: 22px;
+}
+
+body[data-density="loose"] .messages {
+  padding: 36px 32px 16px;
+  gap: 32px;
+}
+body[data-density="loose"] .msg { gap: 16px; }
+body[data-density="loose"] .msg-av { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 11px; font-size: 13px; }
+body[data-density="loose"] .msg-meta { font-size: 13px; margin-bottom: 6px; }
+body[data-density="loose"] .msg-text { font-size: 15px; line-height: 1.7; }
+body[data-density="loose"] .composer { padding: 20px 32px 28px; }
+body[data-density="loose"] .tool-call { padding: 14px 16px; }
+
+/* ============================================================
+   RESPONSIVE — mobile / narrow screens
+   ============================================================ */
+
+/* Tablet: hide flow column, keep sidebar */
+@media (max-width: 1024px) {
+  .app {
+    grid-template-columns: 248px 1fr 0 !important;
+    grid-template-areas:
+      "topbar topbar topbar"
+      "sidebar main main";
+  }
+  .flow-col { display: none; }
+}
+
+/* Mobile: single column, hide sidebar and flow column */
+@media (max-width: 680px) {
+  .app {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 56px 1fr;
+    grid-template-areas:
+      "topbar"
+      "main";
+  }
+  .sidebar { display: none; }
+  .flow-col { display: none; }
+
+  /* Topbar: hide brand text, keep actions */
+  .brand { width: auto; border-right: none; padding-right: 8px; }
+  .brand .brand-name, .brand .brand-sub { display: none; }
+  .topbar { gap: 8px; padding: 0 10px; }
+  .topbar-right { gap: 6px; }
+
+  /* Messages area */
+  .messages { padding: 12px 10px; }
+  .msg { gap: 8px; }
+  .msg-av { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 7px; font-size: 10px; }
+
+  /* Composer */
+  .composer { padding: 10px 10px 8px; }
+  .composer-hint { display: none; }
+
+  /* Login screen */
+  .login-wrap > div { padding: 16px !important; }
+  .login-card { padding: 24px 20px !important; }
+
+  /* Dashboard strip — stack vertically */
+  .dash-strip { flex-wrap: wrap; gap: 6px; }
+  .dash-kpi   { flex: 1 1 calc(50% - 6px); min-width: 0; }
+
+  /* Settings modal */
+  .settings-modal { width: calc(100vw - 24px) !important; padding: 20px 16px 16px !important; }
+
+  /* Monitoring panel columns collapse */
+  .mon-list-head span:nth-child(2) { display: none; }
+  .mon-strip { display: none; }
+  .mon-row { grid-template-columns: 1fr auto; }
 }
