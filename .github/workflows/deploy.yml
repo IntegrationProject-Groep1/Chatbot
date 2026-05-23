@@ -12,6 +12,10 @@ on:
     workflows: ["CI Pipeline"]
     types:
       - completed
+    branches:
+      - main
+      - dev
+      - "v*"
   workflow_dispatch:
 
 jobs:
