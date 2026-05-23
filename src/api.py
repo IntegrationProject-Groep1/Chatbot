@@ -299,28 +299,71 @@ async def list_mcp_tools():
     }
 
 
+# Routing map (source_service, log_action) → downstream recipients.
+# Based on XML/XSD Contract v2.3 + confirmed by actual Elasticsearch log messages.
+# ES action field values: registration, payment, session, calendar, invoice, email,
+#   user, wallet, badge, refund, xml_validation, system_error
 _FLOW_ROUTES: dict[tuple[str, str], list[str]] = {
-    ("kassa",           "registration"):  ["crm"],
-    ("kassa",           "wallet"):        ["crm"],
-    ("kassa",           "badge"):         ["crm"],
-    ("frontend",        "registration"):  ["crm"],
-    ("frontend",        "session"):       ["crm"],
-    ("frontend",        "user"):          ["crm"],
-    ("crm",             "registration"):  ["facturatie", "planning"],
-    ("crm",             "payment"):       ["facturatie"],
-    ("crm",             "invoice"):       ["facturatie"],
-    ("crm",             "session"):       ["planning"],
-    ("crm",             "calendar"):      ["planning"],
-    ("crm",             "email"):         ["mailing"],
-    ("crm",             "user"):          ["identity-service"],
-    ("crm",             "refund"):        ["facturatie"],
-    ("facturatie",      "invoice"):       ["mailing"],
-    ("facturatie",      "email"):         ["mailing"],
-    ("facturatie",      "payment"):       ["mailing"],
-    ("planning",        "calendar"):      ["mailing"],
-    ("planning",        "email"):         ["mailing"],
-    ("planning",        "session"):       ["mailing"],
-    ("identity-service","user"):          ["crm"],
+    # ── Kassa → outgoing ───────────────────────────────────────────────────────
+    ("kassa",            "registration"):    ["crm"],
+    ("kassa",            "payment"):         ["crm"],          # payment_registered
+    ("kassa",            "session"):         ["crm"],          # session events
+    ("kassa",            "wallet"):          ["crm"],          # wallet_lease
+    ("kassa",            "badge"):           ["crm"],          # badge_assigned
+    ("kassa",            "refund"):          ["crm"],          # refund_processed
+    ("kassa",            "invoice"):         ["crm"],          # invoice_request
+    ("kassa",            "wallet_balance"):  ["frontend"],     # wallet_balance_update
+    ("kassa",            "payment_status"):  ["frontend"],     # payment_status
+
+    # ── Frontend → outgoing ────────────────────────────────────────────────────
+    ("frontend",         "registration"):    ["crm"],          # new_registration
+    ("frontend",         "user"):            ["crm"],          # user_created/updated/deleted
+    ("frontend",         "session"):         ["crm"],          # session CRUD via exchange
+    ("frontend",         "user_registered"): ["crm", "kassa"], # dual-publish
+    ("frontend",         "user_unregistered"):["crm","kassa"], # dual-publish
+    ("frontend",         "cancel_registration"):["crm"],
+    ("frontend",         "company"):         ["crm"],
+    ("frontend",         "calendar"):        ["planning"],     # calendar_invite
+    ("frontend",         "event_ended"):     ["facturatie", "kassa"],  # fanout exchange
+    ("frontend",         "payment"):         ["facturatie"],   # payment_registered (online)
+    ("frontend",         "checkin"):         ["crm"],
+
+    # ── CRM → outgoing ─────────────────────────────────────────────────────────
+    ("crm",              "registration"):    ["kassa", "facturatie"],  # new_registration fanout
+    ("crm",              "profile_update"):  ["kassa", "facturatie"],
+    ("crm",              "cancel_registration"):["kassa"],
+    ("crm",              "invoice"):         ["facturatie"],
+    ("crm",              "payment"):         ["facturatie"],
+    ("crm",              "session"):         ["planning"],
+    ("crm",              "calendar"):        ["planning"],
+    ("crm",              "email"):           ["mailing"],
+    ("crm",              "user"):            ["identity-service"],
+    ("crm",              "refund"):          ["facturatie"],
+    ("crm",              "payment_registered"):["frontend"],  # push back to portal
+    ("crm",              "wallet"):          ["kassa"],
+
+    # ── Facturatie → outgoing ──────────────────────────────────────────────────
+    ("facturatie",       "invoice"):         ["mailing"],      # send_mailing after invoice
+    ("facturatie",       "email"):           ["mailing"],
+    ("facturatie",       "invoice_status"):  ["crm"],          # feedback to CRM
+    ("facturatie",       "payment"):         ["crm"],          # payment_registered back
+    ("facturatie",       "invoice_available"):["frontend"],    # notify portal
+
+    # ── Planning → outgoing ────────────────────────────────────────────────────
+    ("planning",         "calendar"):        ["frontend"],     # calendar_invite_confirmed (confirmed by ES log)
+    ("planning",         "session"):         ["crm", "frontend"],  # session_created/updated/deleted
+    ("planning",         "session_created"): ["crm", "frontend"],
+    ("planning",         "session_updated"): ["crm", "frontend"],
+    ("planning",         "session_deleted"): ["crm", "frontend"],
+    ("planning",         "email"):           ["mailing"],
+
+    # ── Identity → outgoing ────────────────────────────────────────────────────
+    ("identity-service", "user"):            ["crm"],          # user_event fanout
+    ("identity-service", "user_event"):      ["crm"],
+
+    # ── Monitoring → outgoing ──────────────────────────────────────────────────
+    ("monitoring",       "system_alert"):    ["mailing"],
+    ("monitoring",       "alert"):           ["mailing"],
 }
 
 
@@ -352,18 +395,23 @@ async def monitoring_message_flow(hours: float = 1.0, limit: int = 500):
 
     edge_data: dict[tuple[str, str, str], dict] = {}
     recent_events: list[dict] = []
+    # Track per-service last active timestamp for node "last_seen" display
+    service_last_ts: dict[str, str] = {}
 
     for entry in logs:
-        if _parse_ts(entry.get("@timestamp", "")) < cutoff_ts:
+        ts  = entry.get("@timestamp", "")
+        if _parse_ts(ts) < cutoff_ts:
             continue
         src    = (entry.get("system",      "") or "").lower().strip()
         action = (entry.get("action",      "") or "").lower().strip()
         level  = (entry.get("level",       "") or "info").lower()
         msg    = (entry.get("log_message", "") or "")[:140]
-        ts     = entry.get("@timestamp", "")
+
+        if src and ts > service_last_ts.get(src, ""):
+            service_last_ts[src] = ts
 
         destinations = _FLOW_ROUTES.get((src, action), [])
-        if len(recent_events) < 200:
+        if len(recent_events) < 300:
             recent_events.append({
                 "source": src, "action": action, "level": level,
                 "message": msg, "timestamp": ts, "destinations": destinations,
@@ -371,7 +419,7 @@ async def monitoring_message_flow(hours: float = 1.0, limit: int = 500):
         for dst in destinations:
             key = (src, dst, action)
             if key not in edge_data:
-                edge_data[key] = {"count": 0, "errors": 0, "recent": []}
+                edge_data[key] = {"count": 0, "errors": 0, "recent": [], "last_ts": ""}
             edge_data[key]["count"] += 1
             if level == "error":
                 edge_data[key]["errors"] += 1
@@ -379,11 +427,20 @@ async def monitoring_message_flow(hours: float = 1.0, limit: int = 500):
                 edge_data[key]["recent"].append(
                     {"timestamp": ts, "message": msg, "level": level}
                 )
+            # logs come DESC from ES; first occurrence per key is the most recent
+            if not edge_data[key]["last_ts"]:
+                edge_data[key]["last_ts"] = ts
 
+    minutes = max(hours * 60, 1)
     edges = [
         {
-            "source": src, "target": dst, "action": action,
-            "count":  d["count"], "errors": d["errors"],
+            "source":          src,
+            "target":          dst,
+            "action":          action,
+            "count":           d["count"],
+            "errors":          d["errors"],
+            "rate_per_min":    round(d["count"] / minutes, 2),
+            "last_message":    d["last_ts"],
             "recent_messages": d["recent"],
         }
         for (src, dst, action), d in sorted(edge_data.items(), key=lambda x: -x[1]["count"])
@@ -394,10 +451,13 @@ async def monitoring_message_flow(hours: float = 1.0, limit: int = 500):
     active = {e["source"] for e in edges} | {e["target"] for e in edges}
     nodes = [
         {
-            "id": svc,
-            "live":   health.get(svc, {}).get("live"),
-            "status": (health.get(svc, {}).get("status") or "unknown"),
-            "active": svc in active,
+            "id":        svc,
+            "live":      health.get(svc, {}).get("live"),
+            "status":    (health.get(svc, {}).get("status") or "unknown"),
+            "uptime":    health.get(svc, {}).get("uptime_seconds"),
+            "last_seen": health.get(svc, {}).get("last_seen") or health.get(svc, {}).get("last_heartbeat"),
+            "last_log":  service_last_ts.get(svc),
+            "active":    svc in active,
         }
         for svc in sorted(known | active)
     ]
