@@ -363,6 +363,176 @@ function MCPServerList() {
   );
 }
 
+// ---------- Infrastructure panel — heartbeat grid + log feed ----------
+const _ALL_SYSTEMS = [
+  { id: "chatbot",          label: "Chatbot",         group: "core" },
+  { id: "frontend",         label: "Frontend",        group: "core" },
+  { id: "kassa",            label: "Kassa",           group: "core" },
+  { id: "facturatie",       label: "Facturatie",      group: "core" },
+  { id: "crm",              label: "CRM",             group: "core" },
+  { id: "planning",         label: "Planning",        group: "core" },
+  { id: "mailing",          label: "Mailing",         group: "core" },
+  { id: "identity-service", label: "Identity",        group: "core" },
+  { id: "monitoring",       label: "Monitoring (ES)", group: "core" },
+  { id: "frontend-mcp",     label: "Frontend MCP",    group: "mcp"  },
+  { id: "kassa-mcp",        label: "Kassa MCP",       group: "mcp"  },
+  { id: "facturatie-mcp",   label: "Facturatie MCP",  group: "mcp"  },
+  { id: "crm-mcp",          label: "CRM MCP",         group: "mcp"  },
+  { id: "monitoring-mcp",   label: "Monitoring MCP",  group: "mcp"  },
+];
+
+const KIBANA = "https://kibana.desiderius.me";
+const KIBANA_HB_DASH  = `${KIBANA}/app/dashboards#/view/shift-mcp-heartbeats-dashboard`;
+const KIBANA_LOG_DASH = `${KIBANA}/app/dashboards#/view/shift-service-logs-dashboard`;
+
+function HbRow({ sys, statusMap, mcpMap }) {
+  const [cells, setCells] = React.useState([]);
+
+  React.useEffect(() => {
+    if (sys.group === "mcp") {
+      const connected = (mcpMap[sys.id.replace("-mcp", "")] || {}).connected;
+      setCells(Array(15).fill({ status: connected ? "ok" : "miss" }));
+      return;
+    }
+    fetch(`/api/monitoring/heartbeat/${sys.id}?hours=1`)
+      .then(r => r.json())
+      .then(d => setCells((d.cells || []).slice(-15)))
+      .catch(() => {});
+  }, [sys.id, sys.group, JSON.stringify(mcpMap)]);
+
+  const svc    = statusMap[sys.id] || {};
+  const live   = svc.live !== undefined ? svc.live : cells.slice(-1)[0]?.status === "ok";
+  const st     = live ? "online" : svc.status === "no_data" ? "unknown" : "offline";
+  const pill   = st === "online" ? "ok" : st === "unknown" ? "warn" : "hot";
+
+  return (
+    <div className="ifr-row">
+      <span className={`ifr-dot ${pill}`}></span>
+      <span className="ifr-name">{sys.label}</span>
+      <span className="ifr-cells">
+        {cells.map((c, i) => <span key={i} className={`ifr-cell ${c.status === "ok" ? "ok" : "miss"}`}></span>)}
+      </span>
+      <span className={`mon-pill ${pill === "ok" ? "online" : pill === "warn" ? "degraded" : "quarantine"}`}>{st}</span>
+    </div>
+  );
+}
+
+function InfraHeartbeats() {
+  const [statusMap, setStatusMap] = React.useState({});
+  const [mcpMap, setMcpMap]       = React.useState({});
+
+  React.useEffect(() => {
+    const load = () => Promise.all([
+      fetch("/api/monitoring/status").then(r => r.json()).catch(() => ({ services: [] })),
+      fetch("/api/mcp/status").then(r => r.json()).catch(() => ({ servers: [] })),
+    ]).then(([d, m]) => {
+      const sm = {}; (d.services || []).forEach(s => { sm[s.service] = s; });
+      const mm = {}; (m.servers  || []).forEach(s => { mm[s.id] = s; });
+      setStatusMap(sm); setMcpMap(mm);
+    });
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  const core = _ALL_SYSTEMS.filter(s => s.group === "core");
+  const mcp  = _ALL_SYSTEMS.filter(s => s.group === "mcp");
+
+  return (
+    <div className="ifr-hb-wrap">
+      <div className="ifr-group-head">
+        CORE SERVICES
+        <a href={KIBANA_HB_DASH} target="_blank" rel="noopener noreferrer" className="ifr-kibana-link">Open in Kibana →</a>
+      </div>
+      <div className="ifr-list">
+        <div className="ifr-list-head"><span></span><span>Service</span><span>Last 15 min</span><span>Status</span></div>
+        {core.map(s => <HbRow key={s.id} sys={s} statusMap={statusMap} mcpMap={mcpMap} />)}
+      </div>
+
+      <div className="ifr-group-head" style={{ marginTop: 12 }}>
+        MCP SERVERS
+        <a href={KIBANA_HB_DASH} target="_blank" rel="noopener noreferrer" className="ifr-kibana-link">Open in Kibana →</a>
+      </div>
+      <div className="ifr-list">
+        <div className="ifr-list-head"><span></span><span>Server</span><span>Last 15 min</span><span>Status</span></div>
+        {mcp.map(s => <HbRow key={s.id} sys={s} statusMap={statusMap} mcpMap={mcpMap} />)}
+      </div>
+    </div>
+  );
+}
+
+function InfraLogs() {
+  const [logs, setLogs]       = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [lvlFilter, setLvl]   = React.useState("all");
+  const [svcFilter, setSvc]   = React.useState("all");
+
+  React.useEffect(() => {
+    const load = () =>
+      fetch("/api/monitoring/errors?limit=100")
+        .then(r => r.json())
+        .then(d => { setLogs(d.errors || []); setLoading(false); })
+        .catch(() => setLoading(false));
+    load();
+    const t = setInterval(load, 8000);
+    return () => clearInterval(t);
+  }, []);
+
+  const services = ["all", ...new Set(logs.map(e => e.source).filter(Boolean))].sort();
+  const visible  = logs.filter(e =>
+    (lvlFilter === "all" || e.level === lvlFilter) &&
+    (svcFilter === "all" || e.source === svcFilter)
+  );
+  const lvlCls = { error: "hot", warning: "warn", info: "ok" };
+
+  return (
+    <div className="ifr-log-wrap">
+      <div className="ifr-log-bar">
+        <span className="ifr-log-label">Level</span>
+        <select className="ifr-select" value={lvlFilter} onChange={e => setLvl(e.target.value)}>
+          {["all","info","warning","error"].map(l => <option key={l}>{l}</option>)}
+        </select>
+        <span className="ifr-log-label">Service</span>
+        <select className="ifr-select" value={svcFilter} onChange={e => setSvc(e.target.value)}>
+          {services.map(s => <option key={s}>{s}</option>)}
+        </select>
+        <a href={KIBANA_LOG_DASH} target="_blank" rel="noopener noreferrer" className="ifr-kibana-link">Open in Kibana →</a>
+        <span className="mono" style={{ color: "var(--muted-3)", fontSize: 10, marginLeft: "auto" }}>{visible.length} entries · 8s</span>
+      </div>
+
+      <div className="ifr-log-list">
+        {loading && <div className="ifr-log-empty">Loading…</div>}
+        {!loading && visible.length === 0 && <div className="ifr-log-empty">No entries match the filter.</div>}
+        {visible.map((e, i) => (
+          <div key={i} className="ifr-log-row">
+            <span className={`ifr-lvl ${lvlCls[e.level] || ""}`}>{(e.level||"?").slice(0,4).toUpperCase()}</span>
+            <span className="ifr-src mono">{e.source || "—"}</span>
+            <span className="ifr-act mono">{e.action || "—"}</span>
+            <span className="ifr-msg">{e.message || "—"}</span>
+            <span className="ifr-ts mono">{e["@timestamp"] ? new Date(e["@timestamp"]).toLocaleTimeString([],{hour12:false}) : "—"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InfraPanel() {
+  const [sub, setSub] = React.useState("heartbeats");
+  return (
+    <div className="ifr-pane">
+      <div className="ifr-tabs">
+        <button className={`ifr-tab ${sub === "heartbeats" ? "active" : ""}`} onClick={() => setSub("heartbeats")}>Heartbeats</button>
+        <button className={`ifr-tab ${sub === "logs"       ? "active" : ""}`} onClick={() => setSub("logs")}>Logs</button>
+      </div>
+      <div className="ifr-scroll">
+        {sub === "heartbeats" && <InfraHeartbeats />}
+        {sub === "logs"       && <InfraLogs />}
+      </div>
+    </div>
+  );
+}
+
 // ---------- MCP Servers section — connection status from /api/mcp/status ----------
 function MCPServersSection() {
   const [servers, setServers] = React.useState([]);
@@ -586,6 +756,8 @@ function MonitoringPanel() {
             )}
           </div>
         </div>
+
+        <InfraPanel />
       </div>
 
       <div className="mon-footer">
@@ -654,6 +826,29 @@ function MonRow({ svc, tick, onOpen }) {
       </div>
     </button>
   );
+}
+
+// ---------- Notify on-call button ----------
+function NotifyButton({ service }) {
+  const [state, setState] = React.useState("idle"); // idle | sending | ok | err
+
+  const send = () => {
+    if (state === "sending") return;
+    setState("sending");
+    fetch("/api/monitoring/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ service, message: `Manual on-call alert for ${service} triggered from admin panel` }),
+    })
+      .then(r => r.json())
+      .then(d => setState(d.ok ? "ok" : "err"))
+      .catch(() => setState("err"))
+      .finally(() => setTimeout(() => setState("idle"), 4000));
+  };
+
+  const label = { idle: "Notify on-call", sending: "Sending…", ok: "Alert sent ✓", err: "Failed ✗" }[state];
+  const cls   = `svc-btn primary${state === "ok" ? " ok" : state === "err" ? " hot" : ""}`;
+  return <button className={cls} onClick={send} disabled={state === "sending"}>{label}</button>;
 }
 
 // ---------- Service detail drawer (slides in on click) ----------
@@ -858,8 +1053,13 @@ function ServiceDetailDrawer({ svc, tick, onClose }) {
           </section>
 
           <div className="svc-drawer-actions">
-            <button className="svc-btn">View in Kibana →</button>
-            <button className="svc-btn primary">Notify on-call</button>
+            <a
+              className="svc-btn"
+              href={`https://kibana.desiderius.me/app/dashboards#/view/shift-mcp-heartbeats-dashboard?_g=(filters:!(),refreshInterval:(pause:!f,value:10000),time:(from:now-1h,to:now))&_a=(query:(language:kuery,query:'system.keyword:%22${encodeURIComponent(svc.id)}%22'))`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >View in Kibana →</a>
+            <NotifyButton service={svc.id} />
           </div>
         </div>
       </aside>

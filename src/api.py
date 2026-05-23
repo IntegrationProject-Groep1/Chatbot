@@ -297,6 +297,53 @@ async def monitoring_service_detail(service_id: str):
     }
 
 
+@app.post("/api/monitoring/notify")
+async def monitoring_notify(request: Request):
+    """Publish a manual HEARTBEAT_CRITICAL alert to the monitoring.alerts queue."""
+    body = await request.json()
+    service = str(body.get("service", "unknown"))
+    msg     = str(body.get("message", f"Manual alert triggered from admin panel for {service}"))
+
+    xml_alert = (
+        f"<alert>"
+        f"<type>HEARTBEAT_CRITICAL</type>"
+        f"<system>{service}</system>"
+        f"<message>{msg}</message>"
+        f"<timestamp>{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}</timestamp>"
+        f"</alert>"
+    )
+
+    alerts_queue = os.getenv("ALERTS_QUEUE", "monitoring.alerts")
+
+    def _publish() -> None:
+        import pika
+        host     = os.getenv("RABBITMQ_HOST", "localhost")
+        port     = int(os.getenv("RABBITMQ_PORT", "5672"))
+        user     = os.getenv("RABBIT_USER") or os.getenv("RABBITMQ_USER", "guest")
+        password = os.getenv("RABBIT_PASS") or os.getenv("RABBITMQ_PASSWORD", "guest")
+        vhost    = os.getenv("RABBITMQ_VHOST", "/")
+        params   = pika.ConnectionParameters(
+            host=host, port=port, virtual_host=vhost,
+            credentials=pika.PlainCredentials(user, password),
+            connection_attempts=2, retry_delay=1, socket_timeout=5,
+        )
+        conn = pika.BlockingConnection(params)
+        ch   = conn.channel()
+        ch.queue_declare(queue=alerts_queue, durable=True)
+        ch.basic_publish(exchange="", routing_key=alerts_queue,
+                         body=xml_alert.encode(), properties=pika.BasicProperties(
+                             content_type="application/xml", delivery_mode=2))
+        conn.close()
+
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _publish)
+        return {"ok": True, "service": service, "queue": alerts_queue}
+    except Exception as exc:
+        _log.warning("notify publish failed: %s", exc)
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+
+
 @app.get("/api/dashboard/summary")
 async def dashboard_summary():
     """Aggregated KPIs from monitoring for the dashboard strip."""

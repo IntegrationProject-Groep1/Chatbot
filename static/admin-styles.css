@@ -3857,3 +3857,220 @@ body[data-density="loose"] .tool-call { padding: 14px 16px; }
 .infra-log-act  { color: var(--muted);   font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .infra-log-msg  { color: var(--ink-3);   font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .infra-log-ts   { color: var(--muted-3); font-size: 10px; text-align: right; }
+
+/* ============================================================
+   InfraPanel — heartbeat grid + log feed inside MonitoringPanel
+   ============================================================ */
+
+.ifr-pane {
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.ifr-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-3);
+}
+
+.ifr-tab {
+  flex: 1;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+.ifr-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  background: var(--surface);
+}
+.ifr-tab:hover:not(.active) { color: var(--ink-3); }
+
+.ifr-scroll {
+  padding: 12px 14px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+/* ── Heartbeats ────────────────────────────────────────────── */
+
+.ifr-hb-wrap { display: flex; flex-direction: column; gap: 4px; }
+
+.ifr-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  padding: 4px 0 2px;
+}
+
+.ifr-kibana-link {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--primary);
+  text-decoration: none;
+  text-transform: none;
+  opacity: .8;
+  transition: opacity .15s;
+}
+.ifr-kibana-link:hover { opacity: 1; text-decoration: underline; }
+
+.ifr-list {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ifr-list-head {
+  display: grid;
+  grid-template-columns: 14px 120px 1fr 68px;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted-3);
+  background: var(--surface-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.ifr-row {
+  display: grid;
+  grid-template-columns: 14px 120px 1fr 68px;
+  gap: 8px;
+  padding: 5px 10px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  transition: background .1s;
+}
+.ifr-row:last-child { border-bottom: none; }
+.ifr-row:hover { background: var(--surface-3); }
+
+.ifr-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.ifr-dot.ok   { background: #22C55E; }
+.ifr-dot.warn { background: #F59E0B; }
+.ifr-dot.hot  { background: #EF4444; }
+
+.ifr-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ifr-cells {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.ifr-cell {
+  width: 5px;
+  height: 14px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.ifr-cell.ok   { background: #22C55E; opacity: .85; }
+.ifr-cell.miss { background: #E5E8F0; }
+
+/* ── Logs ──────────────────────────────────────────────────── */
+
+.ifr-log-wrap { display: flex; flex-direction: column; gap: 8px; }
+
+.ifr-log-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ifr-log-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.ifr-select {
+  font-size: 11px;
+  padding: 3px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink-3);
+  cursor: pointer;
+  outline: none;
+}
+.ifr-select:focus { border-color: var(--primary-line); }
+
+.ifr-log-list {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.ifr-log-empty {
+  padding: 14px 12px;
+  font-size: 11px;
+  color: var(--muted-2);
+  font-family: var(--font-mono);
+}
+
+.ifr-log-row {
+  display: grid;
+  grid-template-columns: 38px 110px 100px 1fr 64px;
+  align-items: center;
+  padding: 5px 10px;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.ifr-log-row:last-child { border-bottom: none; }
+.ifr-log-row:hover { background: var(--surface-3); }
+
+.ifr-lvl {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  text-align: center;
+}
+.ifr-lvl.ok   { background: #D1FAE5; color: #065F46; }
+.ifr-lvl.warn { background: #FEF3C7; color: #92400E; }
+.ifr-lvl.hot  { background: #FEE2E2; color: #991B1B; }
+
+.ifr-src { color: var(--primary); font-weight: 600; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ifr-act { color: var(--muted);   font-size: 10px;   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ifr-msg { color: var(--ink-3);   font-size: 11px;   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ifr-ts  { color: var(--muted-3); font-size: 10px;   text-align: right; }
