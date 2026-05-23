@@ -1,8 +1,12 @@
 name: Deploy Pipeline
 
-# Prod:  push een v* tag → CI runt op die tag → deploy triggert via workflow_run
-# Dev:   push naar dev  → CI runt → deploy triggert via workflow_run
-# Manual: workflow_dispatch als noodmaatregel
+# Flow:
+#   dev branch  → CI runt → deploy triggert (workflow_run, branches: dev)    → latest-dev
+#   v* tag      → CI runt → deploy triggert (workflow_run, branches: "v*")   → latest + v-tag
+#   main branch → CI runt → deploy triggert NIET (niet in branch filter)
+#
+# CI moet altijd eerst slagen — workflow_run garandeert dit voor alle gevallen.
+# workflow_dispatch is een noodmaatregel en omzeilt de tag-gebaseerde flow.
 
 on:
   workflow_run:
@@ -10,10 +14,8 @@ on:
     types:
       - completed
     branches:
-      - dev        # auto-deploy na CI op dev branch
-  push:
-    tags:
-      - "v*"       # prod release: tag push triggert deploy direct
+      - dev    # auto-deploy na CI op dev
+      - "v*"   # prod release: head_branch = tag naam bij tag-triggered CI
   workflow_dispatch:
 
 jobs:
@@ -24,11 +26,7 @@ jobs:
       contents: read
       packages: write
 
-    # workflow_run: alleen doorgaan als CI geslaagd is
-    # push (tag): altijd doorgaan — tag wordt pas gezet na handmatige goedkeuring
-    # workflow_dispatch: altijd doorgaan
     if: >
-      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
 
@@ -36,47 +34,38 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
           fetch-tags: true
 
       - name: Determine deploy target
         id: vars
         run: |
-          EVENT="${{ github.event_name }}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            BRANCH="${{ github.ref_name }}"
+            V_TAG=""
+            MANUAL=true
+          else
+            BRANCH="${{ github.event.workflow_run.head_branch }}"
+            V_TAG=$(git tag --points-at HEAD | grep -E '^v' | head -1 || true)
+            # head_branch is de tag naam zelf bij een tag-triggered CI run
+            if [[ -z "$V_TAG" && "$BRANCH" =~ ^v[0-9] ]]; then
+              V_TAG="$BRANCH"
+            fi
+            MANUAL=false
+          fi
 
-          if [[ "$EVENT" == "push" ]]; then
-            # Tag push — ref_name is de tag zelf (bv. v1.2.3)
-            V_TAG="${{ github.ref_name }}"
+          if [[ "$BRANCH" == "dev" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "tag=latest-dev"     >> $GITHUB_OUTPUT
+            echo "extra_tag="         >> $GITHUB_OUTPUT
+          elif [[ -n "$V_TAG" ]]; then
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "tag=latest"         >> $GITHUB_OUTPUT
             echo "extra_tag=$V_TAG"   >> $GITHUB_OUTPUT
-
-          elif [[ "$EVENT" == "workflow_run" ]]; then
-            # Dev branch auto-deploy na CI
-            BRANCH="${{ github.event.workflow_run.head_branch }}"
-            if [[ "$BRANCH" == "dev" ]]; then
-              echo "should_deploy=true" >> $GITHUB_OUTPUT
-              echo "tag=latest-dev"     >> $GITHUB_OUTPUT
-              echo "extra_tag="         >> $GITHUB_OUTPUT
-            else
-              echo "should_deploy=false" >> $GITHUB_OUTPUT
-              echo "tag="                >> $GITHUB_OUTPUT
-              echo "extra_tag="          >> $GITHUB_OUTPUT
-            fi
-
-          elif [[ "$EVENT" == "workflow_dispatch" ]]; then
-            # Handmatige dispatch — alleen op main/dev zinvol
-            BRANCH="${{ github.ref_name }}"
-            if [[ "$BRANCH" == "dev" ]]; then
-              echo "should_deploy=true" >> $GITHUB_OUTPUT
-              echo "tag=latest-dev"     >> $GITHUB_OUTPUT
-              echo "extra_tag="         >> $GITHUB_OUTPUT
-            else
-              echo "should_deploy=true" >> $GITHUB_OUTPUT
-              echo "tag=latest"         >> $GITHUB_OUTPUT
-              echo "extra_tag="         >> $GITHUB_OUTPUT
-            fi
-
+          elif [[ "$MANUAL" == "true" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "tag=latest"         >> $GITHUB_OUTPUT
+            echo "extra_tag="         >> $GITHUB_OUTPUT
           else
             echo "should_deploy=false" >> $GITHUB_OUTPUT
             echo "tag="                >> $GITHUB_OUTPUT
@@ -115,7 +104,7 @@ jobs:
           tags: |
             ghcr.io/${{ steps.repo_name.outputs.value }}:latest
             ghcr.io/${{ steps.repo_name.outputs.value }}:${{ steps.vars.outputs.extra_tag }}
-            ghcr.io/${{ steps.repo_name.outputs.value }}:${{ github.sha }}
+            ghcr.io/${{ steps.repo_name.outputs.value }}:${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Build and push Docker image (handmatige dispatch)
         if: steps.vars.outputs.tag == 'latest' && steps.vars.outputs.extra_tag == ''
@@ -125,4 +114,4 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.repo_name.outputs.value }}:latest
-            ghcr.io/${{ steps.repo_name.outputs.value }}:${{ github.sha }}
+            ghcr.io/${{ steps.repo_name.outputs.value }}:${{ github.event.workflow_run.head_sha || github.sha }}
