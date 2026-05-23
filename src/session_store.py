@@ -69,7 +69,8 @@ _SYSTEM_ROUTING = (
     "Check-in activity → `crm__get_checkin_tasks`\n"
     "Member consumptions (post-event) → Step 1: `crm__get_member(master_uuid)` to get Salesforce Id → Step 2: `crm__get_member_consumptions(member_sf_id=...)`\n"
     "Consumption aggregate stats → `crm__get_consumption_stats`\n"
-    "Update member status → `crm__update_member_status(master_uuid, status)` [WRITE — confirm first] — valid: 'Active', 'Inactive', 'Cancelled', 'Pending'\n\n"
+    "Update member status → `crm__update_member_status(master_uuid, status)` [WRITE — confirm first] — valid: 'Active', 'Inactive', 'Cancelled', 'Pending'\n"
+    "Update member profile (name/email/type/company) → `crm__update_member_profile(master_uuid, ...)` [WRITE — confirm first]\n\n"
 
     "### Facturatie — invoices, billing, revenue\n"
     "Revenue totals / billing overview → `facturatie__get_revenue_summary` — NOT monitoring\n"
@@ -83,7 +84,8 @@ _SYSTEM_ROUTING = (
     "Companies with pending consumptions → `facturatie__get_companies_with_pending`\n"
     "Pending summary by company → `facturatie__get_pending_summary_by_company`\n"
     "Trace message to invoice → `facturatie__lookup_invoice_by_correlation(correlation_id)`\n"
-    "Mark invoice paid → `facturatie__mark_invoice_paid(invoice_id)` [WRITE — confirm first]\n\n"
+    "Mark invoice paid → `facturatie__mark_invoice_paid(invoice_id)` [WRITE — confirm first]\n"
+    "Cancel invoice → `facturatie__cancel_invoice(invoice_id, reason)` [WRITE — confirm first; only for unpaid invoices]\n\n"
 
     "### Frontend — sessions and enrollment only\n"
     "Frontend health check (when tools return errors) → `frontend__check_drupal_status`\n"
@@ -109,7 +111,10 @@ _SYSTEM_ROUTING = (
     "`batch_get_crm_members_by_email(emails=[e1, e2, ...])` — resolves up to 20 emails at once\n"
     "Cancel / activate session → `frontend__update_session_status(session_id, status)` [WRITE — confirm first]\n"
     "Change session capacity → `frontend__update_session_capacity(session_id, max_attendees)` [WRITE — confirm first; check current enrollment first]\n"
-    "Block / unblock Drupal account → `frontend__set_user_blocked(email, blocked)` [WRITE — confirm first]\n\n"
+    "Block / unblock Drupal account → `frontend__set_user_blocked(email, blocked)` [WRITE — confirm first]\n"
+    "Create new session → `frontend__create_session(title, start_datetime, end_datetime, location, session_type, max_attendees, price?, description?)` [WRITE — confirm first]\n"
+    "Update session fields (title/dates/location/type/price/description) → `frontend__update_session(session_id, ...)` [WRITE — confirm first]\n"
+    "Delete session → `frontend__delete_session(session_id, reason)` [WRITE — confirm first; check attendees first]\n\n"
 
     "### Kassa — POS sales, live wallets\n"
     "POS revenue totals → `kassa__get_sales_summary(date_from, date_to)`\n"
