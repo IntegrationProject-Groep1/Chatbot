@@ -1,7 +1,9 @@
 /* eslint-disable no-undef */
 /* ============================================================
    Live Berichtenflow — inter-service message topology
+   Wrapped in IIFE so constants don't clash with admin-flow/admin-data globals.
    ============================================================ */
+(function () {
 const { useEffect, useRef, useState, useCallback, useMemo } = React;
 
 // Error boundary — shows the actual error instead of a blank screen
@@ -928,3 +930,4 @@ function MessageFlowScreenWithBoundary() {
 }
 
 Object.assign(window, { MessageFlowScreen: MessageFlowScreenWithBoundary });
+})(); // end IIFE — keeps NODES, TOPO etc. out of global scope
