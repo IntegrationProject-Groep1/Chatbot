@@ -697,6 +697,9 @@ function Sidebar({ history, activeConvId, onPick, onNew, onPin, onDelete, mode, 
         <button className={`sb-mode-btn ${mode === "logs" ? "is-active" : ""}`} onClick={() => setMode("logs")}>
           <span className="pip"></span>Live logs
         </button>
+        <button className={`sb-mode-btn ${mode === "msgflow" ? "is-active" : ""}`} onClick={() => setMode("msgflow")}>
+          <span className="pip"></span>Berichtenflow
+        </button>
       </div>
 
       <button className="sb-new" onClick={onNew}>
@@ -1425,6 +1428,8 @@ function App() {
             setTab={setFlowTab}
           />}
         </>
+      ) : mode === "msgflow" ? (
+        <window.MessageFlowScreen />
       ) : (
         <window.LogsScreen
           levelFilter={logLevelFilter}

@@ -299,6 +299,123 @@ async def list_mcp_tools():
     }
 
 
+_FLOW_ROUTES: dict[tuple[str, str], list[str]] = {
+    ("kassa",           "registration"):  ["crm"],
+    ("kassa",           "wallet"):        ["crm"],
+    ("kassa",           "badge"):         ["crm"],
+    ("frontend",        "registration"):  ["crm"],
+    ("frontend",        "session"):       ["crm"],
+    ("frontend",        "user"):          ["crm"],
+    ("crm",             "registration"):  ["facturatie", "planning"],
+    ("crm",             "payment"):       ["facturatie"],
+    ("crm",             "invoice"):       ["facturatie"],
+    ("crm",             "session"):       ["planning"],
+    ("crm",             "calendar"):      ["planning"],
+    ("crm",             "email"):         ["mailing"],
+    ("crm",             "user"):          ["identity-service"],
+    ("crm",             "refund"):        ["facturatie"],
+    ("facturatie",      "invoice"):       ["mailing"],
+    ("facturatie",      "email"):         ["mailing"],
+    ("facturatie",      "payment"):       ["mailing"],
+    ("planning",        "calendar"):      ["mailing"],
+    ("planning",        "email"):         ["mailing"],
+    ("planning",        "session"):       ["mailing"],
+    ("identity-service","user"):          ["crm"],
+}
+
+
+@app.get("/api/monitoring/message-flow")
+async def monitoring_message_flow(hours: float = 1.0, limit: int = 500):
+    """Inter-service message flow graph derived from recent Elasticsearch logs."""
+    import datetime
+    hours = max(0.083, min(hours, 24.0))
+    limit = min(limit, 1000)
+
+    logs_result, status_result = await asyncio.gather(
+        _call_mcp("monitoring__get_recent_logs", {"limit": limit}),
+        _call_mcp("monitoring__get_service_status"),
+    )
+
+    logs = logs_result.get("logs", []) if isinstance(logs_result, dict) else []
+    services = status_result.get("services", []) if isinstance(status_result, dict) else []
+    health = {s["service"]: s for s in services}
+
+    cutoff_ts = (
+        datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
+    ).timestamp()
+
+    def _parse_ts(s: str) -> float:
+        try:
+            return datetime.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return time.time()
+
+    edge_data: dict[tuple[str, str, str], dict] = {}
+    recent_events: list[dict] = []
+
+    for entry in logs:
+        if _parse_ts(entry.get("@timestamp", "")) < cutoff_ts:
+            continue
+        src    = (entry.get("system",      "") or "").lower().strip()
+        action = (entry.get("action",      "") or "").lower().strip()
+        level  = (entry.get("level",       "") or "info").lower()
+        msg    = (entry.get("log_message", "") or "")[:140]
+        ts     = entry.get("@timestamp", "")
+
+        destinations = _FLOW_ROUTES.get((src, action), [])
+        if len(recent_events) < 200:
+            recent_events.append({
+                "source": src, "action": action, "level": level,
+                "message": msg, "timestamp": ts, "destinations": destinations,
+            })
+        for dst in destinations:
+            key = (src, dst, action)
+            if key not in edge_data:
+                edge_data[key] = {"count": 0, "errors": 0, "recent": []}
+            edge_data[key]["count"] += 1
+            if level == "error":
+                edge_data[key]["errors"] += 1
+            if len(edge_data[key]["recent"]) < 5:
+                edge_data[key]["recent"].append(
+                    {"timestamp": ts, "message": msg, "level": level}
+                )
+
+    edges = [
+        {
+            "source": src, "target": dst, "action": action,
+            "count":  d["count"], "errors": d["errors"],
+            "recent_messages": d["recent"],
+        }
+        for (src, dst, action), d in sorted(edge_data.items(), key=lambda x: -x[1]["count"])
+    ]
+
+    known = {"crm", "kassa", "facturatie", "planning", "frontend",
+             "mailing", "identity-service", "monitoring"}
+    active = {e["source"] for e in edges} | {e["target"] for e in edges}
+    nodes = [
+        {
+            "id": svc,
+            "live":   health.get(svc, {}).get("live"),
+            "status": (health.get(svc, {}).get("status") or "unknown"),
+            "active": svc in active,
+        }
+        for svc in sorted(known | active)
+    ]
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "recent_events": recent_events,
+        "stats": {
+            "total_messages":    sum(e["count"] for e in edges),
+            "error_messages":    sum(e["errors"] for e in edges),
+            "active_flows":      len(edges),
+            "time_window_hours": hours,
+        },
+        "timestamp": time.time(),
+    }
+
+
 @app.get("/api/mcp/status")
 async def mcp_status():
     """Live MCP connection status — which servers the chatbot can actually reach right now."""
