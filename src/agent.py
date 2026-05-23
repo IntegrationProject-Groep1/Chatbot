@@ -47,9 +47,76 @@ _LOCAL_TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "batch_get_crm_members",
+            "description": (
+                "Look up multiple CRM member profiles in parallel by master UUID. "
+                "Use this after getting a list of UUIDs (e.g. from frontend__get_session_attendees) "
+                "to resolve all names/details at once instead of calling crm__get_member one by one. "
+                "Max 20 UUIDs per call."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "master_uuids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of master UUIDs to look up (max 20)",
+                    }
+                },
+                "required": ["master_uuids"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "batch_get_crm_members_by_email",
+            "description": (
+                "Look up multiple CRM member profiles in parallel by email address. "
+                "Use this when you have a list of emails (e.g. from Facturatie invoice results) "
+                "and need all their CRM profiles at once. Max 20 emails per call."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "emails": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of email addresses to look up (max 20)",
+                    }
+                },
+                "required": ["emails"],
+            },
+        },
+    },
 ]
 
-def _handle_local_tool(name: str) -> str | None:
+
+async def _batch_crm_lookup(tool_name: str, arg_key: str, values: list[str]) -> str:
+    client = mcp_client.get()
+    capped = values[:20]
+    tasks = [client.call_tool(tool_name, {arg_key: v}) for v in capped]
+    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+    members, errors = [], []
+    for v, r in zip(capped, raw_results):
+        if isinstance(r, Exception):
+            errors.append({arg_key: v, "error": str(r)})
+            continue
+        try:
+            data = json.loads(r)
+            if data.get("error"):
+                errors.append({arg_key: v, "error": data["error"]})
+            else:
+                members.append(data)
+        except Exception:
+            errors.append({arg_key: v, "error": "parse error"})
+    return json.dumps({"members": members, "count": len(members), "errors": errors})
+
+
+async def _handle_local_tool(name: str, args: dict) -> str | None:
     if name == "get_current_date":
         now = datetime.now(_TZ)
         return json.dumps({
@@ -57,7 +124,7 @@ def _handle_local_tool(name: str) -> str | None:
             "day_of_week": now.strftime("%A"),
             "time": now.strftime("%H:%M"),
             "month": now.strftime("%B %Y"),
-            "week_start": (now - __import__("datetime").timedelta(days=now.weekday())).strftime("%Y-%m-%d"),
+            "week_start": (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d"),
             "month_start": now.strftime("%Y-%m-01"),
         })
     if name == "get_mcp_server_status":
@@ -76,6 +143,16 @@ def _handle_local_tool(name: str) -> str | None:
             })
         except Exception as exc:
             return json.dumps({"error": str(exc)})
+    if name == "batch_get_crm_members":
+        uuids = args.get("master_uuids", [])
+        if not uuids:
+            return json.dumps({"error": "master_uuids list is empty"})
+        return await _batch_crm_lookup("crm__get_member", "master_uuid", uuids)
+    if name == "batch_get_crm_members_by_email":
+        emails = args.get("emails", [])
+        if not emails:
+            return json.dumps({"error": "emails list is empty"})
+        return await _batch_crm_lookup("crm__get_member_by_email", "email", emails)
     return None
 
 
@@ -168,7 +245,7 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
 
     try:
         # Handle local tools without going through MCP
-        local_result = _handle_local_tool(name)
+        local_result = await _handle_local_tool(name, args)
         if local_result is not None:
             duration = int((time.time() - t0) * 1000)
             await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": local_result[:120]})
