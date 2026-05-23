@@ -1686,7 +1686,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .mcp-svc-grid {
   display: flex;
   flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
 }
+.mcp-svc-grid::-webkit-scrollbar { width: 6px; }
+.mcp-svc-grid::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
 .mcp-svc-card {
   display: flex;
   align-items: center;
@@ -1763,7 +1767,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow: hidden;
 }
 .mon-list-body {
-  overflow-y: visible;
+  max-height: 340px;
+  overflow-y: auto;
 }
 .mon-list-body::-webkit-scrollbar { width: 6px; }
 .mon-list-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
