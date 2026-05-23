@@ -130,9 +130,17 @@ _SYSTEM_ROUTING = (
     "Latest daily report → `monitoring__get_latest_report`\n"
     "Business event counts → `monitoring__get_business_metrics` (counts only — use Facturatie for money)\n\n"
 
-    "### Parallel vs sequential\n"
-    "PARALLEL — fire simultaneously when results are independent: multi-service dashboards, checking health + logs, member profile + wallet.\n"
-    "SEQUENTIAL — one depends on the other: need master_uuid before calling wallet; need session_id before getting attendees; need client_id before getting invoices.\n\n"
+    "### Parallel vs sequential — MANDATORY RULE\n"
+    "**You MUST call all independent tools in a SINGLE response. Never split independent calls across multiple rounds.**\n"
+    "PARALLEL examples — return ALL these tool calls at once:\n"
+    "- 'Show Kassa and Facturatie revenue' → call `kassa__get_sales_summary` + `facturatie__get_revenue_summary` simultaneously\n"
+    "- 'Platform health' → call `get_mcp_server_status` + `monitoring__get_platform_health_overview` simultaneously\n"
+    "- 'Member profile + wallet' → call `crm__get_member` + `crm__get_member_wallet` simultaneously\n"
+    "- Any question touching 2+ services → call ALL needed tools at once\n"
+    "SEQUENTIAL — only when result A is required as input to call B:\n"
+    "- Need master_uuid before calling wallet: `crm__get_member_by_email` → then `kassa__get_wallet_by_master_uuid`\n"
+    "- Need session_id before getting attendees\n"
+    "- Need client_id before getting invoices\n\n"
 )
 
 # ── Section 3: Output format & operational rules ────────────────────────────────
