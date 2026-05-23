@@ -3406,6 +3406,17 @@ body[data-theme="slate"] .mf-canvas-wrap {
   to { stroke-dashoffset: -20; }
 }
 
+/* ── Missing classes used in JSX ── */
+.mf-stats-strip { display: flex; gap: 0; padding: 0 12px 12px; }
+.mf-stat-v { font-size: 18px; font-weight: 700; font-family: var(--font-mono); color: var(--ink); line-height: 1; }
+.mf-stat-l { font-size: 9.5px; color: var(--muted); margin-top: 3px; }
+.mf-stat.hot .mf-stat-v { color: var(--hot); }
+.mf-section-lbl { padding: 4px 14px 6px; font-size: 9.5px; font-weight: 700; letter-spacing: .09em; color: var(--muted-2); text-transform: uppercase; font-family: var(--font-mono); }
+.mf-svc-list { display: flex; flex-direction: column; padding: 0 8px; gap: 1px; }
+.mf-fbtn { padding: 2px 8px; font-size: 10px; font-weight: 600; border: 1px solid var(--line); border-radius: 99px; background: var(--surface-3); color: var(--muted); cursor: pointer; transition: all .12s; display: flex; align-items: center; gap: 4px; }
+.mf-fbtn:hover { color: var(--ink); }
+.mf-fbtn.on { background: var(--primary-soft); color: var(--primary); border-color: var(--primary-line); }
+
 /* ── Dark / slate theme fix ── */
 body[data-theme="dark"] .mf-tooltip,
 body[data-theme="slate"] .mf-tooltip {
