@@ -309,14 +309,17 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
             "timestamp": time.time(),
         })
 
+        _log.debug("TOOL CALL: %s args=%s session=%s", name, args, session_id)
         result = await mcp_client.get().call_tool(name, args)
 
         duration = int((time.time() - t0) * 1000)
         preview = result[:300] if isinstance(result, str) else ""
+        _log.info("TOOL OK: %s duration=%dms session=%s", name, duration, session_id)
         await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": preview})
         return call_id, result
     except Exception as exc:
         duration = int((time.time() - t0) * 1000)
+        _log.warning("TOOL ERROR: %s duration=%dms error=%s session=%s", name, duration, exc, session_id)
         await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "error": str(exc), "call_id": call_id})
         return call_id, json.dumps({"error": str(exc), "status": "error"})
 
@@ -420,14 +423,17 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
             messages = [{**messages[0], "content": messages[0]["content"] + date_line}, *messages[1:]]
 
         await emit({"type": "status", "status": "thinking", "step": loop_idx + 1})
+        _log.debug("LLM round %d: session=%s messages=%d", loop_idx + 1, session_id, len(messages))
 
-        # Pass emit only when there are no pending tool results — i.e. the LLM
-        # might be producing a final answer we want to stream to the client.
-        # On rounds where tool results are present, we still pass emit; the
-        # is_tool_response guard inside _call_llama suppresses token emission.
         try:
+            t_llm = time.time()
             response_msg = await _call_llama(messages, emit=emit)
+            _log.info("LLM round %d done: session=%s tools=%d duration=%.1fs",
+                      loop_idx + 1, session_id,
+                      len(response_msg.get("tool_calls") or []),
+                      time.time() - t_llm)
         except Exception as exc:
+            _log.exception("LLM error: session=%s round=%d", session_id, loop_idx + 1)
             await emit({"type": "error", "message": f"AI error: {exc}", "recoverable": True})
             return
 

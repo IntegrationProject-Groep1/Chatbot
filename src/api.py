@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import re
 import time
@@ -13,6 +14,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import mcp_client
 import session_store
 import agent
+
+_log = logging.getLogger(__name__)
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 # Cache-bust token: changes on every container start, so a fresh pod always
@@ -531,6 +534,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             return
 
         session_store.init_session(session_id, identity_uuid)
+        _log.info("WS connected: session=%s identity=%s", session_id, identity_uuid)
         await emit({"type": "ready", "session_id": session_id})
 
         # Step 2: chat loop
@@ -542,16 +546,20 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 message = str(data.get("message", "")).strip()
                 if not message:
                     continue
+                _log.info("CHAT: session=%s len=%d preview=%r", session_id, len(message), message[:80])
                 try:
                     await agent.run_agent(session_id, message, emit)
                 except Exception as exc:
+                    _log.exception("Agent error: session=%s", session_id)
                     await emit({"type": "error", "message": str(exc), "recoverable": True})
 
     except asyncio.TimeoutError:
+        _log.warning("WS auth timeout: session=%s", session_id)
         await emit({"type": "error", "message": "Authentication timeout.", "recoverable": False})
     except WebSocketDisconnect:
-        pass
+        _log.info("WS disconnected: session=%s", session_id)
     except Exception as exc:
+        _log.exception("WS error: session=%s", session_id)
         try:
             await emit({"type": "error", "message": str(exc), "recoverable": False})
         except Exception:
