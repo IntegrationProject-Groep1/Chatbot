@@ -22,7 +22,38 @@ _MODEL = os.getenv("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
 _API_URL = os.getenv("NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
 _HEADERS = {"Authorization": f"Bearer {_API_KEY}", "Content-Type": "application/json"}
 
+import logging
+
+_log = logging.getLogger(__name__)
+
 MAX_LOOPS = 6
+
+# ── Write-tool gate ──────────────────────────────────────────────────────────
+_WRITE_PREFIXES = (
+    "update_", "delete_", "cancel_", "create_",
+    "mark_", "set_", "process_refund", "topup_",
+    "enroll_", "unenroll_",
+)
+_CONFIRM_WORDS = frozenset({
+    "ja", "yes", "ok", "bevestig", "confirm", "proceed",
+    "doorgaan", "akkoord", "goedgekeurd", "approved", "sure", "zeker",
+    "do it", "doe het", "go ahead",
+})
+
+
+def _is_write_tool(tool_name: str) -> bool:
+    bare = tool_name.split("__")[-1].lower()
+    return any(bare.startswith(p) for p in _WRITE_PREFIXES)
+
+
+def _has_confirmation(session_id: str) -> bool:
+    """True if the most recent user message is a short explicit confirmation."""
+    for msg in reversed(session_store.get(session_id)):
+        if msg.get("role") == "user":
+            text = (msg.get("content") or "").lower().strip().rstrip("!.?")
+            words = set(text.split())
+            return bool(len(words) <= 8 and words & _CONFIRM_WORDS)
+    return False
 
 _LOCAL_TOOLS = [
     {
@@ -242,6 +273,25 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
     t0 = time.time()
 
     identity_uuid = session_store.get_identity_uuid(session_id)
+
+    # ── Write-tool gate: require explicit admin confirmation ─────────────────
+    if _is_write_tool(name) and not _has_confirmation(session_id):
+        _log.info("WRITE BLOCKED pending confirmation: tool=%s session=%s args=%s",
+                  name, session_id, args)
+        await emit({
+            "type": "confirm_required",
+            "tool": name,
+            "label": name.split("__")[-1].replace("_", " ").title(),
+            "arguments": args,
+            "call_id": call_id,
+        })
+        duration = int((time.time() - t0) * 1000)
+        await emit({"type": "tool_complete", "tool": name, "duration_ms": duration,
+                    "call_id": call_id, "result_preview": '{"status":"pending_confirmation"}'})
+        return call_id, json.dumps({
+            "status": "pending_confirmation",
+            "message": "Admin confirmation required. Ask the admin to type 'ja' to confirm or 'nee' to cancel.",
+        })
 
     try:
         # Handle local tools without going through MCP

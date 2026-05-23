@@ -466,6 +466,37 @@ function ErrorToast({ message }) {
   );
 }
 
+function ConfirmCard({ tool, label, args }) {
+  const argLines = Object.entries(args || {}).filter(([, v]) => v !== undefined && v !== null);
+  return (
+    <div className="msg assist">
+      <div className="msg-av assist" style={{background:"var(--warn-soft, #FEF3C7)",color:"var(--warn, #D97706)"}}>⚠</div>
+      <div className="msg-body">
+        <div className="msg-meta">
+          <b style={{color:"var(--warn, #D97706)"}}>Bevestiging vereist</b>
+        </div>
+        <div className="confirm-card">
+          <div className="confirm-op">
+            <span className="confirm-icon">🔒</span>
+            <span className="confirm-tool">{label}</span>
+          </div>
+          {argLines.length > 0 && (
+            <div className="confirm-args">
+              {argLines.map(([k, v]) => (
+                <div key={k} className="confirm-arg-row">
+                  <span className="confirm-arg-k">{k.replace(/_/g, " ")}</span>
+                  <span className="confirm-arg-v">{String(v).slice(0, 80)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="confirm-hint">Type <b>ja</b> om te bevestigen of <b>nee</b> om te annuleren.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Dashboard KPI strip ───────────────────────────────────────────────────
 function DashboardStrip({ kpis, onOpenMonitoring }) {
   if (!kpis) return null;
@@ -1188,6 +1219,18 @@ function App() {
         break;
       }
 
+      case "confirm_required": {
+        setIsThinking(false);
+        setMessages(msgs => [...msgs, {
+          id: "confirm-" + ev.call_id,
+          kind: "confirm",
+          tool: ev.tool,
+          label: ev.label || ev.tool,
+          args: ev.arguments || {},
+        }]);
+        break;
+      }
+
       case "tool_complete": {
         const svc = serverFromTool(ev.tool);
         setDoneNodes(d => new Set([...d, ...(SERVER_FLOW[svc]?.nodes || [])]));
@@ -1495,6 +1538,7 @@ function App() {
                   />
                 );
                 if (m.kind === "error")     return <ErrorToast key={m.id} message={m.message} />;
+                if (m.kind === "confirm")   return <ConfirmCard key={m.id} tool={m.tool} label={m.label} args={m.args} />;
                 return null;
               })}
 
