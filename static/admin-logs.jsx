@@ -9,6 +9,9 @@ const LOG_SERVICES = [
   { id: "facturatie", label: "Facturatie", svc: "facturatie" },
   { id: "crm",        label: "CRM",        svc: "crm"        },
   { id: "frontend",   label: "Frontend",   svc: "frontend"   },
+  { id: "planning",   label: "Planning",   svc: "planning"   },
+  { id: "mailing",    label: "Mailing",    svc: "mailing"    },
+  { id: "identity-service", label: "Identity", svc: "identity-service" },
   { id: "monitoring", label: "Monitoring", svc: "monitoring" },
 ];
 

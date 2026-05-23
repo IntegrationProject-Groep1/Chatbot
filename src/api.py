@@ -203,6 +203,52 @@ async def _call_mcp(tool: str, args: dict = {}) -> dict:
         return {"error": str(exc)}
 
 
+def _normalize_log_entry(entry: dict) -> dict:
+    header = entry.get("header") if isinstance(entry.get("header"), dict) else {}
+    body = entry.get("body") if isinstance(entry.get("body"), dict) else {}
+    source = entry.get("system") or entry.get("source") or header.get("source") or ""
+    level = entry.get("level") or body.get("level") or "info"
+    action = entry.get("action") or body.get("action") or ""
+    message = (
+        entry.get("log_message")
+        or entry.get("message")
+        or body.get("log_message")
+        or body.get("message")
+        or ""
+    )
+    return {
+        "source": str(source).lower().strip(),
+        "system": str(source).lower().strip(),
+        "level": str(level).lower().strip(),
+        "message": message,
+        "log_message": message,
+        "action": str(action).lower().strip(),
+        "@timestamp": entry.get("@timestamp") or body.get("@timestamp") or "",
+        "correlation_id": entry.get("correlation_id") or header.get("correlation_id") or "",
+    }
+
+
+async def _get_monitoring_logs(limit: int = 100) -> dict:
+    """Fetch recent logs from either the current or legacy Monitoring MCP shape."""
+    limit = min(max(int(limit or 100), 1), 1000)
+    result = await _call_mcp("monitoring__get_recent_logs", {"limit": limit})
+    raw_entries = []
+    error = result.get("error") if isinstance(result, dict) else None
+    if isinstance(result, dict):
+        raw_entries = result.get("logs") or result.get("errors") or []
+
+    if not raw_entries:
+        fallback = await _call_mcp("monitoring__get_recent_errors", {"limit": min(limit, 200)})
+        if isinstance(fallback, dict) and (fallback.get("errors") or fallback.get("logs")):
+            raw_entries = fallback.get("errors") or fallback.get("logs") or []
+            error = fallback.get("error")
+        elif isinstance(fallback, dict) and fallback.get("error") and not error:
+            error = fallback.get("error")
+
+    entries = [_normalize_log_entry(e) for e in raw_entries if isinstance(e, dict)]
+    return {"logs": entries, "count": len(entries), "error": error}
+
+
 @app.get("/api/monitoring/status")
 async def monitoring_status():
     """Current online/offline/degraded status of all services (heartbeats)."""
@@ -217,18 +263,8 @@ async def monitoring_status():
 @app.get("/api/monitoring/errors")
 async def monitoring_errors(limit: int = 50):
     """All recent log entries (all levels) across all services, for the log viewer."""
-    result = await _call_mcp("monitoring__get_recent_logs", {"limit": min(limit, 200)})
-    entries = []
-    for e in result.get("logs", []):
-        entries.append({
-            "source":         e.get("system", ""),
-            "level":          e.get("level", ""),
-            "message":        e.get("log_message", "") or e.get("message", ""),
-            "action":         e.get("action", ""),
-            "@timestamp":     e.get("@timestamp", ""),
-            "correlation_id": e.get("correlation_id", ""),
-        })
-    return {"errors": entries, "count": len(entries)}
+    result = await _get_monitoring_logs(min(limit, 200))
+    return {"errors": result["logs"], "count": result["count"], "error": result.get("error")}
 
 
 @app.get("/api/monitoring/alerts")
@@ -426,7 +462,7 @@ async def monitoring_message_flow(hours: float = 1.0, limit: int = 500):
     limit = min(limit, 1000)
 
     logs_result, status_result = await asyncio.gather(
-        _call_mcp("monitoring__get_recent_logs", {"limit": limit}),
+        _get_monitoring_logs(limit),
         _call_mcp("monitoring__get_service_status"),
     )
 
@@ -453,10 +489,10 @@ async def monitoring_message_flow(hours: float = 1.0, limit: int = 500):
         ts  = entry.get("@timestamp", "")
         if _parse_ts(ts) < cutoff_ts:
             continue
-        src    = (entry.get("system",      "") or "").lower().strip()
-        action = (entry.get("action",      "") or "").lower().strip()
-        level  = (entry.get("level",       "") or "info").lower()
-        msg    = (entry.get("log_message", "") or "")[:140]
+        src    = (entry.get("system") or entry.get("source") or "").lower().strip()
+        action = (entry.get("action", "") or "").lower().strip()
+        level  = (entry.get("level", "") or "info").lower()
+        msg    = (entry.get("log_message") or entry.get("message") or "")[:140]
 
         if src and ts > service_last_ts.get(src, ""):
             service_last_ts[src] = ts

@@ -2686,7 +2686,9 @@ button.mon-row:focus-visible {
    Mode switcher in sidebar
    ============================================================ */
 .sb-mode {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3px;
   background: var(--surface-3);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
@@ -2694,15 +2696,22 @@ button.mon-row:focus-visible {
   margin-bottom: 4px;
 }
 .sb-mode-btn {
-  flex: 1;
-  padding: 7px 10px;
-  font-size: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  font-size: 11.5px;
   font-weight: 500;
   border: none;
   background: transparent;
   border-radius: var(--r-xs);
   color: var(--muted);
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: all .12s var(--ease);
 }
 .sb-mode-btn:hover { color: var(--ink-2); }
@@ -3860,7 +3869,7 @@ body[data-density="loose"] .tool-call { padding: 14px 16px; }
 .infra-log-lvl.warn{ background: #FEF3C7; color: #92400E; }
 .infra-log-lvl.hot { background: #FEE2E2; color: #991B1B; }
 
-.infra-log-src  { color: var(--primary); font-weight: 600; font-size: 10.5px; truncate: true; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.infra-log-src  { color: var(--primary); font-weight: 600; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .infra-log-act  { color: var(--muted);   font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .infra-log-msg  { color: var(--ink-3);   font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .infra-log-ts   { color: var(--muted-3); font-size: 10px; text-align: right; }
