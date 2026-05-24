@@ -235,6 +235,20 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
                             last_active   DOUBLE PRECISION NOT NULL
                         )
                     """)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS chatbot_conversations (
+                            session_id    TEXT PRIMARY KEY,
+                            identity_uuid TEXT NOT NULL,
+                            label         TEXT NOT NULL,
+                            created_at    DOUBLE PRECISION NOT NULL,
+                            last_active   DOUBLE PRECISION NOT NULL,
+                            pinned        BOOLEAN NOT NULL DEFAULT FALSE
+                        )
+                    """)
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_conv_identity
+                        ON chatbot_conversations (identity_uuid, last_active DESC)
+                    """)
                 conn.commit()
             finally:
                 p.putconn(conn)
@@ -416,8 +430,105 @@ def cleanup_expired() -> None:
         try:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM chatbot_sessions WHERE last_active < %s", (now - _TTL,))
+                cur.execute("DELETE FROM chatbot_conversations WHERE last_active < %s AND pinned = FALSE", (now - _TTL,))
             conn.commit()
         finally:
             pool.putconn(conn)
     except Exception:
         pass
+
+
+# ── Conversation metadata (per-admin, cross-device) ─────────────────────────
+
+def upsert_conversation(session_id: str, identity_uuid: str, label: str) -> None:
+    pool = _get_pool()
+    if pool is None:
+        return
+    now = time.time()
+    try:
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO chatbot_conversations
+                        (session_id, identity_uuid, label, created_at, last_active, pinned)
+                    VALUES (%s, %s, %s, %s, %s, FALSE)
+                    ON CONFLICT (session_id) DO UPDATE SET
+                        label       = EXCLUDED.label,
+                        last_active = EXCLUDED.last_active
+                """, (session_id, identity_uuid, label, now, now))
+            conn.commit()
+        finally:
+            pool.putconn(conn)
+    except Exception:
+        pass
+
+
+def get_conversations(identity_uuid: str) -> list[dict]:
+    pool = _get_pool()
+    if pool is None:
+        return []
+    try:
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT session_id, label, created_at, last_active, pinned
+                    FROM chatbot_conversations
+                    WHERE identity_uuid = %s
+                    ORDER BY pinned DESC, last_active DESC
+                    LIMIT 50
+                """, (identity_uuid,))
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, row)) for row in cur.fetchall()]
+        finally:
+            pool.putconn(conn)
+    except Exception:
+        return []
+
+
+def set_pinned(session_id: str, identity_uuid: str, pinned: bool) -> bool:
+    pool = _get_pool()
+    if pool is None:
+        return False
+    try:
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE chatbot_conversations
+                    SET pinned = %s
+                    WHERE session_id = %s AND identity_uuid = %s
+                """, (pinned, session_id, identity_uuid))
+                updated = cur.rowcount > 0
+            conn.commit()
+            return updated
+        finally:
+            pool.putconn(conn)
+    except Exception:
+        return False
+
+
+def delete_conversation(session_id: str, identity_uuid: str) -> bool:
+    pool = _get_pool()
+    if pool is None:
+        return False
+    try:
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM chatbot_conversations WHERE session_id = %s AND identity_uuid = %s",
+                    (session_id, identity_uuid),
+                )
+                deleted = cur.rowcount > 0
+                if deleted:
+                    cur.execute("DELETE FROM chatbot_sessions WHERE session_id = %s", (session_id,))
+            conn.commit()
+            with _lock:
+                _sessions.pop(session_id, None)
+            return deleted
+        finally:
+            pool.putconn(conn)
+    except Exception:
+        return False

@@ -46,27 +46,37 @@ def _sign(payload: str) -> str:
     return hmac.new(_SECRET, payload.encode(), hashlib.sha256).hexdigest()
 
 
-def create_token(username: str) -> str:
+def create_token(username: str, identity_uuid: str = "") -> str:
     ts = str(int(time.time()))
-    payload = f"{username}:{ts}"
+    # Format: {email}|{identity_uuid}:{ts}:{sig}
+    # Email addresses cannot contain '|', so this is unambiguous.
+    user_field = f"{username}|{identity_uuid}" if identity_uuid else username
+    payload = f"{user_field}:{ts}"
     raw = f"{payload}:{_sign(payload)}"
     return base64.urlsafe_b64encode(raw.encode()).decode()
 
 
-def verify_token(token: str) -> str | None:
-    """Return username if token is valid and unexpired, else None."""
+def verify_token(token: str) -> tuple[str, str] | None:
+    """Return (email, identity_uuid) if valid and unexpired, else None.
+
+    Backwards-compatible: old tokens without identity_uuid return ("email", "").
+    """
     try:
         raw = base64.urlsafe_b64decode(token.encode()).decode()
-        parts = raw.rsplit(":", 2)      # split from right: [username, ts, sig]
+        parts = raw.rsplit(":", 2)      # [user_field, ts, sig]
         if len(parts) != 3:
             return None
-        username, ts, sig = parts
-        payload = f"{username}:{ts}"
+        user_field, ts, sig = parts
+        payload = f"{user_field}:{ts}"
         if not hmac.compare_digest(_sign(payload), sig):
             return None
         if time.time() - int(ts) > _TOKEN_TTL:
             return None
-        return username
+        if "|" in user_field:
+            email, identity_uuid = user_field.split("|", 1)
+        else:
+            email, identity_uuid = user_field, ""
+        return (email, identity_uuid)
     except Exception:
         return None
 

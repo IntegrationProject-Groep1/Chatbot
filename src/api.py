@@ -99,9 +99,14 @@ async def get_me(request: Request):
     token = request.cookies.get(_COOKIE)
     if not token:
         return JSONResponse({"error": "not authenticated"}, status_code=401)
-    email = verify_token(token)
-    if not email:
+    parsed = verify_token(token)
+    if not parsed:
         return JSONResponse({"error": "session expired"}, status_code=401)
+    email, identity_uuid = parsed
+    # Fast path: new tokens include identity_uuid — no RabbitMQ call needed
+    if identity_uuid:
+        return {"identity_uuid": identity_uuid, "email": email}
+    # Fallback for old tokens without uuid
     try:
         from downstream_tools import resolve_identity_by_email, DownstreamConfig
         cfg = DownstreamConfig()
@@ -153,7 +158,7 @@ async def identify(request: Request):
         user = await loop.run_in_executor(None, resolve_identity_by_email, email, cfg)
         result = {"identity_uuid": user.identity_uuid, "email": user.email}
         resp = JSONResponse(result)
-        token = create_token(email)
+        token = create_token(email, user.identity_uuid)
         resp.set_cookie(_COOKIE, token, httponly=True, samesite="lax", max_age=60 * 60 * 8)
         return resp
     except RuntimeError as exc:
@@ -847,6 +852,85 @@ async def get_session_messages(session_id: str):
     """Return stored conversation messages for a session (used to restore chat UI)."""
     messages = session_store.get_messages_for_api(session_id)
     return {"messages": messages, "count": len(messages)}
+
+
+# ── Conversation history (per-admin, DB-backed) ───────────────────────────────
+
+def _get_auth(request: Request) -> tuple[str, str] | None:
+    """Extract (email, identity_uuid) from session cookie. Returns None if missing/invalid."""
+    token = request.cookies.get(_COOKIE)
+    if not token:
+        return None
+    return verify_token(token)
+
+
+@app.get("/api/conversations")
+async def list_conversations(request: Request):
+    """Return all conversations for the authenticated admin, ordered pinned-first then recent."""
+    auth = _get_auth(request)
+    if not auth:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    _, identity_uuid = auth
+    if not identity_uuid:
+        return JSONResponse({"error": "session too old — please log in again"}, status_code=401)
+    convs = session_store.get_conversations(identity_uuid)
+    return {"conversations": convs, "count": len(convs)}
+
+
+@app.post("/api/conversations")
+async def create_conversation(request: Request):
+    """Create or update a conversation entry (called when first message is sent)."""
+    auth = _get_auth(request)
+    if not auth:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    _, identity_uuid = auth
+    if not identity_uuid:
+        return JSONResponse({"error": "session too old — please log in again"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    session_id = str(body.get("session_id", "")).strip()
+    label = str(body.get("label", "")).strip()[:120]
+    if not session_id or not label:
+        return JSONResponse({"error": "session_id and label are required"}, status_code=400)
+    session_store.upsert_conversation(session_id, identity_uuid, label)
+    return {"ok": True}
+
+
+@app.patch("/api/conversations/{session_id}/pin")
+async def toggle_pin(session_id: str, request: Request):
+    """Toggle pinned state for a conversation."""
+    auth = _get_auth(request)
+    if not auth:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    _, identity_uuid = auth
+    if not identity_uuid:
+        return JSONResponse({"error": "session too old — please log in again"}, status_code=401)
+    try:
+        body = await request.json()
+        pinned = bool(body.get("pinned", True))
+    except Exception:
+        pinned = True
+    ok = session_store.set_pinned(session_id, identity_uuid, pinned)
+    if not ok:
+        return JSONResponse({"error": "conversation not found"}, status_code=404)
+    return {"ok": True, "pinned": pinned}
+
+
+@app.delete("/api/conversations/{session_id}")
+async def delete_conversation(session_id: str, request: Request):
+    """Delete a conversation and its message history."""
+    auth = _get_auth(request)
+    if not auth:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    _, identity_uuid = auth
+    if not identity_uuid:
+        return JSONResponse({"error": "session too old — please log in again"}, status_code=401)
+    ok = session_store.delete_conversation(session_id, identity_uuid)
+    if not ok:
+        return JSONResponse({"error": "conversation not found"}, status_code=404)
+    return {"ok": True}
 
 
 @app.websocket("/ws/{session_id}")

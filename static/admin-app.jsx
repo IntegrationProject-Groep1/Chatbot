@@ -1326,23 +1326,22 @@ function App() {
     setIdentity(id);
     setMessages([]);
     streamRef.current = { text: "", cards: [], msgId: null };
+    loadConversations();
   };
 
   const handleSend = (text) => {
     if (!connected || busy) return;
     setBusy(true);
     setMessages(msgs => {
-      // Record history entry on first message of a new conversation
+      // Register conversation in DB on first message
       if (msgs.length === 0) {
         const convId = sessionId.current;
-        const entry = {
-          id: convId,
-          sessionId: sessionId.current,
-          label: text.length > 52 ? text.slice(0, 49) + "…" : text,
-          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          active: true,
-        };
-        saveHistory([entry, ...history.map(h => ({ ...h, active: false }))].slice(0, 30));
+        const label = text.length > 52 ? text.slice(0, 49) + "…" : text;
+        fetch("/api/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: convId, label }),
+        }).then(() => loadConversations()).catch(() => {});
         setActiveConvId(convId);
       }
       return [...msgs, { id: "user-" + Date.now(), kind: "user", text }];
@@ -1358,20 +1357,25 @@ function App() {
     wsRef.current?.send(JSON.stringify({ type: "chat", message: text }));
   };
 
-  // ─── Conversation history (localStorage) ─────────────────────────────────
-  const LS_KEY = "shift_admin_history";
-  const [history, setHistory] = useState(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
-      const seen = new Set();
-      return raw.filter(h => { if (seen.has(h.id)) return false; seen.add(h.id); return true; });
-    } catch { return []; }
-  });
+  // ─── Conversation history (DB-backed, per admin) ──────────────────────────
+  const [history, setHistory] = useState([]);
   const [activeConvId, setActiveConvId] = useState(null);
 
-  const saveHistory = useCallback((items) => {
-    setHistory(items);
-    try { localStorage.setItem(LS_KEY, JSON.stringify(items)); } catch {}
+  const loadConversations = useCallback(() => {
+    fetch("/api/conversations")
+      .then(r => r.ok ? r.json() : { conversations: [] })
+      .then(d => {
+        const convs = (d.conversations || []).map(c => ({
+          id: c.session_id,
+          sessionId: c.session_id,
+          label: c.label,
+          time: new Date(c.last_active * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          pinned: c.pinned,
+          active: false,
+        }));
+        setHistory(convs);
+      })
+      .catch(() => {});
   }, []);
 
   const onPick = useCallback(async (id) => {
@@ -1404,20 +1408,25 @@ function App() {
   }, [history, identity, initWS]);
 
   const onPin = useCallback((id) => {
-    setHistory(prev => {
-      const next = prev.map(h => h.id === id ? { ...h, pinned: !h.pinned } : h);
-      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, []);
+    const entry = history.find(h => h.id === id);
+    if (!entry) return;
+    const newPinned = !entry.pinned;
+    // Optimistic update
+    setHistory(prev => prev.map(h => h.id === id ? { ...h, pinned: newPinned } : h));
+    fetch(`/api/conversations/${id}/pin`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned: newPinned }),
+    }).then(r => { if (!r.ok) loadConversations(); }).catch(() => loadConversations());
+  }, [history, loadConversations]);
 
   const onDelete = useCallback((id) => {
-    setHistory(prev => {
-      const next = prev.filter(h => h.id !== id);
-      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, []);
+    // Optimistic update
+    setHistory(prev => prev.filter(h => h.id !== id));
+    fetch(`/api/conversations/${id}`, { method: "DELETE" })
+      .then(r => { if (!r.ok) loadConversations(); })
+      .catch(() => loadConversations());
+  }, [loadConversations]);
 
   const handleSuggest = (text) => handleSend(text);
   const handleNew = useCallback(() => {
@@ -1432,9 +1441,8 @@ function App() {
     setLog([]);
     setStats({ tools: 0, ok: 0, warn: 0, tokens: 0 });
     setActiveConvId(null);
-    saveHistory(history.map(h => ({ ...h, active: false })));
     if (identity?.identity_uuid) initWS(identity.identity_uuid);
-  }, [clearActive, history, saveHistory, identity, initWS]);
+  }, [clearActive, identity, initWS]);
 
   // Keyboard shortcuts
   useEffect(() => {
