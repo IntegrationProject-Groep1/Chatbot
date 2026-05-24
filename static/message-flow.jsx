@@ -662,8 +662,13 @@ function LiveFeed({ events, actionFilter, setActionFilter, newCount }) {
       <div className="mf-feed-list">
         {shown.length === 0 && (
           <div className="mf-feed-empty">
-            <div>Geen berichten in dit tijdvenster</div>
-            {!loadingCached && <div style={{ fontSize: '10px', marginTop: '8px', color: 'var(--muted-2)', fontStyle: 'italic' }}>Services zijn mogelijk inactief. Logs worden automatisch om de 2 uur bijgewerkt.</div>}
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 6 6l.91-.91a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 16.92z"/>
+            </svg>
+            <span>Geen berichten in dit tijdvenster</span>
+            <span style={{ fontSize: '10px', color: 'var(--muted-3)', fontFamily: 'var(--font-mono)' }}>
+              {loadingCached ? "Gecachte logs laden…" : "Services zijn mogelijk inactief"}
+            </span>
           </div>
         )}
         {shown.map((ev, i) => {
@@ -680,7 +685,7 @@ function LiveFeed({ events, actionFilter, setActionFilter, newCount }) {
                 </span>
                 {ev.destinations?.length > 0 && (
                   <span className="mf-fi-dst">
-                    → {ev.destinations.map(d => NODES[d]?.label || d).join(", ")}
+                    {ev.destinations.map(d => NODES[d]?.label || d).join(", ")}
                   </span>
                 )}
               </div>

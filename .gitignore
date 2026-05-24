@@ -3,4 +3,4 @@ __pycache__/
 .env
 *.stackdump
 .claude/
-sessions.db
+*.db

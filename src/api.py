@@ -250,18 +250,22 @@ async def _get_monitoring_logs(limit: int = 100) -> dict:
             error = fallback.get("error")
 
     entries = [_normalize_log_entry(e) for e in raw_entries if isinstance(e, dict)]
-    
-    # Store entries to local database for persistence
+
     if entries:
         log_store.store_logs_batch(entries)
-    
-    # If no live logs, fall back to cached logs with freshness indicator
-    if not entries and error:
+
+    # Fall back to cached DB logs whenever live MCP returns nothing (empty or error)
+    if not entries:
         cached = log_store.get_recent_logs(limit=limit, hours=24)
         if cached:
+            # Ensure @timestamp is present so message-flow endpoint can use it
+            for c in cached:
+                if not c.get("@timestamp") and c.get("timestamp"):
+                    c["@timestamp"] = c["timestamp"]
             entries = cached
-            error = "Showing cached logs (no live connection)"
-            _log.warning(f"Using cached logs due to monitoring error: {error}")
+            if error:
+                _log.warning("Using cached logs due to monitoring error: %s", error)
+            error = "Showing cached logs (no live connection)" if error else None
     
     return {"logs": entries, "count": len(entries), "error": error}
 
