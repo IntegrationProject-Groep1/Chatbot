@@ -143,16 +143,25 @@ function highlightXML(raw) {
 function DetailLogItem({ m }) {
   const isXML = m.message && (m.message.includes("<") || m.message.toLowerCase().includes("xml"));
   const lvl = m.level || "info";
+  const [expanded, setExpanded] = React.useState(false);
+  const msg = m.message || "";
+  const isLong = msg.length > 160;
   return (
-    <div className={`mf-detail-log-item lvl-${lvl}`}>
+    <div className={`mf-detail-log-item lvl-${lvl}`} onClick={() => isLong && setExpanded(x => !x)}
+      style={{ cursor: isLong ? "pointer" : "default" }}>
       <div className="mf-detail-log-head">
         <span className="mf-detail-log-ts">{fmtTime(m.timestamp)}</span>
         <span className="mf-detail-lvl-badge" data-lvl={lvl}>{lvl}</span>
         {m.action && <span className="mf-detail-action-chip">{ACTION_NL[m.action] || m.action}</span>}
+        {isLong && <span style={{ marginLeft: "auto", fontSize: 9, color: "var(--muted-3)" }}>{expanded ? "↑" : "↓"}</span>}
       </div>
       {isXML
-        ? <div className="mf-detail-xml" dangerouslySetInnerHTML={{ __html: highlightXML(m.message) }} />
-        : <div className="mf-detail-log-msg">{m.message}</div>
+        ? <div className="mf-detail-xml" dangerouslySetInnerHTML={{ __html: highlightXML(msg) }} />
+        : <div className="mf-detail-log-msg" style={{
+            whiteSpace: "pre-wrap", wordBreak: "break-word",
+            display: "-webkit-box", WebkitLineClamp: expanded ? "unset" : 4,
+            WebkitBoxOrient: "vertical", overflow: expanded ? "visible" : "hidden",
+          }}>{msg}</div>
       }
     </div>
   );
@@ -340,7 +349,8 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
       style={{ width: "100%", height: "100%", display: "block", touchAction: "none" }}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}>
+      onPointerCancel={handlePointerUp}
+      onClick={() => onSelect(null)}>
       <defs>
         <filter id="mf-glow" x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
@@ -382,7 +392,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
             style={{ opacity: inFocus ? 1 : 0.08, cursor: "pointer", transition: "opacity .2s" }}
             onMouseEnter={() => onHover({ type: "edge", key, from, to, data: e })}
             onMouseLeave={() => onHover(null)}
-            onClick={() => onSelect({ type: "edge", key, from, to, data: e })}>
+            onClick={ev => { ev.stopPropagation(); onSelect({ type: "edge", key, from, to, data: e }); }}>
 
             {/* Hit zone */}
             <path d={path} fill="none" stroke="transparent" strokeWidth={22} />
@@ -772,15 +782,27 @@ function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, ho
 }
 
 // ─── Feed item ────────────────────────────────────────────────────────────────
-function FeedItem({ ev }) {
+function FeedItem({ ev, onSelect, edgeIdx }) {
   const sN = NODES[ev.source];
   const dst = ev.destinations?.[0];
   const tN = dst ? NODES[dst] : null;
   const isNew = !ev.isCached && (Date.now() - new Date(ev.timestamp).getTime()) < 2500;
+
+  const handleClick = () => {
+    if (!onSelect) return;
+    if (ev.source && dst) {
+      const key = `${ev.source}->${dst}`;
+      onSelect({ type: "edge", key, from: ev.source, to: dst, data: (edgeIdx || {})[key] || {} });
+    } else if (ev.source && NODES[ev.source]) {
+      onSelect({ type: "node", id: ev.source, node: NODES[ev.source] });
+    }
+  };
+
   return (
     <div className={`mf-fi lvl-${ev.level}${isNew ? " entering" : ""}${ev.isCached ? " cached" : ""}`}
-      style={{ "--svc-c": nc(sN),
-               "--svc-c-dst": nc(tN) }}>
+      style={{ "--svc-c": nc(sN), "--svc-c-dst": nc(tN), cursor: onSelect ? "pointer" : "default" }}
+      onClick={handleClick}
+      title={dst ? `Selecteer: ${sN?.label || ev.source} → ${tN?.label || dst}` : undefined}>
       <div className="mf-fi-ts">
         {fmtTime(ev.timestamp)}
         {!ev.isCached && <span className="ago">{ago(ev.timestamp)}</span>}
@@ -795,7 +817,7 @@ function FeedItem({ ev }) {
           </>}
           <span className="mf-fi-action">{ACTION_NL[ev.action] || ev.action}</span>
         </div>
-        {ev.message && <div className="mf-fi-msg">{ev.message}</div>}
+        {ev.message && <div className="mf-fi-msg" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{ev.message}</div>}
       </div>
     </div>
   );
@@ -844,7 +866,7 @@ function FilterChips({ events, actionFilter, setActionFilter, levelFilter, setLe
 }
 
 // ─── Live feed panel ──────────────────────────────────────────────────────────
-function Feed({ events, rate, connected, paused, onTogglePause }) {
+function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeIdx }) {
   const [actionFilter, setActionFilter] = useState(null);
   const [levelFilter,  setLevelFilter]  = useState(null);
   const [search,       setSearch]       = useState("");
@@ -971,7 +993,8 @@ function Feed({ events, rate, connected, paused, onTogglePause }) {
           </div>
         )}
         {visible.slice(0, 200).map((ev, i) => (
-          <FeedItem key={`${ev.timestamp}|${ev.source}|${ev.action}|${i}`} ev={ev} />
+          <FeedItem key={`${ev.timestamp}|${ev.source}|${ev.action}|${i}`} ev={ev}
+            onSelect={onSelect} edgeIdx={edgeIdx} />
         ))}
       </div>
     </aside>
@@ -1251,6 +1274,8 @@ function MessageFlowScreen() {
           connected={connState === "connected"}
           paused={paused}
           onTogglePause={() => setPaused(p => !p)}
+          onSelect={handleSelect}
+          edgeIdx={edgeIdx}
         />
       </div>
 

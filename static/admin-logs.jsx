@@ -21,7 +21,7 @@ const TIME_MODES = [
   { id: "15m",  label: "15 min", hours: 0.25  },
   { id: "1h",   label: "1 uur",  hours: 1     },
   { id: "6h",   label: "6 uur",  hours: 6     },
-  { id: "24h",  label: "24 uur", hours: 24    },
+  { id: "7h",   label: "7 uur",  hours: 7     },
 ];
 
 const LIVE_LIMIT  = 300;
@@ -295,7 +295,7 @@ function LogPanel({ svc, logs, allLogs, now, isLive }) {
             <span style={{ width: 110 }}>action</span>
             <span style={{ flex: 1 }}>log_message</span>
           </div>
-          <div className="log-stream-body">
+          <div className="log-stream-body" style={{ overflowY: "auto", maxHeight: 320 }}>
             {shown.length === 0 && (
               <div className="log-empty mono">
                 {allLogs.length === 0 ? "geen entries" : "geen entries voor dit filter"}
@@ -304,18 +304,25 @@ function LogPanel({ svc, logs, allLogs, now, isLive }) {
             {shown.map((e, idx) => {
               const fresh = now - e.tsRaw < 60000;
               return (
-                <div key={e.id || idx} className={`log-line ${e.level} ${fresh && isLive ? "fresh" : ""}`}>
-                  <span className="log-ts mono">{e.ts}</span>
-                  <span className={`log-lvl ${e.level}`}>{e.level}</span>
-                  <span className="log-action mono">{e.action}</span>
-                  <span className="log-msg mono">{e.msg}</span>
+                <div key={e.id || idx} className={`log-line ${e.level} ${fresh && isLive ? "fresh" : ""}`}
+                  style={{ alignItems: "flex-start" }}>
+                  <span className="log-ts mono" style={{ flexShrink: 0 }}>{e.ts}</span>
+                  <span className={`log-lvl ${e.level}`} style={{ flexShrink: 0 }}>{e.level}</span>
+                  <span className="log-action mono" style={{ flexShrink: 0 }}>{e.action}</span>
+                  <span className="log-msg mono" title={e.msg}
+                    style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1 }}>{e.msg}</span>
                 </div>
               );
             })}
           </div>
-          {logs.length > 15 && (
-            <button className="log-show-more" onClick={() => setShowAll(s => !s)}>
-              {showAll ? "↑ Minder tonen" : `↓ Nog ${logs.length - 15} meer`}
+          {!showAll && logs.length > 15 && (
+            <button className="log-show-more" onClick={() => setShowAll(true)}>
+              ↓ Nog {logs.length - 15} meer tonen
+            </button>
+          )}
+          {showAll && logs.length > 15 && (
+            <button className="log-show-more" onClick={() => setShowAll(false)}>
+              ↑ Minder tonen
             </button>
           )}
         </div>
