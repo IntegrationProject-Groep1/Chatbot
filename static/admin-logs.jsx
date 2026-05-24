@@ -67,6 +67,112 @@ function computeStats(entries) {
   return Object.values(byAction).sort((a, b) => b.count - a.count).slice(0, 6);
 }
 
+// ── ACTION labels (NL) ────────────────────────────────────────────────────────
+const ACTION_NL = {
+  registration: "Registratie", payment: "Betaling", invoice: "Factuur",
+  session: "Sessie", calendar: "Agenda", email: "E-mail", wallet: "Wallet",
+  badge: "Badge", user: "Gebruiker", refund: "Terugbetaling",
+  xml_validation: "XML-validatie", system_error: "Systeemfout", identity: "Identity",
+};
+
+// ── Dashboard strip ────────────────────────────────────────────────────────────
+function LogsDashboard({ logsBySvc, totals, timeMode, onSvcClick }) {
+  // Per-service breakdown
+  const svcStats = React.useMemo(() => {
+    return LOG_SERVICES.map(s => {
+      const entries = logsBySvc[s.id] || [];
+      const errors  = entries.filter(e => e.level === "error").length;
+      const warns   = entries.filter(e => e.level === "warning" || e.level === "warn").length;
+      return { ...s, total: entries.length, errors, warns, ok: entries.length - errors - warns };
+    }).sort((a, b) => b.total - a.total);
+  }, [logsBySvc]);
+
+  // Top actions across all services
+  const topActions = React.useMemo(() => {
+    const counts = {};
+    Object.values(logsBySvc).flat().forEach(e => {
+      counts[e.action] = (counts[e.action] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  }, [logsBySvc]);
+
+  const errorRate  = totals.total > 0 ? Math.round(totals.err / totals.total * 100) : 0;
+  const maxSvcTotal = Math.max(1, ...svcStats.map(s => s.total));
+  const activeServices = svcStats.filter(s => s.total > 0).length;
+
+  return (
+    <div className="logs-dash">
+      {/* ── KPI tiles ── */}
+      <div className="logs-dash-kpis">
+        <div className="logs-kpi">
+          <span className="logs-kpi-v">{totals.total}</span>
+          <span className="logs-kpi-l">entries</span>
+        </div>
+        <div className={`logs-kpi ${activeServices > 0 ? "" : "muted"}`}>
+          <span className="logs-kpi-v">{activeServices}</span>
+          <span className="logs-kpi-l">actieve services</span>
+        </div>
+        <div className={`logs-kpi ${totals.err > 0 ? "hot" : ""}`}>
+          <span className="logs-kpi-v">{totals.err}</span>
+          <span className="logs-kpi-l">errors</span>
+        </div>
+        <div className={`logs-kpi ${totals.warn > 0 ? "warn" : ""}`}>
+          <span className="logs-kpi-v">{totals.warn}</span>
+          <span className="logs-kpi-l">warnings</span>
+        </div>
+        <div className={`logs-kpi ${errorRate > 10 ? "hot" : errorRate > 0 ? "warn" : ""}`}>
+          <span className="logs-kpi-v">{errorRate}%</span>
+          <span className="logs-kpi-l">foutpercentage</span>
+        </div>
+
+        {topActions.length > 0 && (
+          <div className="logs-dash-actions">
+            <span className="logs-dash-actions-lbl">Top acties</span>
+            <div className="logs-dash-action-chips">
+              {topActions.map(([action, count]) => (
+                <span key={action} className="logs-dash-action-chip">
+                  {ACTION_NL[action] || action}
+                  <b>{count}</b>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Service activity bars ── */}
+      {svcStats.some(s => s.total > 0) && (
+        <div className="logs-dash-bars">
+          {svcStats.map(s => {
+            const pct     = s.total / maxSvcTotal;
+            const errPct  = s.total > 0 ? s.errors / s.total : 0;
+            const warnPct = s.total > 0 ? s.warns  / s.total : 0;
+            const okPct   = 1 - errPct - warnPct;
+            const hasErr  = s.errors > 0;
+            return (
+              <button key={s.id}
+                className={`logs-dash-bar ${s.total === 0 ? "idle" : ""} ${hasErr ? "has-err" : ""}`}
+                onClick={() => onSvcClick(s.id)}
+                title={`${s.label}: ${s.total} entries, ${s.errors} fouten`}>
+                <span className="logs-dash-bar-label">{s.label}</span>
+                <div className="logs-dash-bar-track">
+                  <div className="logs-dash-bar-fill ok"   style={{ width: `${okPct   * pct * 100}%` }} />
+                  <div className="logs-dash-bar-fill warn" style={{ width: `${warnPct * pct * 100}%` }} />
+                  <div className="logs-dash-bar-fill hot"  style={{ width: `${errPct  * pct * 100}%` }} />
+                </div>
+                <span className={`logs-dash-bar-count ${hasErr ? "hot" : ""}`}>
+                  {s.total > 0 ? s.total : "—"}
+                  {s.errors > 0 && <span className="logs-dash-bar-err"> · {s.errors}✕</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
   const [timeMode, setTimeMode]   = React.useState("live");
   const [svcFilter, setSvcFilter] = React.useState("all");
@@ -222,6 +328,16 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
           ))}
         </div>
       </div>
+
+      {/* ── Dashboard ── */}
+      {!loading && (
+        <LogsDashboard
+          logsBySvc={logsBySvc}
+          totals={totals}
+          timeMode={timeMode}
+          onSvcClick={(id) => setSvcFilter(svcFilter === id ? "all" : id)}
+        />
+      )}
 
       {/* ── Error banner ── */}
       {liveError && (
