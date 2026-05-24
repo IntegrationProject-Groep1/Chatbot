@@ -44,6 +44,13 @@ def build_identity_lookup_by_uuid_request(identity_uuid: str) -> str:
     return ET.tostring(root, encoding="unicode")
 
 
+def build_identity_delete_request(master_uuid: str, reason: str) -> str:
+    root = ET.Element("identity_delete_request")
+    _xml_text(root, "master_uuid", master_uuid)
+    _xml_text(root, "reason", reason)
+    return ET.tostring(root, encoding="unicode")
+
+
 # --- Multi-agent query (Planning + Facturatie) ---
 
 def build_ai_query_request(

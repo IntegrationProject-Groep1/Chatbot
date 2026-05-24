@@ -139,6 +139,31 @@ def parse_identity_response(xml_text: str) -> IdentityUser:
     return IdentityUser(identity_uuid=identity_uuid, email=email or "unknown")
 
 
+def parse_identity_delete_response(xml_text: str) -> dict:
+    """Parse a response from identity.user.delete.request RPC.
+
+    Returns {"success": True, "master_uuid": "...", "email": "..."} on success
+    or {"success": False, "error": "..."} on failure.
+    """
+    try:
+        body = _get_body(xml_text)
+        status = _text(body, "status").lower()
+        if status not in ("ok", "success", ""):
+            code = _text(body, "error_code") or "DELETE_FAILED"
+            msg = _text(body, "error_description", "error_message", "message") or "Delete failed"
+            return {"success": False, "error": f"{code}: {msg}"}
+        user_el = body.find("user")
+        src = user_el if user_el is not None else body
+        return {
+            "success":      True,
+            "master_uuid":  _text(src, "master_uuid", "identity_uuid"),
+            "email":        _text(src, "email"),
+            "message":      "User deleted successfully. UserDeleted event published to all services.",
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
 # --- Multi-agent AI response parser ---
 
 def parse_ai_response(xml_text: str) -> AIResponse:
