@@ -203,6 +203,53 @@ async def _call_mcp(tool: str, args: dict = {}) -> dict:
         return {"error": str(exc)}
 
 
+_CONNECTION_NOISE_PATTERNS = (
+    "connectionerror",
+    "newconnectionerror",
+    "has failed for",
+    "retrying request after failure",
+    "resurrected node",
+    "putting on 30 second timeout",
+    "detector main loop error",
+)
+
+
+def _is_connection_noise(entry: dict) -> bool:
+    msg = (entry.get("message") or entry.get("log_message") or "").lower()
+    return any(p in msg for p in _CONNECTION_NOISE_PATTERNS)
+
+
+def _deduplicate_connection_noise(entries: list) -> list:
+    """Collapse runs of identical connection-error noise into a single entry with a repeat count."""
+    result = []
+    noise_groups: dict[str, dict] = {}  # key: (source, message_prefix) → representative entry
+
+    for entry in entries:
+        if not _is_connection_noise(entry):
+            result.append(entry)
+            continue
+
+        source = entry.get("source") or entry.get("system") or ""
+        msg = (entry.get("message") or entry.get("log_message") or "")[:80]
+        key = f"{source}:{msg}"
+
+        if key not in noise_groups:
+            rep = dict(entry)
+            rep["_repeat_count"] = 1
+            noise_groups[key] = rep
+        else:
+            noise_groups[key]["_repeat_count"] += 1
+
+    for rep in noise_groups.values():
+        count = rep.pop("_repeat_count")
+        if count > 1:
+            orig = rep.get("message") or rep.get("log_message") or ""
+            rep["message"] = rep["log_message"] = f"[{count}x] {orig}"
+        result.append(rep)
+
+    return result
+
+
 def _normalize_log_entry(entry: dict) -> dict:
     header = entry.get("header") if isinstance(entry.get("header"), dict) else {}
     body = entry.get("body") if isinstance(entry.get("body"), dict) else {}
@@ -476,6 +523,8 @@ async def logs_query(
     # (get_logs_in_timerange has no action param, so filter here for consistency)
     if action and entries:
         entries = [e for e in entries if (e.get("action") or "").lower() == action.lower()]
+
+    entries = _deduplicate_connection_noise(entries)
 
     return {
         "logs": entries,
