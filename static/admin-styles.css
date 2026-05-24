@@ -3360,6 +3360,56 @@ body[data-theme="slate"] .mf-canvas-wrap {
 .mf-detail-lvl { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
 .mf-detail-text { color: var(--muted); line-height: 1.4; word-break: break-word; }
 
+/* ── Detail log — enriched message list with XML highlighting ── */
+.mf-detail-log {
+  display: flex; flex-direction: column;
+  max-height: 280px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: var(--r-xs);
+  background: var(--surface-2); margin-top: 4px;
+}
+.mf-detail-log::-webkit-scrollbar { width: 4px; }
+.mf-detail-log::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 2px; }
+.mf-detail-log-item {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
+  background: var(--surface);
+  transition: background .1s;
+  font-size: 11px;
+}
+.mf-detail-log-item:last-child { border-bottom: 0; }
+.mf-detail-log-item:hover { background: var(--surface-3); }
+.mf-detail-log-item.lvl-error   { border-left-color: var(--hot); }
+.mf-detail-log-item.lvl-warning { border-left-color: var(--warn); }
+.mf-detail-log-head {
+  display: flex; align-items: center; gap: 5px;
+  margin-bottom: 3px; flex-wrap: wrap;
+}
+.mf-detail-lvl-badge {
+  font: 700 8px/1 var(--font);
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 1px 5px; border-radius: var(--r-xs); flex-shrink: 0;
+}
+.mf-detail-lvl-badge[data-lvl="info"]    { background: var(--primary-soft); color: var(--primary); }
+.mf-detail-lvl-badge[data-lvl="warning"] { background: var(--warn-soft);    color: var(--warn); }
+.mf-detail-lvl-badge[data-lvl="error"]   { background: var(--hot-soft);     color: var(--hot); }
+.mf-detail-action-chip {
+  padding: 1px 5px; font: 600 9px/1.4 var(--font);
+  background: var(--surface-3); color: var(--muted);
+  border-radius: var(--r-xs); flex-shrink: 0;
+}
+.mf-detail-xml {
+  margin-top: 3px; padding: 5px 7px;
+  background: var(--surface-3); border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  font: 500 10px/1.5 var(--font-mono);
+  color: var(--muted); white-space: pre-wrap; word-break: break-all;
+  max-height: 72px; overflow-y: auto;
+}
+.mf-detail-xml .mf-xml-tag  { color: var(--primary); }
+.mf-detail-xml .mf-xml-attr { color: var(--accent); }
+.mf-detail-xml .mf-xml-val  { color: var(--warn); }
+
 /* ── Live feed ── */
 .mf-feed-hdr {
   display: flex;

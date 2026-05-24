@@ -126,9 +126,36 @@ function buildEdgeIdx(edges) {
     if (e.last_message && (!idx[k].lastMsg || e.last_message > idx[k].lastMsg))
       idx[k].lastMsg = e.last_message;
     for (const m of (e.recent_messages || []))
-      if (idx[k].recent.length < 5) idx[k].recent.push(m);
+      if (idx[k].recent.length < 12) idx[k].recent.push(m);
   }
   return idx;
+}
+
+function highlightXML(raw) {
+  if (!raw) return "";
+  return raw
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/(&lt;\/?)([\w:-]+)/g, '$1<span class="mf-xml-tag">$2</span>')
+    .replace(/([\w:-]+)=/g, '<span class="mf-xml-attr">$1</span>=')
+    .replace(/=&quot;([^&]*)&quot;/g, '=&quot;<span class="mf-xml-val">$1</span>&quot;');
+}
+
+function DetailLogItem({ m }) {
+  const isXML = m.message && (m.message.includes("<") || m.message.toLowerCase().includes("xml"));
+  const lvl = m.level || "info";
+  return (
+    <div className={`mf-detail-log-item lvl-${lvl}`}>
+      <div className="mf-detail-log-head">
+        <span className="mf-detail-ts">{fmtTime(m.timestamp)}</span>
+        <span className="mf-detail-lvl-badge" data-lvl={lvl}>{lvl}</span>
+        {m.action && <span className="mf-detail-action-chip">{ACTION_NL[m.action] || m.action}</span>}
+      </div>
+      {isXML
+        ? <div className="mf-detail-xml" dangerouslySetInnerHTML={{ __html: highlightXML(m.message) }} />
+        : <div className="mf-detail-text" style={{ fontSize: 11, marginTop: 2 }}>{m.message}</div>
+      }
+    </div>
+  );
 }
 
 // ─── SVG edge path ────────────────────────────────────────────────────────────
@@ -190,8 +217,49 @@ function edgeVis(count, errors) {
   return               { w: 4.2, op: 1.00, dash: "none", n: 4, tint, speed: 1.2 };
 }
 
+// ─── One-shot packet — travels an edge once per message ──────────────────────
+function Packet({ pkt, onDone }) {
+  useEffect(() => {
+    const tm = setTimeout(onDone, pkt.dur + (pkt.delay || 0) + 300);
+    return () => clearTimeout(tm);
+  }, []);
+  const col = NODES[pkt.from]?.color || "#2563EB";
+  const pid = `ep-${pkt.from}-${pkt.to}`;
+  const r = pkt.level === "error" ? 7 : 5.5;
+  const durS = (pkt.dur / 1000).toFixed(3) + "s";
+  const delayS = ((pkt.delay || 0) / 1000).toFixed(3) + "s";
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {/* Halo ring */}
+      <circle r={r + 3} fill={col}>
+        <animateMotion dur={durS} begin={delayS} fill="freeze" repeatCount="1">
+          <mpath href={`#${pid}`} />
+        </animateMotion>
+        <animate attributeName="opacity" values="0;0.3;0.3;0" keyTimes="0;0.08;0.85;1"
+                 dur={durS} begin={delayS} fill="freeze" />
+      </circle>
+      {/* White shell */}
+      <circle r={r} fill="white">
+        <animateMotion dur={durS} begin={delayS} fill="freeze" repeatCount="1">
+          <mpath href={`#${pid}`} />
+        </animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.06;0.9;1"
+                 dur={durS} begin={delayS} fill="freeze" />
+      </circle>
+      {/* Colored core */}
+      <circle r={r - 2} fill={col}>
+        <animateMotion dur={durS} begin={delayS} fill="freeze" repeatCount="1">
+          <mpath href={`#${pid}`} />
+        </animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.06;0.9;1"
+                 dur={durS} begin={delayS} fill="freeze" />
+      </circle>
+    </g>
+  );
+}
+
 // ─── SVG flow graph ───────────────────────────────────────────────────────────
-function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover }) {
+function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, packets, onPacketDone }) {
   const getStatus = id => {
     const h = nodeHealth[id] || {};
     if (h.live === true)  return "online";
@@ -308,6 +376,11 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover }
           </g>
         );
       })}
+
+      {/* ── One-shot packets (spawned per new message) ── */}
+      {(packets || []).map(pkt => (
+        <Packet key={pkt.id} pkt={pkt} onDone={() => onPacketDone(pkt.id)} />
+      ))}
 
       {/* ── Nodes ── */}
       {Object.entries(NODES).map(([id, node]) => {
@@ -550,6 +623,19 @@ function DetailPanel({ selected, edgeIdx }) {
             <span className={`mf-detail-cnt ${e.d.count ? "" : "zero"}`}>{e.d.count || "—"}</span>
           </div>
         ))}
+        {(() => {
+          const msgs = [...out, ...inn]
+            .flatMap(e => (e.d.recent || []))
+            .sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""))
+            .slice(0, 10);
+          if (!msgs.length) return null;
+          return <>
+            <div className="mf-detail-sub">Recente berichten</div>
+            <div className="mf-detail-log">
+              {msgs.map((m, i) => <DetailLogItem key={i} m={m} />)}
+            </div>
+          </>;
+        })()}
       </div>
     );
   }
@@ -584,13 +670,9 @@ function DetailPanel({ selected, edgeIdx }) {
               </>}
               {e.recent?.length > 0 && <>
                 <div className="mf-detail-sub">Recente berichten</div>
-                {e.recent.map((m, i) => (
-                  <div key={i} className="mf-detail-msg">
-                    <span className="mf-detail-ts">{fmtTime(m.timestamp)}</span>
-                    <span className="mf-detail-lvl" style={{ background: LEVEL_DOT[m.level] || "#8B93A8" }}></span>
-                    <span className="mf-detail-text">{m.message}</span>
-                  </div>
-                ))}
+                <div className="mf-detail-log">
+                  {e.recent.map((m, i) => <DetailLogItem key={i} m={m} />)}
+                </div>
               </>}
             </>
         }
@@ -814,6 +896,8 @@ function MessageFlowScreen() {
   const [newCount,     setNewCount]     = useState(0);
   const [lastUpdate,   setLastUpdate]   = useState(null);
   const [actionFilter, setActionFilter] = useState(null);
+  const [packets,      setPackets]      = useState([]);
+  const packetSeq = useRef(0);
 
   // Stable set of event keys we've already displayed — not reset on re-render
   const seenKeys = useRef(new Set());
@@ -838,6 +922,22 @@ function MessageFlowScreen() {
         if (incoming.length > 0) {
           setLiveEvents(prev => [...incoming, ...prev].slice(0, 400));
           setNewCount(n => n + incoming.length);
+          // Spawn one-shot packet per new event on a known edge
+          const topoSet = new Set(TOPO.map(t => `${t.from}->${t.to}`));
+          const newPkts = incoming
+            .map(e => ({ ...e, to: e.target || (e.destinations && e.destinations[0]) }))
+            .filter(e => e.source && e.to && topoSet.has(`${e.source}->${e.to}`))
+            .slice(0, 6)
+            .map((e, i) => ({
+              id: `pkt-${++packetSeq.current}`,
+              from: e.source,
+              to: e.to,
+              dur: 1500 + Math.random() * 800,
+              delay: i * 180,
+              level: e.level || "info",
+            }));
+          if (newPkts.length > 0)
+            setPackets(prev => [...prev.slice(-20), ...newPkts]);
         }
       })
       .catch(e => {
@@ -960,6 +1060,8 @@ function MessageFlowScreen() {
               hovered={hovered}
               onSelect={handleSelect}
               onHover={setHovered}
+              packets={packets}
+              onPacketDone={id => setPackets(prev => prev.filter(p => p.id !== id))}
             />
           )}
         </div>
