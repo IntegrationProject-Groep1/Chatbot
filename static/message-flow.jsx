@@ -1191,11 +1191,13 @@ function MessageFlowScreen() {
 
         <div className="mf-head-sep" />
 
-        <div className="mf-spark" title="Berichten per seconde (laatste 60s)">
-          <Sparkline buckets={buckets} />
-          <span className="mf-spark-rate">{liveRate.toFixed(1)}</span>
-          <span className="mf-spark-unit">msg/s</span>
-        </div>
+        {isLive && (
+          <div className="mf-spark" title="Berichten per seconde (laatste 60s)">
+            <Sparkline buckets={buckets} />
+            <span className="mf-spark-rate">{liveRate.toFixed(1)}</span>
+            <span className="mf-spark-unit">msg/s</span>
+          </div>
+        )}
 
         <div className="mf-head-spacer" />
 
