@@ -392,7 +392,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
             style={{ opacity: inFocus ? 1 : 0.08, cursor: "pointer", transition: "opacity .2s" }}
             onMouseEnter={() => onHover({ type: "edge", key, from, to, data: e })}
             onMouseLeave={() => onHover(null)}
-            onClick={ev => { ev.stopPropagation(); onSelect({ type: "edge", key, from, to, data: e }); }}>
+            onClick={ev => { ev.stopPropagation(); onSelect(isSel ? null : { type: "edge", key, from, to, data: e }); }}>
 
             {/* Hit zone */}
             <path d={path} fill="none" stroke="transparent" strokeWidth={22} />
@@ -470,7 +470,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
             }}
             onMouseEnter={() => !isDragging && onHover({ type: "node", id, node })}
             onMouseLeave={() => onHover(null)}
-            onClick={ev => { if (!dragRef.current) { ev.stopPropagation(); onSelect({ type: "node", id, node }); } }}
+            onClick={ev => { if (!dragRef.current) { ev.stopPropagation(); onSelect(isSel ? null : { type: "node", id, node }); } }}
             onPointerDown={ev => handlePointerDown(ev, id)}>
 
             {/* Hover/sel glow */}
