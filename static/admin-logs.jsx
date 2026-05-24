@@ -261,7 +261,7 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
       {/* ── Toolbar ── */}
       <div className="logs-toolbar">
         <div className="logs-toolbar-left">
-          <h1>Live Logs</h1>
+          <h1>{isLive ? "Live Logs" : "Historische Logs"}</h1>
           <span className="logs-sub">
             {dataSource === "cache" ? "cached · " : ""}
             {totals.total} entries
