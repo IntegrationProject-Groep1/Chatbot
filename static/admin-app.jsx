@@ -374,15 +374,16 @@ function CardsArea({ cardEvents }) {
 }
 
 // ─── Message components ────────────────────────────────────────────────────
-function UserMessage({ text, email }) {
+function UserMessage({ text, email, ts }) {
   const initials = (email || "AD").split("@")[0].slice(0,2).toUpperCase();
+  const time = ts ? new Date(ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
   return (
     <div className="msg user">
       <div className="msg-av user">{initials}</div>
       <div className="msg-body">
         <div className="msg-meta">
           <b>{email || "Admin"}</b>
-          <span>· {new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span>
+          {time && <span>· {time}</span>}
         </div>
         <div className="msg-text">{renderRich(text)}</div>
       </div>
@@ -390,7 +391,8 @@ function UserMessage({ text, email }) {
   );
 }
 
-function AssistantMessage({ text, streaming, cursor, cardEvents, suggestions, onSuggest }) {
+function AssistantMessage({ text, streaming, cursor, cardEvents, suggestions, onSuggest, ts }) {
+  const time = ts ? new Date(ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
   return (
     <div className="msg assist">
       <div className="msg-av assist">AI</div>
@@ -398,7 +400,7 @@ function AssistantMessage({ text, streaming, cursor, cardEvents, suggestions, on
         <div className="msg-meta">
           <b>Admin Assistant</b>
           <span className="who-tag">llama-3.3-70b-instruct</span>
-          <span>· {new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span>
+          {time && <span>· {time}</span>}
           {!streaming && text && <CopyButton text={text} className="msg-copy-btn" />}
         </div>
         <div className="msg-text">
@@ -1262,7 +1264,7 @@ function App() {
           streamRef.current.msgId = newId;
           setMessages(msgs => [...msgs, {
             id: newId, kind: "assistant",
-            text: txt, streaming: true, cardEvents: [], suggestions: []
+            text: txt, streaming: true, cardEvents: [], suggestions: [], ts: Date.now()
           }]);
         } else {
           setMessages(msgs => msgs.map(m => m.id === msgId ? { ...m, text: txt } : m));
@@ -1344,7 +1346,7 @@ function App() {
         }).then(() => loadConversations()).catch(() => {});
         setActiveConvId(convId);
       }
-      return [...msgs, { id: "user-" + Date.now(), kind: "user", text }];
+      return [...msgs, { id: "user-" + Date.now(), kind: "user", text, ts: Date.now() }];
     });
     streamRef.current = { text: "", cards: [], msgId: null };
     toolBundleRef.current = null;
@@ -1536,13 +1538,13 @@ function App() {
               )}
 
               {messages.map(m => {
-                if (m.kind === "user")      return <UserMessage key={m.id} text={m.text} email={identity?.email} />;
+                if (m.kind === "user")      return <UserMessage key={m.id} text={m.text} email={identity?.email} ts={m.ts} />;
                 if (m.kind === "bundle")    return settings.showBundle ? <ToolBundle key={m.id} tools={m.tools} /> : null;
                 if (m.kind === "assistant") return (
                   <AssistantMessage key={m.id}
                     text={m.text} streaming={m.streaming}
                     cardEvents={m.cardEvents} suggestions={m.suggestions}
-                    onSuggest={handleSuggest}
+                    onSuggest={handleSuggest} ts={m.ts}
                   />
                 );
                 if (m.kind === "error")     return <ErrorToast key={m.id} message={m.message} />;

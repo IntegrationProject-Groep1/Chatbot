@@ -848,8 +848,11 @@ async def mcp_status():
 
 
 @app.get("/api/session/{session_id}/messages")
-async def get_session_messages(session_id: str):
+async def get_session_messages(session_id: str, request: Request):
     """Return stored conversation messages for a session (used to restore chat UI)."""
+    token = request.cookies.get("admin_token")
+    if not token or not verify_token(token):
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
     messages = session_store.get_messages_for_api(session_id)
     return {"messages": messages, "count": len(messages)}
 

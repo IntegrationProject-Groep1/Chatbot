@@ -869,7 +869,7 @@ function FilterChips({ events, actionFilter, setActionFilter, levelFilter, setLe
 }
 
 // ─── Live feed panel ──────────────────────────────────────────────────────────
-function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeIdx }) {
+function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeIdx, isLive }) {
   const [actionFilter, setActionFilter] = useState(null);
   const [levelFilter,  setLevelFilter]  = useState(null);
   const [search,       setSearch]       = useState("");
@@ -937,11 +937,13 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
     <aside className="mf-feed">
       <header className="mf-feed-head">
         <div className="mf-feed-title">
-          <span>Live berichten</span>
+          <span>{isLive ? "Live berichten" : "Historische berichten"}</span>
           <span className="mf-feed-rate">
-            {connected
-              ? <>{rate.toFixed(1)}<span style={{ color: "var(--muted-3)" }}> msg/s</span></>
-              : <span style={{ color: "var(--warn)" }}>verbinden…</span>}
+            {isLive
+              ? (connected
+                  ? <>{rate.toFixed(1)}<span style={{ color: "var(--muted-3)" }}> msg/s</span></>
+                  : <span style={{ color: "var(--warn)" }}>verbinden…</span>)
+              : <span style={{ color: "var(--muted-2)" }}>historisch</span>}
             {isCachedMode && <span style={{ marginLeft: 6, color: "var(--muted-2)", fontSize: 10 }}>· gecached</span>}
           </span>
         </div>
@@ -964,14 +966,14 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
           levelFilter={levelFilter}   setLevelFilter={setLevelFilter} />
       </header>
 
-      {paused && (
+      {isLive && paused && (
         <div className="mf-pause-strip" onClick={onTogglePause} style={{ cursor: "pointer" }}>
           ⏸ Gepauzeerd · klik om te hervatten
         </div>
       )}
 
       <div className="mf-newpill-wrap">
-        <button className={`mf-newpill ${stashedCount > 0 && hovering ? "show" : ""}`}
+        <button className={`mf-newpill ${isLive && stashedCount > 0 && hovering ? "show" : ""}`}
           onClick={flush}>
           <span className="pulse" />
           {stashedCount} {stashedCount === 1 ? "nieuw bericht" : "nieuwe berichten"}
@@ -1034,7 +1036,6 @@ function MessageFlowScreen() {
   // ── Fetch ──
   const fetchData = useCallback(() => {
     const live = hours === null;
-    if (live && paused) return;
     const apiHours = live ? 0.083 : hours;
     fetch(`/api/monitoring/message-flow?hours=${apiHours}&limit=1000`)
       .then(r => { if (!r.ok) throw new Error(`Server ${r.status}`); return r.json(); })
@@ -1094,7 +1095,7 @@ function MessageFlowScreen() {
           : msg);
         setLoading(false);
       });
-  }, [hours, paused]);
+  }, [hours]);
 
   // Reset on window/pause change
   useEffect(() => {
@@ -1104,12 +1105,12 @@ function MessageFlowScreen() {
     fetchData();
   }, [fetchData]);
 
-  // Auto-poll only in live mode and when not paused
+  // Auto-poll only in live mode and when not paused (does NOT trigger the reset effect)
   useEffect(() => {
     if (hours !== null || paused) return;
     const id = setInterval(fetchData, 10_000);
     return () => clearInterval(id);
-  }, [fetchData, hours, paused]);
+  }, [fetchData, paused]);
 
   // Bucket throughput (last 60s) for sparkline
   useEffect(() => {
@@ -1296,6 +1297,7 @@ function MessageFlowScreen() {
           onTogglePause={() => setPaused(p => !p)}
           onSelect={handleSelect}
           edgeIdx={edgeIdx}
+          isLive={isLive}
         />
       </div>
 
