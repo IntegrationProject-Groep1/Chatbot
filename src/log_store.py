@@ -164,6 +164,57 @@ def get_recent_logs(limit: int = 100, hours: int = 24) -> list:
         return []
 
 
+def get_logs_by_filter(
+    since: str = None,
+    until: str = None,
+    service: str = None,
+    level: str = None,
+    action: str = None,
+    limit: int = 200,
+) -> list:
+    limit = min(max(int(limit or 200), 1), 1000)
+    pool = _get_pool()
+    if pool is None:
+        return []
+    try:
+        conn = pool.getconn()
+        try:
+            conditions: list[str] = []
+            params: list = []
+            if since:
+                conditions.append("timestamp >= %s")
+                params.append(since)
+            if until:
+                conditions.append("timestamp <= %s")
+                params.append(until)
+            if service:
+                conditions.append("source = %s")
+                params.append(service.lower())
+            if level:
+                conditions.append("level = %s")
+                params.append(level.lower())
+            if action:
+                conditions.append("action = %s")
+                params.append(action.lower())
+            where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+            params.append(limit)
+            with conn.cursor() as cur:
+                cur.execute(f"""
+                    SELECT source, level, action, message, timestamp, correlation_id
+                    FROM chatbot_logs
+                    {where}
+                    ORDER BY timestamp DESC
+                    LIMIT %s
+                """, params)
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, row)) for row in cur.fetchall()]
+        finally:
+            pool.putconn(conn)
+    except Exception as e:
+        _log.error("get_logs_by_filter failed: %s", e)
+        return []
+
+
 def get_logs_by_service(service: str, limit: int = 100, hours: int = 24) -> list:
     limit = min(max(int(limit or 100), 1), 1000)
     pool = _get_pool()

@@ -409,6 +409,77 @@ async def mcp_servers_detail():
     return {"servers": servers, "timestamp": datetime.utcnow().isoformat() + "Z"}
 
 
+@app.get("/api/logs/query")
+async def logs_query(
+    service: str = None,
+    level: str = None,
+    action: str = None,
+    since: str = None,
+    until: str = None,
+    hours: float = None,
+    limit: int = 200,
+):
+    """Unified log query: live (recent) or historical (time range). Falls back to DB cache."""
+    import log_store
+    from datetime import datetime, timedelta, timezone
+
+    limit = min(max(int(limit or 200), 1), 500)
+
+    # Derive `since` from `hours` if not given explicitly
+    if since is None and hours is not None and hours > 0:
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
+
+    mcp_args_extra: dict = {}
+    if service:
+        mcp_args_extra["service"] = service
+    if level:
+        mcp_args_extra["level"] = level
+    if action:
+        mcp_args_extra["action"] = action
+
+    raw: list = []
+    error: str | None = None
+
+    if since:
+        end = until or (datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+        mcp_result = await _call_mcp("monitoring__get_logs_in_timerange", {
+            "start": since, "end": end, "limit": limit,
+            **{k: v for k, v in mcp_args_extra.items() if k in ("level", "service")},
+        })
+    else:
+        mcp_result = await _call_mcp("monitoring__get_recent_logs", {
+            "limit": limit, **mcp_args_extra,
+        })
+
+    if isinstance(mcp_result, dict):
+        raw = mcp_result.get("logs") or []
+        error = mcp_result.get("error")
+
+    entries = [_normalize_log_entry(e) for e in raw if isinstance(e, dict)]
+    if entries:
+        log_store.store_logs_batch(entries)
+
+    if not entries:
+        cached = log_store.get_logs_by_filter(
+            since=since, until=until,
+            service=service, level=level if level else None,
+            action=action, limit=limit,
+        )
+        for c in cached:
+            if not c.get("@timestamp") and c.get("timestamp"):
+                c["@timestamp"] = c["timestamp"]
+        entries = cached
+        if entries:
+            error = "Showing cached logs (live MCP unavailable)"
+
+    return {
+        "logs": entries,
+        "count": len(entries),
+        "source": "live" if raw else "cache",
+        "error": error,
+    }
+
+
 @app.get("/api/logs/cached")
 async def cached_logs(limit: int = 100, service: str = None):
     """Get cached logs from local database (useful during monitoring downtime)."""
