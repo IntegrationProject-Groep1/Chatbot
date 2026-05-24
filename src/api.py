@@ -850,9 +850,18 @@ async def mcp_status():
 @app.get("/api/session/{session_id}/messages")
 async def get_session_messages(session_id: str, request: Request):
     """Return stored conversation messages for a session (used to restore chat UI)."""
-    token = request.cookies.get("admin_token")
-    if not token or not verify_token(token):
+    auth = _get_auth(request)
+    if not auth:
         return JSONResponse({"error": "not authenticated"}, status_code=401)
+    _, identity_uuid = auth
+
+    # Verify ownership: stored identity_uuid must match requester
+    stored_uuid = session_store.get_identity_uuid(session_id)
+    if stored_uuid and stored_uuid != identity_uuid:
+        _log.warning("FORBIDDEN: Admin %s tried to access session %s owned by %s", 
+                     identity_uuid, session_id, stored_uuid)
+        return JSONResponse({"error": "Forbidden: Session ownership mismatch"}, status_code=403)
+
     messages = session_store.get_messages_for_api(session_id)
     return {"messages": messages, "count": len(messages)}
 
@@ -966,10 +975,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
         # Step 2: chat loop
         while True:
-            raw = await websocket.receive_text()
-            data = json.loads(raw)
+            try:
+                raw = await websocket.receive_text()
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                _log.warning("WS malformed JSON: session=%s", session_id)
+                await emit({"type": "error", "message": "Invalid JSON", "recoverable": True})
+                continue
 
-            if data.get("type") == "chat":
+            msg_type = data.get("type")
+            if msg_type == "chat":
                 message = str(data.get("message", "")).strip()
                 if not message:
                     continue
@@ -979,6 +994,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 except Exception as exc:
                     _log.exception("Agent error: session=%s", session_id)
                     await emit({"type": "error", "message": str(exc), "recoverable": True})
+            elif msg_type == "ping":
+                await emit({"type": "pong"})
+            else:
+                _log.debug("WS unknown message type %r: session=%s", msg_type, session_id)
 
     except asyncio.TimeoutError:
         _log.warning("WS auth timeout: session=%s", session_id)

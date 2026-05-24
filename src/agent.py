@@ -34,12 +34,20 @@ _WRITE_PREFIXES = (
     "mark_", "set_", "process_refund", "topup_",
     "enroll_", "unenroll_",
 )
-_CONFIRM_WORDS = frozenset({
+_CONFIRM_WORDS_SINGLE = frozenset({
     "ja", "yes", "ok", "bevestig", "confirm", "proceed",
     "doorgaan", "akkoord", "goedgekeurd", "approved", "sure", "zeker",
-    "do it", "doe het", "go ahead",
+    "yep", "yup", "jep", "oui", "si",
+})
+_CONFIRM_PHRASES = frozenset({
+    "do it", "doe het", "go ahead", "ga door",
 })
 
+# Pending write calls blocked by the write-gate — keyed by session_id
+_PENDING_WRITE: dict[str, dict] = {}
+
+
+import re
 
 def _is_write_tool(tool_name: str) -> bool:
     bare = tool_name.split("__")[-1].lower()
@@ -47,12 +55,17 @@ def _is_write_tool(tool_name: str) -> bool:
 
 
 def _has_confirmation(session_id: str) -> bool:
-    """True if the most recent user message is a short explicit confirmation."""
+    """True if the most recent user message is a short, explicit confirmation."""
     for msg in reversed(session_store.get(session_id)):
         if msg.get("role") == "user":
-            text = (msg.get("content") or "").lower().strip().rstrip("!.?")
-            words = set(text.split())
-            return bool(len(words) <= 8 and words & _CONFIRM_WORDS)
+            text = (msg.get("content") or "").lower().strip()
+            # Remove trailing punctuation for the whole phrase check
+            phrase = text.rstrip("!.?")
+            if len(phrase.split()) > 8:
+                return False
+            # Split into words and strip ALL punctuation from each word
+            words = {re.sub(r'[^\w]', '', w) for w in phrase.split()}
+            return bool(words & _CONFIRM_WORDS_SINGLE or phrase in _CONFIRM_PHRASES)
     return False
 
 _LOCAL_TOOLS = [
@@ -301,11 +314,8 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
     return result
 
 
-async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tuple[str, str, bool]:
-    """
-    Execute a tool call. Returns (call_id, result_json, should_continue_loop).
-    should_continue_loop=False means stop the agent loop immediately.
-    """
+async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tuple[str, str]:
+    """Execute a tool call. Returns (call_id, result_json)."""
     name = tool_call["function"]["name"]
     call_id = tool_call["id"]
 
@@ -314,35 +324,14 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
 
     await emit({"type": "tool_start", "tool": name, "label": name.replace("_", " ").title(), "call_id": call_id, "arguments": args})
     t0 = time.time()
-
     identity_uuid = session_store.get_identity_uuid(session_id)
 
-    # ── Write-tool gate: require explicit admin confirmation ─────────────────
-    if _is_write_tool(name) and not _has_confirmation(session_id):
-        _log.info("WRITE BLOCKED pending confirmation: tool=%s session=%s args=%s",
-                  name, session_id, args)
-        await emit({
-            "type": "confirm_required",
-            "tool": name,
-            "label": name.split("__")[-1].replace("_", " ").title(),
-            "arguments": args,
-            "call_id": call_id,
-        })
-        duration = int((time.time() - t0) * 1000)
-        await emit({"type": "tool_complete", "tool": name, "duration_ms": duration,
-                    "call_id": call_id, "result_preview": '{"status":"pending_confirmation"}'})
-        return call_id, json.dumps({
-            "status": "pending_confirmation",
-            "message": "Admin confirmation required. Ask the admin to type 'ja' to confirm or 'nee' to cancel.",
-        }), False  # Stop loop, don't continue
-
     try:
-        # Handle local tools without going through MCP
         local_result = await _handle_local_tool(name, args)
         if local_result is not None:
             duration = int((time.time() - t0) * 1000)
             await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": local_result[:120]})
-            return call_id, local_result, True
+            return call_id, local_result
 
         publish_audit_event(f"tool_called.{name}", {
             "session_id": session_id,
@@ -359,12 +348,12 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
         preview = result[:300] if isinstance(result, str) else ""
         _log.info("TOOL OK: %s duration=%dms session=%s", name, duration, session_id)
         await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": preview})
-        return call_id, result, True
+        return call_id, result
     except Exception as exc:
         duration = int((time.time() - t0) * 1000)
         _log.warning("TOOL ERROR: %s duration=%dms error=%s session=%s", name, duration, exc, session_id)
         await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "error": str(exc), "call_id": call_id})
-        return call_id, json.dumps({"error": str(exc), "status": "error"}), True
+        return call_id, json.dumps({"error": str(exc), "status": "error"})
 
 
 async def _stream_text(text: str, emit: Callable) -> None:
@@ -376,16 +365,33 @@ async def _stream_text(text: str, emit: Callable) -> None:
 
 
 def _extract_cards(session_id: str) -> list[dict]:
-    """Extract structured data from tool results to render as UI cards."""
+    """Extract structured data from the CURRENT TURN'S tool results to render as UI cards."""
+    msgs = session_store.get(session_id)
+    # Find the last user message index
+    last_user_idx = -1
+    for i in range(len(msgs) - 1, -1, -1):
+        if msgs[i].get("role") == "user":
+            last_user_idx = i
+            break
+
+    turn_msgs = msgs[last_user_idx + 1:] if last_user_idx != -1 else msgs
+    
     events = []
     seen: set[str] = set()
-    for msg in session_store.get(session_id):
+    for msg in turn_msgs:
         if msg.get("role") != "tool":
             continue
         try:
-            data = json.loads(msg.get("content", "{}"))
+            content = msg.get("content", "{}")
+            if not content or not content.strip():
+                continue
+            data = json.loads(content)
         except (json.JSONDecodeError, TypeError):
             continue
+        
+        if not isinstance(data, dict):
+            continue
+
         if "sessions" in data and data["sessions"] and "session" not in seen:
             events.append({"type": "cards", "card_type": "session", "data": data["sessions"]})
             seen.add("session")
@@ -407,7 +413,7 @@ def _extract_cards(session_id: str) -> list[dict]:
         if "orders" in data and data["orders"] and "orders" not in seen:
             events.append({"type": "cards", "card_type": "order", "data": data["orders"]})
             seen.add("orders")
-        # Wallet data — CRM (Wallet_Status__c / wallet_status) or Kassa live balance
+        
         data_keys_lower = {k.lower() for k in data.keys()}
         if any("wallet" in k for k in data_keys_lower) and "wallet" not in seen:
             events.append({"type": "cards", "card_type": "wallet", "data": data})
@@ -446,8 +452,20 @@ def _build_suggestions(session_id: str) -> list[str]:
 async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     session_store.append(session_id, {"role": "user", "content": user_message})
 
-    # Track (tool_name|args) pairs across ALL loop iterations so the same failing
-    # call is never retried with identical arguments in the same conversation turn.
+    # ── Re-execute a pending write if admin just confirmed ───────────────────
+    if _has_confirmation(session_id) and session_id in _PENDING_WRITE:
+        tc = _PENDING_WRITE.pop(session_id)
+        name = tc["function"]["name"]
+        await emit({"type": "status", "status": "executing_tools", "count": 1})
+        session_store.append(session_id, {"role": "assistant", "content": None, "tool_calls": [tc]})
+        call_id, result = await _execute_tool(tc, session_id, emit)
+        session_store.append(session_id, {"role": "tool", "tool_call_id": call_id, "name": name, "content": result})
+        # Fall through — LLM summarises the result in the main loop
+    elif not _has_confirmation(session_id):
+        # Clear any stale pending write (user changed topic or typed "nee")
+        _PENDING_WRITE.pop(session_id, None)
+
+    # Track (tool_name|normalised_args) to prevent identical retries within one turn
     called_tools: set[str] = set()
 
     for loop_idx in range(MAX_LOOPS):
@@ -485,7 +503,16 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
         # Drop any tool calls the LLM is repeating with identical arguments
         deduped: list[dict] = []
         for tc in tool_calls:
-            key = tc["function"]["name"] + "|" + tc["function"].get("arguments", "{}")
+            name = tc["function"]["name"]
+            args_str = tc["function"].get("arguments", "{}")
+            try:
+                # Normalize JSON to prevent duplicates due to whitespace/key order
+                args_obj = json.loads(args_str)
+                normalized_args = json.dumps(args_obj, sort_keys=True)
+            except Exception:
+                normalized_args = args_str
+            
+            key = f"{name}|{normalized_args}"
             if key not in called_tools:
                 called_tools.add(key)
                 deduped.append(tc)
@@ -502,6 +529,49 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 "tool_calls": tool_calls,
             })
 
+            # ── Write-tool gate: require explicit admin confirmation ─────────────────
+            write_calls = [tc for tc in tool_calls if _is_write_tool(tc["function"]["name"])]
+            if write_calls and not _has_confirmation(session_id):
+                tc = write_calls[0]
+                name = tc["function"]["name"]
+                call_id = tc["id"]
+                args = json.loads(tc["function"].get("arguments", "{}"))
+                
+                _PENDING_WRITE[session_id] = tc
+                _log.info("WRITE BLOCKED pending confirmation: tool=%s session=%s", name, session_id)
+                
+                await emit({
+                    "type": "confirm_required",
+                    "tool": name,
+                    "label": name.split("__")[-1].replace("_", " ").title(),
+                    "arguments": args,
+                    "call_id": call_id,
+                })
+                
+                # Report "pending" result for the blocked tool
+                session_store.append(session_id, {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": json.dumps({
+                        "status": "pending_confirmation",
+                        "message": "Admin confirmation required. Ask the admin to type 'ja' to confirm or 'nee' to cancel.",
+                    })
+                })
+                # For any other tools in the same batch, we also need to provide tool results 
+                # or the LLM history will be invalid (missing tool responses).
+                for other_tc in tool_calls:
+                    if other_tc["id"] != call_id:
+                        session_store.append(session_id, {
+                            "role": "tool",
+                            "tool_call_id": other_tc["id"],
+                            "name": other_tc["function"]["name"],
+                            "content": json.dumps({"status": "blocked", "message": "Batch blocked due to pending confirmation of another tool."})
+                        })
+                
+                await emit({"type": "done"})
+                return
+
             await emit({"type": "status", "status": "executing_tools", "count": len(tool_calls)})
 
             results = await asyncio.gather(
@@ -509,16 +579,12 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 return_exceptions=True,
             )
 
-            should_stop = False
             for tc, result in zip(tool_calls, results):
                 if isinstance(result, Exception):
                     call_id = tc["id"]
                     content = json.dumps({"error": str(result), "status": "error"})
-                    should_continue = True
                 else:
-                    call_id, content, should_continue = result
-                    if not should_continue:
-                        should_stop = True
+                    call_id, content = result
 
                 session_store.append(session_id, {
                     "role": "tool",
@@ -526,10 +592,6 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                     "name": tc["function"]["name"],
                     "content": content,
                 })
-
-            if should_stop:
-                await emit({"type": "done"})
-                return
 
             continue
 
