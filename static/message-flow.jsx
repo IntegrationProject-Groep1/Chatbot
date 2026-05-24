@@ -865,7 +865,7 @@ function FilterChips({ events, actionFilter, setActionFilter, levelFilter, setLe
 }
 
 // ─── Live feed panel ──────────────────────────────────────────────────────────
-function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeIdx, isLive, open, onToggleOpen }) {
+function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeIdx, isLive, open, onToggleOpen, selected }) {
   const [actionFilter, setActionFilter] = useState(null);
   const [levelFilter,  setLevelFilter]  = useState(null);
   const [search,       setSearch]       = useState("");
@@ -901,6 +901,14 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return displayEvents.filter(e => {
+      if (selected?.type === "node") {
+        const dst = e.destinations?.[0];
+        if (e.source !== selected.id && dst !== selected.id) return false;
+      }
+      if (selected?.type === "edge") {
+        const dst = e.destinations?.[0];
+        if (e.source !== selected.from || dst !== selected.to) return false;
+      }
       if (actionFilter && e.action !== actionFilter) return false;
       if (levelFilter  && e.level  !== levelFilter)  return false;
       if (q) {
@@ -909,7 +917,7 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
       }
       return true;
     });
-  }, [displayEvents, actionFilter, levelFilter, search]);
+  }, [displayEvents, actionFilter, levelFilter, search, selected]);
 
   // Freeze list while hovering over it; count stashed new items
   useEffect(() => {
@@ -933,7 +941,15 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
     <aside className={`mf-feed${open ? "" : " is-collapsed"}`}>
       <header className="mf-feed-head">
         <div className="mf-feed-title">
-          {open && <span className="mf-feed-title-text">{isLive ? "Live berichten" : "Historische berichten"}</span>}
+          {open && (
+            <span className="mf-feed-title-text">
+              {selected?.type === "node"
+                ? (NODES[selected.id]?.label || selected.id)
+                : selected?.type === "edge"
+                  ? `${NODES[selected.from]?.label || selected.from} → ${NODES[selected.to]?.label || selected.to}`
+                  : (isLive ? "Live berichten" : "Historische berichten")}
+            </span>
+          )}
           {open && (
             <span className="mf-feed-rate">
               {isLive
@@ -1318,6 +1334,7 @@ function MessageFlowScreen() {
           isLive={isLive}
           open={feedOpen}
           onToggleOpen={() => setFeedOpen(p => !p)}
+          selected={selected}
         />
       </div>
 
