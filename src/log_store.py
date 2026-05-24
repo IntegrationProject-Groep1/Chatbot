@@ -22,22 +22,29 @@ _DB_NAME = os.getenv("DB_NAME", "")
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _pool_lock = threading.Lock()
+_pool_next_retry: float = 0.0
+_RETRY_COOLDOWN = 60.0
 
 
 def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
-    global _pool
+    global _pool, _pool_next_retry
     if _pool is not None:
         return _pool
     if not _DB_USER:
         return None
+    if time.time() < _pool_next_retry:
+        return None
     with _pool_lock:
-        if _pool is None:
-            try:
-                p = psycopg2.pool.ThreadedConnectionPool(
-                    1, 5,
-                    host=_DB_HOST, port=_DB_PORT,
-                    user=_DB_USER, password=_DB_PASS, dbname=_DB_NAME,
-                )
+        if _pool is not None:
+            return _pool
+        if time.time() < _pool_next_retry:
+            return None
+        try:
+            p = psycopg2.pool.ThreadedConnectionPool(
+                1, 5,
+                host=_DB_HOST, port=_DB_PORT,
+                user=_DB_USER, password=_DB_PASS, dbname=_DB_NAME,
+            )
                 conn = p.getconn()
                 try:
                     with conn.cursor() as cur:
@@ -65,7 +72,8 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
                     p.putconn(conn)
                 _pool = p
             except Exception as e:
-                _log.error("log_store: failed to connect to PostgreSQL: %s", e)
+                _pool_next_retry = time.time() + _RETRY_COOLDOWN
+                _log.error("log_store: PostgreSQL unavailable, retrying in %ds: %s", int(_RETRY_COOLDOWN), e)
     return _pool
 
 

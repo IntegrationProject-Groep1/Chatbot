@@ -198,17 +198,24 @@ _SYSTEM_TEMPLATE = _SYSTEM_CONTEXT + _SYSTEM_ROUTING + _SYSTEM_OUTPUT
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _pool_lock = threading.Lock()
+_pool_next_retry: float = 0.0
+_RETRY_COOLDOWN = 60.0
 
 
 def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
-    global _pool
+    global _pool, _pool_next_retry
     if _pool is not None:
         return _pool
     if not _DB_USER:
         return None
+    if time.time() < _pool_next_retry:
+        return None
     with _pool_lock:
-        if _pool is None:
-            try:
+        if _pool is not None:
+            return _pool
+        if time.time() < _pool_next_retry:
+            return None
+        try:
                 p = psycopg2.pool.ThreadedConnectionPool(
                     1, 5,
                     host=_DB_HOST, port=_DB_PORT,
@@ -229,8 +236,12 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
                 finally:
                     p.putconn(conn)
                 _pool = p
-            except Exception:
-                pass
+            except Exception as e:
+                _pool_next_retry = time.time() + _RETRY_COOLDOWN
+                import logging as _lg
+                _lg.getLogger(__name__).error(
+                    "session_store: PostgreSQL unavailable, retrying in %ds: %s", int(_RETRY_COOLDOWN), e
+                )
     return _pool
 
 
