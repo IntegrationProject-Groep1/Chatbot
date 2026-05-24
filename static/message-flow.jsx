@@ -27,14 +27,14 @@ class MFBoundary extends React.Component {
 const SVG_W = 940, SVG_H = 540, NW = 118, NH = 42;
 
 const NODES = {
-  "frontend":         { cx: 162, cy: 82,  label: "Frontend",   color: "#2563EB" },
-  "kassa":            { cx: 778, cy: 82,  label: "Kassa",      color: "#C97A08" },
-  "crm":              { cx: 470, cy: 225, label: "CRM",        color: "#7C3AED" },
-  "identity-service": { cx: 820, cy: 225, label: "Identity",   color: "#0891B2" },
-  "facturatie":       { cx: 182, cy: 370, label: "Facturatie", color: "#0E7C66" },
-  "planning":         { cx: 658, cy: 370, label: "Planning",   color: "#D97706" },
-  "mailing":          { cx: 420, cy: 480, label: "Mailing",    color: "#DC2626" },
-  "monitoring":       { cx: 820, cy: 460, label: "Monitoring", color: "#6366F1" },
+  "frontend":         { cx: 162, cy: 82,  label: "Frontend",   color: "#2563EB", cssVar: "--svc-frontend" },
+  "kassa":            { cx: 778, cy: 82,  label: "Kassa",      color: "#C97A08", cssVar: "--svc-kassa" },
+  "crm":              { cx: 470, cy: 225, label: "CRM",        color: "#7C3AED", cssVar: "--svc-crm" },
+  "identity-service": { cx: 820, cy: 225, label: "Identity",   color: "#0891B2", cssVar: "--svc-identity" },
+  "facturatie":       { cx: 182, cy: 370, label: "Facturatie", color: "#0E7C66", cssVar: "--svc-facturatie" },
+  "planning":         { cx: 658, cy: 370, label: "Planning",   color: "#D97706", cssVar: "--svc-planning" },
+  "mailing":          { cx: 420, cy: 480, label: "Mailing",    color: "#DC2626", cssVar: "--svc-mailing" },
+  "monitoring":       { cx: 820, cy: 460, label: "Monitoring", color: "#6366F1", cssVar: "--svc-monitoring" },
 };
 
 const TOPO = [
@@ -79,6 +79,8 @@ const ACTION_NL = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+// Resolves a node's color as a CSS variable (theme-adaptive) with hex fallback
+function nc(node) { return node?.cssVar ? `var(${node.cssVar})` : (node?.color || "var(--muted)"); }
 function pad2(n) { return String(n).padStart(2, "0"); }
 function fmtTime(iso) {
   if (!iso) return "--:--:--";
@@ -157,8 +159,9 @@ function DetailLogItem({ m }) {
 }
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
-function edgePath(fromId, toId) {
-  const a = NODES[fromId], b = NODES[toId];
+function edgePath(fromId, toId, positions) {
+  const a = (positions && positions[fromId]) || NODES[fromId];
+  const b = (positions && positions[toId])   || NODES[toId];
   if (!a || !b) return "";
   const dx = b.cx - a.cx, dy = b.cy - a.cy;
   const pOff = EDGE_POFF[`${fromId}->${toId}`] || 0;
@@ -193,7 +196,7 @@ function Packet({ pkt, onDone }) {
     const tm = setTimeout(onDone, pkt.dur + (pkt.delay || 0) + 300);
     return () => clearTimeout(tm);
   }, []);
-  const col = NODES[pkt.from]?.color || "#2563EB";
+  const col = nc(NODES[pkt.from]);
   const pid = `ep-${pkt.from}-${pkt.to}`;
   const r = pkt.level === "error" ? 7 : 5.5;
   const durS   = (pkt.dur / 1000).toFixed(3) + "s";
@@ -226,16 +229,17 @@ function Packet({ pkt, onDone }) {
 }
 
 // ─── Node pulse ring ──────────────────────────────────────────────────────────
-function NodePulse({ pulse, onDone }) {
+function NodePulse({ pulse, nodePos, onDone }) {
   useEffect(() => {
     const tm = setTimeout(onDone, 900);
     return () => clearTimeout(tm);
   }, []);
   const node = NODES[pulse.nodeId];
   if (!node) return null;
-  const color = pulse.level === "error" ? "var(--hot)" : node.color;
+  const pos = (nodePos && nodePos[pulse.nodeId]) || node;
+  const color = pulse.level === "error" ? "var(--hot)" : nc(node);
   return (
-    <circle cx={node.cx} cy={node.cy} r="22"
+    <circle cx={pos.cx} cy={pos.cy} r="22"
       fill="none" stroke={color} strokeWidth="2"
       style={{ pointerEvents: "none" }}>
       <animate attributeName="r"       values="22;64"  dur="0.85s" fill="freeze" />
@@ -262,9 +266,50 @@ function Sparkline({ buckets, width = 64, height = 18 }) {
   );
 }
 
+// ─── SVG coordinate helper ────────────────────────────────────────────────────
+function screenToSVG(svgEl, clientX, clientY) {
+  const pt = svgEl.createSVGPoint();
+  pt.x = clientX; pt.y = clientY;
+  return pt.matrixTransform(svgEl.getScreenCTM().inverse());
+}
+
 // ─── SVG flow graph ───────────────────────────────────────────────────────────
 function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
                      packets, onPacketDone, pulses, onPulseDone }) {
+  const [nodePos, setNodePos] = useState(() =>
+    Object.fromEntries(Object.entries(NODES).map(([id, n]) => [id, { cx: n.cx, cy: n.cy }]))
+  );
+  const svgRef  = useRef(null);
+  const dragRef = useRef(null);
+  const [draggingId, setDraggingId] = useState(null);
+
+  const handlePointerDown = useCallback((e, id) => {
+    if (!svgRef.current) return;
+    e.stopPropagation();
+    const svgPt = screenToSVG(svgRef.current, e.clientX, e.clientY);
+    dragRef.current = { id, offX: svgPt.x - nodePos[id].cx, offY: svgPt.y - nodePos[id].cy };
+    setDraggingId(id);
+    svgRef.current.setPointerCapture(e.pointerId);
+  }, [nodePos]);
+
+  const handlePointerMove = useCallback((e) => {
+    if (!dragRef.current || !svgRef.current) return;
+    const svgPt = screenToSVG(svgRef.current, e.clientX, e.clientY);
+    const { id, offX, offY } = dragRef.current;
+    setNodePos(prev => ({
+      ...prev,
+      [id]: {
+        cx: Math.max(NW/2 + 4, Math.min(SVG_W - NW/2 - 4, svgPt.x - offX)),
+        cy: Math.max(NH/2 + 4, Math.min(SVG_H - NH/2 - 4, svgPt.y - offY)),
+      },
+    }));
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    dragRef.current = null;
+    setDraggingId(null);
+  }, []);
+
   const getStatus = id => {
     const h = nodeHealth[id] || {};
     if (h.live === true)  return "online";
@@ -291,8 +336,11 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
   }, [selected]);
 
   return (
-    <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMidYMid meet"
-      style={{ width: "100%", height: "100%", display: "block" }}>
+    <svg ref={svgRef} viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMidYMid meet"
+      style={{ width: "100%", height: "100%", display: "block", touchAction: "none" }}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}>
       <defs>
         <filter id="mf-glow" x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
@@ -304,38 +352,29 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
         </marker>
       </defs>
 
-      {/* Layer bands */}
-      {[
-        { label: "INPUT / TRIGGERS", y: 52,  h: 62 },
-        { label: "HUB",              y: 195, h: 62 },
-        { label: "VERWERKING",       y: 340, h: 62 },
-        { label: "OUTPUT",           y: 450, h: 62 },
-      ].map(({ label, y, h }) => (
-        <g key={label}>
-          <rect x="4" y={y} width={SVG_W - 8} height={h} rx="10"
-            fill="none" stroke="var(--line)" strokeWidth="1"
-            strokeDasharray="3 5" opacity="0.35" />
-          <rect x="16" y={y - 8} width={label.length * 7 + 14} height="16"
-            rx="4" fill="var(--bg)" />
-          <text x="22" y={y + 4.5} fontSize="8.5" fontWeight="700"
-            letterSpacing="0.1em" fontFamily="JetBrains Mono, monospace"
-            fill="var(--muted-3)">{label}</text>
-        </g>
-      ))}
+      {/* Drag hint */}
+      {!draggingId && (
+        <text x={SVG_W - 12} y={SVG_H - 10} textAnchor="end"
+          fontSize="9" fontFamily="Inter, sans-serif"
+          fill="var(--muted-3)" opacity="0.7">
+          Sleep nodes om te herpositioneren
+        </text>
+      )}
 
       {/* ── Edges ── */}
       {TOPO.map(({ from, to }) => {
         const key  = `${from}->${to}`;
         const e    = edgeIdx[key] || {};
         const { w, op, dash, tint } = edgeVis(e.count, e.errors);
-        const path = edgePath(from, to);
-        const col  = tint ? "var(--hot)" : (e.count ? NODES[from]?.color : "var(--line-3)");
+        const path = edgePath(from, to, nodePos);
+        const col  = tint ? "var(--hot)" : (e.count ? nc(NODES[from]) : "var(--line-3)");
         const isSel = selected?.type === "edge" && selected.key === key;
         const isHov = hovered?.type  === "edge" && hovered.key  === key;
         const inFocus = !focusSet || (focusSet.has(from) && focusSet.has(to));
         const pid  = `ep-${from}-${to}`;
-        const mid  = { x: (NODES[from].cx + NODES[to].cx) / 2,
-                       y: (NODES[from].cy + NODES[to].cy) / 2 };
+        const posA = nodePos[from] || NODES[from];
+        const posB = nodePos[to]   || NODES[to];
+        const mid  = { x: (posA.cx + posB.cx) / 2, y: (posA.cy + posB.cy) / 2 };
         const badgeW = Math.max(28, String(e.count || 0).length * 7 + 14);
 
         return (
@@ -355,7 +394,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
                 filter="url(#mf-glow)" />
             )}
 
-            {/* Hidden path for animateMotion + arrowhead */}
+            {/* Path for animateMotion + arrowhead */}
             <path id={pid} d={path} fill="none" stroke={col}
               strokeWidth={isSel ? w + 1.2 : (isHov ? w + 0.8 : w)}
               strokeDasharray={dash} opacity={op}
@@ -381,14 +420,6 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
                 </text>
               </g>
             )}
-
-            {/* "geen logs" on defined-but-silent edges */}
-            {!e.count && (
-              <text x={mid.x} y={mid.y + 3} textAnchor="middle" fontSize="8.5"
-                fontFamily="Inter, sans-serif" fill="var(--muted-3)" fontStyle="italic">
-                geen logs
-              </text>
-            )}
           </g>
         );
       })}
@@ -400,7 +431,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
 
       {/* ── Node pulse rings ── */}
       {(pulses || []).map(pu => (
-        <NodePulse key={pu.id} pulse={pu} onDone={() => onPulseDone(pu.id)} />
+        <NodePulse key={pu.id} pulse={pu} nodePos={nodePos} onDone={() => onPulseDone(pu.id)} />
       ))}
 
       {/* ── Nodes ── */}
@@ -413,35 +444,41 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
         const isInfra  = id === "monitoring";
         const hc       = status === "online" ? "var(--ok)"
                        : status === "offline" ? "var(--hot)" : "var(--muted-3)";
-        const col      = active ? node.color : "var(--muted-3)";
         const border   = status === "offline" ? "var(--hot)"
-                       : (isSel ? node.color : (active ? node.color : "var(--line-2)"));
+                       : (isSel ? nc(node) : (active ? nc(node) : "var(--line-2)"));
         const bw       = isSel ? 2.4 : active ? 1.6 : 1;
-        const nx = node.cx - NW/2, ny = node.cy - NH/2;
+        const pos      = nodePos[id] || node;
+        const nx = pos.cx - NW/2, ny = pos.cy - NH/2;
+        const isDragging = draggingId === id;
 
         return (
           <g key={id} transform={`translate(${nx}, ${ny})`}
-            style={{ opacity: inFocus ? 1 : 0.2, cursor: "pointer", transition: "opacity .2s" }}
-            onMouseEnter={() => onHover({ type: "node", id, node })}
+            style={{
+              opacity: inFocus ? 1 : 0.2,
+              cursor: isDragging ? "grabbing" : "grab",
+              transition: isDragging ? "none" : "opacity .2s",
+            }}
+            onMouseEnter={() => !isDragging && onHover({ type: "node", id, node })}
             onMouseLeave={() => onHover(null)}
-            onClick={ev => { ev.stopPropagation(); onSelect({ type: "node", id, node }); }}>
+            onClick={ev => { if (!dragRef.current) { ev.stopPropagation(); onSelect({ type: "node", id, node }); } }}
+            onPointerDown={ev => handlePointerDown(ev, id)}>
 
             {/* Hover/sel glow */}
             {(isSel || isHov) && (
               <rect x="-6" y="-6" width={NW+12} height={NH+12} rx="14"
-                fill={node.color} opacity={isSel ? 0.14 : 0.09}
+                fill={nc(node)} opacity={isSel ? 0.14 : 0.09}
                 filter="url(#mf-glow)" />
             )}
 
             {/* Body */}
             <rect x="0" y="0" width={NW} height={NH} rx="9"
               fill="var(--surface)" stroke={border} strokeWidth={bw}
-              style={{ transition: "stroke .2s, stroke-width .15s" }} />
+              style={{ transition: isDragging ? "none" : "stroke .2s, stroke-width .15s" }} />
 
             {/* Tinted fill when active */}
             {active && (
               <rect x="0" y="0" width={NW} height={NH} rx="9"
-                fill={node.color} opacity="0.05" />
+                fill={nc(node)} opacity="0.05" />
             )}
 
             {/* Service name */}
@@ -456,7 +493,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
               <text x={NW/2 - 6} y={NH - 5} textAnchor="middle"
                 fontSize="7.5" fontWeight="700" letterSpacing="0.08em"
                 fontFamily="JetBrains Mono, monospace"
-                fill={node.color} opacity="0.8">INFRA</text>
+                fill={nc(node)} opacity="0.8">INFRA</text>
             )}
 
             {/* Health dot + pulse */}
@@ -490,9 +527,9 @@ function HoverTooltip({ hovered, edgeIdx, nodeHealth, pos }) {
     body = (
       <>
         <div className="mf-tt-title">
-          <span style={{ color: fN?.color }}>{fN?.label || hovered.from}</span>
+          <span style={{ color: nc(fN) }}>{fN?.label || hovered.from}</span>
           <span style={{ color: "var(--muted-3)" }}> → </span>
-          <span style={{ color: tN?.color }}>{tN?.label || hovered.to}</span>
+          <span style={{ color: nc(tN) }}>{tN?.label || hovered.to}</span>
         </div>
         {e.count
           ? <>
@@ -524,7 +561,7 @@ function HoverTooltip({ hovered, edgeIdx, nodeHealth, pos }) {
     const inn  = TOPO.filter(t => t.to   === id);
     body = (
       <>
-        <div className="mf-tt-title" style={{ color: node?.color }}>{node?.label}</div>
+        <div className="mf-tt-title" style={{ color: nc(node) }}>{node?.label}</div>
         <div className="mf-tt-row"><span>Status</span>
           <b style={{ color: stat === "online" ? "var(--ok)" : stat === "offline" ? "var(--hot)" : "var(--muted)" }}>
             {stat}
@@ -537,7 +574,7 @@ function HoverTooltip({ hovered, edgeIdx, nodeHealth, pos }) {
             return (
               <div key={t.to} style={{ display: "flex", gap: 4, alignItems: "center", padding: "1px 0" }}>
                 <span style={{ color: "var(--muted-3)", fontFamily: "var(--font-mono)", fontSize: 9 }}>→</span>
-                <span style={{ color: NODES[t.to]?.color, fontWeight: 600 }}>{NODES[t.to]?.label || t.to}</span>
+                <span style={{ color: nc(NODES[t.to]), fontWeight: 600 }}>{NODES[t.to]?.label || t.to}</span>
                 <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontWeight: 700,
                   color: cnt ? "var(--ink)" : "var(--muted-3)" }}>{cnt || "—"}</span>
               </div>
@@ -585,7 +622,7 @@ function DetailPanel({ selected, edgeIdx }) {
     return (
       <div className="mf-detail">
         <div className="mf-detail-hdr">
-          <b style={{ color: node.color }}>{node.label}</b>
+          <b style={{ color: nc(node) }}>{node.label}</b>
         </div>
         <div className="mf-detail-kv"><span>Inkomend</span><b>{totalIn}</b></div>
         <div className="mf-detail-kv"><span>Uitgaand</span><b>{totalOut}</b></div>
@@ -594,7 +631,7 @@ function DetailPanel({ selected, edgeIdx }) {
         {out.map(e => (
           <div key={e.to} style={{ display: "flex", alignItems: "center", padding: "3px 0", fontSize: 11.5 }}>
             <span style={{ color: "var(--muted-3)", marginRight: 4, fontFamily: "var(--font-mono)", fontSize: 9 }}>OUT</span>
-            <span style={{ color: NODES[e.to]?.color, fontWeight: 600 }}>{NODES[e.to]?.label || e.to}</span>
+            <span style={{ color: nc(NODES[e.to]), fontWeight: 600 }}>{NODES[e.to]?.label || e.to}</span>
             <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontWeight: 700,
               color: e.d.count ? "var(--ink)" : "var(--muted-3)" }}>{e.d.count || "—"}</span>
           </div>
@@ -603,7 +640,7 @@ function DetailPanel({ selected, edgeIdx }) {
         {inn.map(e => (
           <div key={e.from} style={{ display: "flex", alignItems: "center", padding: "3px 0", fontSize: 11.5 }}>
             <span style={{ color: "var(--muted-3)", marginRight: 4, fontFamily: "var(--font-mono)", fontSize: 9 }}>IN</span>
-            <span style={{ color: NODES[e.from]?.color, fontWeight: 600 }}>{NODES[e.from]?.label || e.from}</span>
+            <span style={{ color: nc(NODES[e.from]), fontWeight: 600 }}>{NODES[e.from]?.label || e.from}</span>
             <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontWeight: 700,
               color: e.d.count ? "var(--ink)" : "var(--muted-3)" }}>{e.d.count || "—"}</span>
           </div>
@@ -625,9 +662,9 @@ function DetailPanel({ selected, edgeIdx }) {
     return (
       <div className="mf-detail">
         <div className="mf-detail-hdr">
-          <b style={{ color: fN?.color }}>{fN?.label || from}</b>
+          <b style={{ color: nc(fN) }}>{fN?.label || from}</b>
           <span className="mf-detail-arrow"> → </span>
-          <b style={{ color: tN?.color }}>{tN?.label || to}</b>
+          <b style={{ color: nc(tN) }}>{tN?.label || to}</b>
         </div>
         {!e.count
           ? <div style={{ padding: "8px 4px", color: "var(--muted-2)", fontSize: 11.5, fontStyle: "italic" }}>
@@ -714,7 +751,7 @@ function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, ho
             return (
               <button key={id}
                 className={`mf-svc ${cnt === 0 ? "idle" : ""} ${isSel ? "on" : ""}`}
-                style={{ "--svc-c": node.color }}
+                style={{ "--svc-c": nc(node) }}
                 onClick={() => onSelect(isSel ? null : { type: "node", id, node })}>
                 <div className="mf-svc-bar" />
                 <div className={`mf-svc-health ${status}`} />
@@ -742,8 +779,8 @@ function FeedItem({ ev }) {
   const isNew = !ev.isCached && (Date.now() - new Date(ev.timestamp).getTime()) < 2500;
   return (
     <div className={`mf-fi lvl-${ev.level}${isNew ? " entering" : ""}${ev.isCached ? " cached" : ""}`}
-      style={{ "--svc-c": sN?.color || "var(--muted)",
-               "--svc-c-dst": tN?.color || "var(--muted-2)" }}>
+      style={{ "--svc-c": nc(sN),
+               "--svc-c-dst": nc(tN) }}>
       <div className="mf-fi-ts">
         {fmtTime(ev.timestamp)}
         {!ev.isCached && <span className="ago">{ago(ev.timestamp)}</span>}
