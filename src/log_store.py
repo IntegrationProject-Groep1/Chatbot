@@ -3,6 +3,7 @@ Log persistence — stores recent logs in the shared PostgreSQL database.
 Old logs are purged automatically (default: 7 days).
 """
 
+import hashlib
 import os
 import threading
 import time
@@ -105,6 +106,14 @@ def store_log(source: str, level: str = "info", action: str = "", message: str =
         _log.error("store_log failed: %s", e)
 
 
+def _ensure_correlation_id(cid: str, source: str, ts: str, action: str, message: str) -> str:
+    """Generate a deterministic ID for entries that don't have one, so deduplication works."""
+    if cid:
+        return cid
+    raw = f"{source}|{ts}|{action}|{message[:120]}"
+    return "gen-" + hashlib.md5(raw.encode()).hexdigest()
+
+
 def store_logs_batch(entries: list):
     if not entries:
         return
@@ -117,21 +126,17 @@ def store_logs_batch(entries: list):
             now = time.time()
             with conn.cursor() as cur:
                 for e in entries:
-                    ts = e.get("@timestamp") or e.get("timestamp") or datetime.utcnow().isoformat() + "Z"
+                    ts     = e.get("@timestamp") or e.get("timestamp") or datetime.utcnow().isoformat() + "Z"
+                    src    = e.get("source", "").lower()
+                    action = e.get("action", "").lower()
+                    msg    = e.get("message") or e.get("log_message", "")
+                    cid    = _ensure_correlation_id(e.get("correlation_id") or "", src, ts, action, msg)
                     cur.execute("""
                         INSERT INTO chatbot_logs
                             (source, level, action, message, timestamp, correlation_id, created_at)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (correlation_id) DO NOTHING
-                    """, (
-                        e.get("source", "").lower(),
-                        e.get("level", "info").lower(),
-                        e.get("action", "").lower(),
-                        e.get("message") or e.get("log_message", ""),
-                        ts,
-                        e.get("correlation_id") or None,
-                        now,
-                    ))
+                    """, (src, e.get("level", "info").lower(), action, msg, ts, cid, now))
             conn.commit()
         finally:
             pool.putconn(conn)

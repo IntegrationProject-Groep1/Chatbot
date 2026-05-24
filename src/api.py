@@ -472,6 +472,11 @@ async def logs_query(
         if entries:
             error = "Showing cached logs (live MCP unavailable)"
 
+    # Apply action filter post-fetch when MCP doesn't support it natively
+    # (get_logs_in_timerange has no action param, so filter here for consistency)
+    if action and entries:
+        entries = [e for e in entries if (e.get("action") or "").lower() == action.lower()]
+
     return {
         "logs": entries,
         "count": len(entries),
