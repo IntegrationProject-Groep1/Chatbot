@@ -3424,6 +3424,50 @@ button.mon-row:focus-visible {
   font: 700 9px/1 var(--font-mono);
   letter-spacing: .09em; text-transform: uppercase;
   color: var(--muted-2); margin: 8px 0 4px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mf-detail-more {
+  background: none; border: none; cursor: pointer;
+  font: 600 9px/1 var(--font-mono); letter-spacing: .04em;
+  color: var(--primary); padding: 2px 4px; border-radius: 3px;
+  text-transform: none;
+}
+.mf-detail-more:hover { background: var(--primary-soft); }
+
+/* ── Message overlay ── */
+.mf-overlay-backdrop {
+  position: fixed; inset: 0; z-index: 9000;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+}
+.mf-overlay-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  width: min(640px, 92vw);
+  max-height: 80vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0,0,0,.3);
+  overflow: hidden;
+}
+.mf-overlay-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.mf-overlay-title {
+  font: 700 13px/1 var(--font); color: var(--ink);
+}
+.mf-overlay-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted-2); padding: 4px; border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 0;
+}
+.mf-overlay-close:hover { background: var(--surface-2); color: var(--ink); }
+.mf-overlay-body {
+  flex: 1; overflow-y: auto; padding: 8px 0;
 }
 .mf-detail-tag {
   background: var(--primary-soft); color: var(--primary);

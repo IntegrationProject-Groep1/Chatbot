@@ -602,8 +602,42 @@ function HoverTooltip({ hovered, edgeIdx, nodeHealth, pos }) {
   );
 }
 
+// ─── Message overlay ──────────────────────────────────────────────────────────
+function MsgOverlay({ overlay, onClose }) {
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!overlay) return null;
+  return (
+    <div className="mf-overlay-backdrop" onClick={onClose}>
+      <div className="mf-overlay-panel" onClick={e => e.stopPropagation()}>
+        <div className="mf-overlay-head">
+          <span className="mf-overlay-title">{overlay.title}</span>
+          <button className="mf-overlay-close" onClick={onClose}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5">
+              <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div className="mf-overlay-body">
+          {overlay.messages.length === 0
+            ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted-2)", fontSize: 12 }}>
+                Geen berichten
+              </div>
+            : overlay.messages.map((m, i) => <DetailLogItem key={i} m={m} />)
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Detail panel (left rail) ─────────────────────────────────────────────────
-function DetailPanel({ selected, edgeIdx }) {
+function DetailPanel({ selected, edgeIdx, onOpenOverlay }) {
   if (!selected) return (
     <div className="mf-detail-hint">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -656,9 +690,15 @@ function DetailPanel({ selected, edgeIdx }) {
           </div>
         ))}
         {recentMsgs.length > 0 && <>
-          <div className="mf-detail-sub">Recente berichten</div>
+          <div className="mf-detail-sub">
+            Recente berichten
+            <button className="mf-detail-more"
+              onClick={() => onOpenOverlay?.({ title: node.label, messages: recentMsgs })}>
+              Meer →
+            </button>
+          </div>
           <div className="mf-detail-log">
-            {recentMsgs.map((m, i) => <DetailLogItem key={i} m={m} />)}
+            {recentMsgs.slice(0, 5).map((m, i) => <DetailLogItem key={i} m={m} />)}
           </div>
         </>}
       </div>
@@ -698,9 +738,18 @@ function DetailPanel({ selected, edgeIdx }) {
                 </div>
               </>}
               {e.recent?.length > 0 && <>
-                <div className="mf-detail-sub">Recente berichten</div>
+                <div className="mf-detail-sub">
+                  Recente berichten
+                  <button className="mf-detail-more"
+                    onClick={() => onOpenOverlay?.({
+                      title: `${fN?.label || from} → ${tN?.label || to}`,
+                      messages: e.recent
+                    })}>
+                    Meer →
+                  </button>
+                </div>
                 <div className="mf-detail-log">
-                  {e.recent.map((m, i) => <DetailLogItem key={i} m={m} />)}
+                  {e.recent.slice(0, 5).map((m, i) => <DetailLogItem key={i} m={m} />)}
                 </div>
               </>}
             </>
@@ -712,7 +761,7 @@ function DetailPanel({ selected, edgeIdx }) {
 }
 
 // ─── Left rail ────────────────────────────────────────────────────────────────
-function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, hours }) {
+function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, hours, onOpenOverlay }) {
   const nodeMap = useMemo(() => Object.fromEntries((nodes || []).map(n => [n.id, n])), [nodes]);
 
   const svcCounts = useMemo(() => {
@@ -778,7 +827,7 @@ function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, ho
 
       <div className="mf-rail-section" style={{ flex: 1, minHeight: 0 }}>
         <h3 className="mf-rail-title">Detail</h3>
-        <DetailPanel selected={selected} edgeIdx={edgeIdx} />
+        <DetailPanel selected={selected} edgeIdx={edgeIdx} onOpenOverlay={onOpenOverlay} />
       </div>
     </div>
   );
@@ -1045,6 +1094,7 @@ function MessageFlowScreen() {
   const [hours,       setHours]       = useState(null);   // null = Live mode
   const [paused,      setPaused]      = useState(false);
   const [feedOpen,    setFeedOpen]    = useState(true);
+  const [overlay,     setOverlay]     = useState(null);
   const [connState,   setConnState]   = useState("connected");
   const [selected,    setSelected]    = useState(null);
   const [hovered,     setHovered]     = useState(null);
@@ -1273,6 +1323,7 @@ function MessageFlowScreen() {
           selected={selected}
           onSelect={handleSelect}
           hours={hours}
+          onOpenOverlay={setOverlay}
         />
 
         <main className="mf-canvas">
@@ -1340,6 +1391,8 @@ function MessageFlowScreen() {
 
       <HoverTooltip hovered={hovered} edgeIdx={edgeIdx}
         nodeHealth={nodeHealth} pos={tooltipPos} />
+
+      <MsgOverlay overlay={overlay} onClose={() => setOverlay(null)} />
     </div>
   );
 }
