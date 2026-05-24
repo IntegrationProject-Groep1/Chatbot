@@ -616,7 +616,7 @@ function LiveFeed({ events, actionFilter, setActionFilter, newCount }) {
     hasFetchedCached.current = true;
     setLoadingCached(true);
     fetch('/api/logs/cached?limit=100')
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(`Server ${r.status}`); return r.json(); })
       .then(d => {
         const cached = (d.logs || []).map(log => ({
           source: log.source || 'unknown',
@@ -821,7 +821,7 @@ function MessageFlowScreen() {
   // ── Fetch ──
   const fetchData = useCallback(() => {
     fetch(`/api/monitoring/message-flow?hours=${hours}&limit=1000`)
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(`Server ${r.status}`); return r.json(); })
       .then(d => {
         setData(d);
         setLastUpdate(new Date());
@@ -840,7 +840,14 @@ function MessageFlowScreen() {
           setNewCount(n => n + incoming.length);
         }
       })
-      .catch(e => { setError(e.message); setLoading(false); });
+      .catch(e => {
+        const msg = e.message || String(e);
+        // 502/503 = pod restarting during deploy — show friendlier message
+        setError(msg.includes("502") || msg.includes("503")
+          ? "Server herstart… even geduld"
+          : msg);
+        setLoading(false);
+      });
   }, [hours]);
 
   // Reset live feed when time window changes
