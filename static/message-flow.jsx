@@ -735,7 +735,10 @@ function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, ho
   return (
     <div className="mf-rail">
       <div className="mf-rail-section">
-        <h3 className="mf-rail-title">Live <span className="sub">— venster {hours < 1 ? `${Math.round(hours*60)}m` : `${hours}u`}</span></h3>
+        <h3 className="mf-rail-title">
+          {hours === null ? "Live" : "Historisch"}
+          <span className="sub"> — {hours === null ? "5 min. venster" : hours < 1 ? `${Math.round(hours*60)}m` : `${hours}u`}</span>
+        </h3>
         <div className="mf-readout">
           <div className="mf-rd">
             <div className="mf-rd-v">{totalMsgs}</div>
@@ -1006,7 +1009,7 @@ function MessageFlowScreen() {
   const [data,        setData]        = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState(null);
-  const [hours,       setHours]       = useState(1);
+  const [hours,       setHours]       = useState(null);   // null = Live mode
   const [paused,      setPaused]      = useState(false);
   const [connState,   setConnState]   = useState("connected");
   const [selected,    setSelected]    = useState(null);
@@ -1030,8 +1033,10 @@ function MessageFlowScreen() {
 
   // ── Fetch ──
   const fetchData = useCallback(() => {
-    if (paused) return;
-    fetch(`/api/monitoring/message-flow?hours=${hours}&limit=1000`)
+    const live = hours === null;
+    if (live && paused) return;
+    const apiHours = live ? 0.083 : hours;
+    fetch(`/api/monitoring/message-flow?hours=${apiHours}&limit=1000`)
       .then(r => { if (!r.ok) throw new Error(`Server ${r.status}`); return r.json(); })
       .then(d => {
         setData(d);
@@ -1039,6 +1044,13 @@ function MessageFlowScreen() {
         setLoading(false);
         setConnState("connected");
 
+        if (!live) {
+          // Historical mode: replace entirely, no accumulation
+          setLiveEvents(d.recent_events || []);
+          return;
+        }
+
+        // Live mode: accumulate new events, deduplicate
         const incoming = (d.recent_events || []).filter(e => {
           const k = eventKey(e);
           if (seenKeys.current.has(k)) return false;
@@ -1092,10 +1104,12 @@ function MessageFlowScreen() {
     fetchData();
   }, [fetchData]);
 
+  // Auto-poll only in live mode and when not paused
   useEffect(() => {
+    if (hours !== null || paused) return;
     const id = setInterval(fetchData, 10_000);
     return () => clearInterval(id);
-  }, [fetchData]);
+  }, [fetchData, hours, paused]);
 
   // Bucket throughput (last 60s) for sparkline
   useEffect(() => {
@@ -1145,12 +1159,14 @@ function MessageFlowScreen() {
     setTooltipPos({ x: e.clientX, y: e.clientY });
   }, []);
 
+  const isLive = hours === null;
+
   const WINDOWS = [
-    { l: "5m",  h: 0.083 },
-    { l: "15m", h: 0.25  },
-    { l: "1u",  h: 1     },
-    { l: "6u",  h: 6     },
-    { l: "24u", h: 24    },
+    { l: "Live", h: null  },
+    { l: "15m",  h: 0.25  },
+    { l: "1u",   h: 1     },
+    { l: "6u",   h: 6     },
+    { l: "7u",   h: 7     },
   ];
 
   return (
@@ -1184,20 +1200,24 @@ function MessageFlowScreen() {
 
         <div className="mf-windows">
           {WINDOWS.map(w => (
-            <button key={w.l} className={`mf-win ${hours === w.h ? "on" : ""}`}
-              onClick={() => { setHours(w.h); setSelected(null); }}>
+            <button key={w.l}
+              className={`mf-win ${hours === w.h ? "on" : ""} ${w.h === null ? "is-live" : ""}`}
+              onClick={() => { setHours(w.h); setPaused(false); setSelected(null); }}>
+              {w.h === null && <span className="mf-live-dot" />}
               {w.l}
             </button>
           ))}
         </div>
 
-        <button
-          className={`mf-live ${paused ? "" : "on"} ${connState === "reconnecting" ? "reconnecting" : ""}`}
-          onClick={() => setPaused(p => !p)}
-          title={paused ? "Klik om live te hervatten" : "Klik om te pauzeren"}>
-          <span className="mf-live-dot" />
-          {paused ? "Gepauzeerd" : connState === "reconnecting" ? "Verbinden…" : "Live"}
-        </button>
+        {isLive && (
+          <button
+            className={`mf-icon-btn ${paused ? "" : "active"}`}
+            onClick={() => setPaused(p => !p)}
+            title={paused ? "Klik om live te hervatten" : "Klik om te pauzeren"}
+            style={{ fontSize: 13, padding: "0 8px" }}>
+            {paused ? "▶" : "⏸"}
+          </button>
+        )}
 
         <button className="mf-icon-btn" onClick={fetchData} title="Nu vernieuwen">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"

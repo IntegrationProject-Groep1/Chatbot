@@ -2725,7 +2725,7 @@ button.mon-row:focus-visible {
 .log-stream-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
 
 .log-line {
-  display: flex; align-items: center;
+  display: flex; align-items: flex-start;
   gap: 10px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--line);
@@ -2763,9 +2763,9 @@ button.mon-row:focus-visible {
 .log-line .log-msg {
   flex: 1; min-width: 0;
   color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: visible;
 }
 .log-empty {
   padding: 24px 16px;
@@ -2922,6 +2922,21 @@ button.mon-row:focus-visible {
 }
 .mf-win:hover { color: var(--ink); }
 .mf-win.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-xs); }
+.mf-win.is-live { display: inline-flex; align-items: center; gap: 5px; }
+.mf-win.is-live.on { color: var(--ok); }
+.mf-win .mf-live-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted-3); flex-shrink: 0; position: relative;
+}
+.mf-win.is-live.on .mf-live-dot { background: var(--ok); }
+.mf-win.is-live.on .mf-live-dot::before {
+  content: "";
+  position: absolute; inset: -3px;
+  border-radius: 50%;
+  background: var(--ok);
+  opacity: .5;
+  animation: mf-live-ring 1.6s ease-out infinite;
+}
 .mf-live {
   display: flex; align-items: center; gap: 8px;
   padding: 4px 12px 4px 10px;
