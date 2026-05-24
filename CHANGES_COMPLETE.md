@@ -6,38 +6,41 @@ Dutch summary below | English summary above
 
 ## Summary of Changes
 
-All 5 reported issues have been **fully addressed** with working implementations.
+All major issues have been **fully addressed** with working implementations, including a major security and stability refactor.
 
-### ✅ Issues Fixed
+### ✅ Recent Bug Fixes (Batch 1-11)
 
-1. **User Creation Failure** — Documented limitation (Drupal read-only backend)
-2. **Empty Servers Tab** — New `/api/mcp/servers` endpoint with live server details
-3. **Message Flow CSS** — Enhanced visibility with better styling and contrast
-4. **Live Logs Persistence** — SQLite database stores logs, shows cached when offline
-5. **Live Messages Display** — Full message content now visible, automatic cached fallback
+1. **Write-Gate Fixed** — Agent now correctly re-executes tools after "ja" confirmation.
+2. **Session Ownership** — API now verifies admin identity before returning chat history.
+3. **Persistence Race Condition** — Database saves moved inside session locks.
+4. **Duplicate Tool Detection** — JSON normalization prevents redundant service calls.
+5. **Confirmation Lexicon** — Expanded to include "yep", "confirm", "oui", etc.
+6. **Regex Confirmation** — Handles punctuation (e.g., "ja, doe maar!") correctly.
+7. **Turn-Based Cards** — UI cards only show for the *current* turn results.
+8. **Missing RPC Builder** — Fixed import error in `downstream_tools.py`.
+9. **RPC Resilience** — Hardened thread-local RPC client management.
+10. **Cache Safety** — Added `enroll/unenroll` to MCP cache exclusion list.
+11. **Websocket Resilience** — Loop now handles malformed JSON without crashing.
+
+### ✅ UI Enhancements
+- **Custom Tech-Cursor** — Minimalist ring cursor in Live Message Flow with dragging/hover feedback.
+- **Enhanced Contrast** — Thicker borders and better color coding in flow map.
+
+### ✅ CI Integration
+- **Regression Suite** — Added `tests/test_agent_logic.py` for permanent verification.
+- **Auto-Pipeline** — CI now triggers on the `crud-mcp` branch.
 
 ---
 
-## Key Improvements
+## Technical Details
 
-### 📊 **Servers Tab Now Shows:**
-- Host & Port for each service
-- Live/Offline status
-- Last seen timestamp
-- Service dependencies
-- Uptime in seconds
+### Security & Safety
 
-### 📝 **Message Flow Improvements:**
-- Full message content (no truncation)
-- Error/warning/info color coding
-- Thicker borders for clarity
-- Better spacing and readability
+- **Write-Gate:** All tools starting with `delete_`, `update_`, `process_`, `cancel_`, `set_`, `enroll_`, or `unenroll_` require explicit admin confirmation.
+- **Ownership:** Every session stores the `identity_uuid` of the creator. The `/api/session/{id}/messages` endpoint returns `403 Forbidden` if the requester's UUID doesn't match.
 
-### 💾 **Logs Persistence:**
-- SQLite database (`logs.db`) stores all logs
-- Automatic fallback to cached logs when monitoring is down
-- Visual "gecached" badge shows data source
-- Helpful messaging explains when data is cached
+### Tool Normalization
+Identical tool calls are detected by parsing arguments, sorting keys, and re-serializing. This prevents multiple identical RPC calls if the LLM emits slightly different JSON whitespace.
 
 ---
 
@@ -45,150 +48,23 @@ All 5 reported issues have been **fully addressed** with working implementations
 
 | File | Changes |
 |------|---------|
-| `src/log_store.py` | **NEW** — 195 lines, log persistence layer |
-| `src/api.py` | Added `/api/mcp/servers` & `/api/logs/cached` endpoints |
-| `static/message-flow.jsx` | Enhanced LiveFeed with cache support |
-| `static/admin-styles.css` | Improved message flow visibility |
-| `logs.db` | **AUTO-CREATED** — persists logs locally |
+| `src/agent.py` | Core agent loop refactor, Write-Gate, Deduplication |
+| `src/api.py` | Ownership checks, Websocket hardening |
+| `src/session_store.py` | Concurrency fixes (lock-protected persistence) |
+| `src/downstream_tools.py` | Import fixes |
+| `src/mcp_client.py` | Cache exclusion updates |
+| `static/message-flow.jsx` | Custom cursor implementation |
+| `static/admin-styles.css` | Custom cursor styles |
+| `tests/test_agent_logic.py` | **NEW** — Regression tests |
 
 ---
 
-## How to Use
+## Verification Results
 
-### Start the Application
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Set environment variables
-cp .env.example .env  # Add NVIDIA_API_KEY
-
-# Start RabbitMQ (required)
-docker run -p 5672:5672 -p 15672:15672 rabbitmq:3-management-alpine
-
-# Start mock services (optional, for testing)
-python src/mock_services.py
-
-# Start chatbot
-python main.py
-# or with auto-reload:
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-### Test the New Endpoints
-```bash
-# Check server status with details
-curl http://localhost:8000/api/mcp/servers | python -m json.tool
-
-# Get cached logs
-curl "http://localhost:8000/api/logs/cached?limit=10" | python -m json.tool
-```
-
-### What to Expect
-1. ✅ Servers tab displays live server information
-2. ✅ Messages in "Live Berichten" show full content
-3. ✅ When monitoring service is down, cached logs appear with "gecached" badge
-4. ✅ Better visual styling for message flow items
-
----
-
-## Technical Details
-
-### New Endpoints
-
-**`GET /api/mcp/servers`** — Server status with details
-```json
-{
-  "servers": [
-    {
-      "id": "monitoring",
-      "host": "localhost",
-      "port": 8005,
-      "status": "online",
-      "live": true,
-      "uptime_seconds": 3600,
-      "dependencies": ["elasticsearch"]
-    }
-  ]
-}
-```
-
-**`GET /api/logs/cached?limit=100&service=monitoring`** — Cached logs
-```json
-{
-  "logs": [...],
-  "count": 42,
-  "summary": {...},
-  "source": "local_cache"
-}
-```
-
-### Database Schema
-```
-logs table:
-  - id (integer, auto-increment)
-  - source (text) — service name
-  - level (text) — info/warning/error
-  - action (text) — operation type
-  - message (text) — log message
-  - timestamp (text) — ISO 8601 timestamp
-  - correlation_id (text) — UNIQUE constraint
-
-log_refresh table:
-  - service (text, primary key)
-  - last_refresh (real) — Unix timestamp
-```
-
----
-
-## Verification
-
-✅ All modules import correctly  
-✅ Database schema verified  
-✅ API endpoints created and functional  
-✅ Frontend components updated  
-✅ CSS styling enhanced  
-✅ No breaking changes to existing functionality  
-
----
-
-## Next Steps (Optional)
-
-### 1. Implement 2-Hour Automatic Refresh
-Add background task to refresh logs every 2 hours:
-```python
-import asyncio
-async def refresh_logs():
-    while True:
-        await asyncio.sleep(7200)  # 2 hours
-        # Call monitoring MCP to fetch new logs
-```
-
-### 2. Update Servers Tab Frontend
-Modify admin console to display server details from `/api/mcp/servers`
-
-### 3. Fix Drupal User Creation (Backend Only)
-- Contact Drupal admin to enable JSON:API write permissions
-- Update Drupal configuration to allow POST/PUT operations
-
----
-
-## Troubleshooting
-
-**Q: No logs showing in "Live Berichten"?**  
-A: This is normal if services are inactive. Logs will appear once services start sending events.
-
-**Q: Getting "no live connection" message?**  
-A: Monitoring service is down. The system is showing cached logs (working as designed).
-
-**Q: Messages are truncated?**  
-A: Refresh the page. Full message display requires the latest code.
-
-**Q: Servers tab empty?**  
-A: Ensure `/api/mcp/servers` endpoint is responding:
-```bash
-curl http://localhost:8000/api/mcp/servers
-```
+✅ All unit tests passing (`9 tests`)  
+✅ Live message flow verified with custom cursor  
+✅ Security ownership check confirmed functional  
+✅ Write-gate re-execution verified  
 
 ---
 
@@ -196,7 +72,5 @@ curl http://localhost:8000/api/mcp/servers
 
 For detailed technical information, see:
 - `IMPLEMENTATION_SUMMARY.md` — Full technical details
-- `TESTING_GUIDE.md` — How to test the changes
-
----
-
+- `TESTING_GUIDE.md` — How to run the new logic tests
+- `PROJECT_MASTER_GUIDE.md` — Architectural overview

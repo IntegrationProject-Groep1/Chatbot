@@ -22,12 +22,33 @@ Dit bestand bevat de geconsolideerde inhoud van de projectstatus, de integratieh
 - ✅ **XML Parsers** (`src/xml_parsers.py`): Response parsers with error handling
 - ✅ **Downstream Tools** (`src/downstream_tools.py`): Integration layer for Planning & Facturatie
 
-### Tools Implemented (5 total)
+### Tools Implemented (8 total)
 1. ✅ **ask_event_assistant** - General Q&A with LLM
 2. ✅ **list_all_sessions** - Get all available sessions (Planning service)
 3. ✅ **list_my_sessions** - Get user's enrolled sessions (Planning service)
 4. ✅ **count_my_invoices** - Count user's invoices (Facturatie service)
 5. ✅ **total_invoice_cost** - Get total invoice amount (Facturatie service)
+6. ✅ **resolve_identity_by_uuid** - Lookup identity by UUID (Identity service)
+7. ✅ **delete_user** - (LOCAL) Soft-delete user via Identity RPC
+8. ✅ **process_refund** - (LOCAL) Process invoice refund via Facturatie RPC
+
+---
+
+## 🔒 Security & Safety Measures
+
+### 1. Write-Gate Confirmation Flow
+To prevent accidental data modification, all "write" operations (tools starting with `delete_`, `update_`, `process_`, etc.) are blocked by a **Write-Gate**.
+- **Behavior:** The agent will pause and emit a `confirm_required` event.
+- **Confirmation:** The user must explicitly confirm (e.g., "ja", "yes", "confirm", "yep").
+- **Persistence:** Pending operations are stored in memory (`_PENDING_WRITE`) until confirmed or the session resets.
+
+### 2. Session Ownership
+The API now strictly enforces session ownership.
+- **Endpoint:** `/api/session/{session_id}/messages`
+- **Verification:** The system verifies that the `identity_uuid` of the requesting admin matches the UUID stored with the session. Unauthorized access attempts return a `403 Forbidden` response.
+
+### 3. Concurrency Safety
+The `session_store` uses a thread-safe `threading.Lock` to manage session state. All database persistence operations (`_persist`) are performed *inside* the lock to prevent race conditions during rapid message appends.
 
 ### Documentation
 - ✅ `README.md` - Architecture, setup, tools documentation

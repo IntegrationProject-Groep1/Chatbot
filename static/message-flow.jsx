@@ -284,22 +284,23 @@ function screenToSVG(svgEl, clientX, clientY) {
 
 // ─── SVG flow graph ───────────────────────────────────────────────────────────
 function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
-                     packets, onPacketDone, pulses, onPulseDone }) {
+                     packets, onPacketDone, pulses, onPulseDone, setDraggingId }) {
   const [nodePos, setNodePos] = useState(() =>
     Object.fromEntries(Object.entries(NODES).map(([id, n]) => [id, { cx: n.cx, cy: n.cy }]))
   );
   const svgRef  = useRef(null);
   const dragRef = useRef(null);
-  const [draggingId, setDraggingId] = useState(null);
+  const [localDraggingId, setLocalDraggingId] = useState(null);
 
   const handlePointerDown = useCallback((e, id) => {
     if (!svgRef.current) return;
     e.stopPropagation();
     const svgPt = screenToSVG(svgRef.current, e.clientX, e.clientY);
     dragRef.current = { id, offX: svgPt.x - nodePos[id].cx, offY: svgPt.y - nodePos[id].cy };
-    setDraggingId(id);
+    setLocalDraggingId(id);
+    if (setDraggingId) setDraggingId(id);
     svgRef.current.setPointerCapture(e.pointerId);
-  }, [nodePos]);
+  }, [nodePos, setDraggingId]);
 
   const handlePointerMove = useCallback((e) => {
     if (!dragRef.current || !svgRef.current) return;
@@ -316,8 +317,9 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
 
   const handlePointerUp = useCallback(() => {
     dragRef.current = null;
-    setDraggingId(null);
-  }, []);
+    setLocalDraggingId(null);
+    if (setDraggingId) setDraggingId(null);
+  }, [setDraggingId]);
 
   const getStatus = id => {
     const h = nodeHealth[id] || {};
@@ -1105,6 +1107,11 @@ function MessageFlowScreen() {
   const [buckets,     setBuckets]     = useState(() => new Array(60).fill(0));
   const [now,         setNow]         = useState(Date.now());
 
+  // Custom cursor state
+  const [cursorPos,   setCursorPos]   = useState({ x: -100, y: -100 });
+  const [isCursorIn,  setIsCursorIn]  = useState(false);
+  const [draggingId,  setDraggingId]  = useState(null);
+
   const seenKeys  = useRef(new Set());
   const packetSeq = useRef(0);
   const pulseSeq  = useRef(0);
@@ -1239,7 +1246,9 @@ function MessageFlowScreen() {
   }, []);
 
   const handleMouseMove = useCallback(e => {
-    setTooltipPos({ x: e.clientX, y: e.clientY });
+    const { clientX, clientY } = e;
+    setTooltipPos({ x: clientX, y: clientY });
+    setCursorPos({ x: clientX, y: clientY });
   }, []);
 
   const isLive = hours === null;
@@ -1253,7 +1262,16 @@ function MessageFlowScreen() {
   ];
 
   return (
-    <div className="mf-screen" onMouseMove={handleMouseMove}>
+    <div className="mf-screen" 
+         onMouseMove={handleMouseMove}
+         onMouseEnter={() => setIsCursorIn(true)}
+         onMouseLeave={() => setIsCursorIn(false)}>
+      
+      {/* Custom Cursor */}
+      <div 
+        className={`mf-custom-cursor ${!isCursorIn ? 'hidden' : ''} ${hovered ? 'is-hovering' : ''} ${draggingId ? 'is-dragging' : ''}`}
+        style={{ left: cursorPos.x, top: cursorPos.y }}
+      />
 
       {/* ── Header ── */}
       <header className="mf-head">
@@ -1349,6 +1367,7 @@ function MessageFlowScreen() {
               onPacketDone={id => setPackets(prev => prev.filter(p => p.id !== id))}
               pulses={pulses}
               onPulseDone={id => setPulses(prev => prev.filter(p => p.id !== id))}
+              setDraggingId={setDraggingId}
             />
           )}
 

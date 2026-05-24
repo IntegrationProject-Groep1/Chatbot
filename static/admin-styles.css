@@ -1225,8 +1225,68 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 /* ============================================================
-   FLOW COLUMN — permanent MCP topology
+   CUSTOM CURSOR (Message Flow)
    ============================================================ */
+.mf-canvas {
+  cursor: none !important;
+}
+.mf-canvas * {
+  cursor: none !important;
+}
+
+.mf-custom-cursor {
+  position: fixed;
+  top: 0; left: 0;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid var(--primary);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10000;
+  transform: translate(-50%, -50%);
+  transition: width 0.2s, height 0.2s, background 0.2s, border-color 0.2s, transform 0.05s linear;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  mix-blend-mode: normal;
+}
+
+/* Inner dot */
+.mf-custom-cursor::after {
+  content: '';
+  width: 4px;
+  height: 4px;
+  background: var(--primary);
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+/* Hovering state */
+.mf-custom-cursor.is-hovering {
+  width: 42px;
+  height: 42px;
+  background: rgba(31, 58, 138, 0.08);
+  border-color: var(--primary-lt);
+  border-width: 1px;
+}
+
+/* Dragging state */
+.mf-custom-cursor.is-dragging {
+  width: 32px;
+  height: 32px;
+  background: var(--primary);
+  border-color: var(--primary-dk);
+}
+.mf-custom-cursor.is-dragging::after {
+  background: white;
+  transform: scale(1.5);
+}
+
+/* Hidden by default or when outside canvas */
+.mf-custom-cursor.hidden {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0);
+}
 .flow-col {
   grid-area: flow;
   display: flex; flex-direction: column;

@@ -2,7 +2,11 @@ import os
 from dataclasses import dataclass
 
 from rabbitmq_rpc import get_thread_client
-from xml_builders import build_identity_lookup_by_email_request, build_identity_delete_request
+from xml_builders import (
+    build_identity_lookup_by_email_request,
+    build_identity_lookup_by_uuid_request,
+    build_identity_delete_request
+)
 from xml_parsers import parse_identity_response, parse_identity_delete_response, IdentityUser
 
 

@@ -390,7 +390,7 @@ def init_session(session_id: str, identity_uuid: str) -> None:
             "identity_uuid": identity_uuid,
             "last_active": time.time(),
         }
-    _persist(session_id)
+        _persist(session_id)
 
 
 def get_identity_uuid(session_id: str) -> str:
@@ -403,7 +403,7 @@ def append(session_id: str, message: dict) -> None:
         if session_id in _sessions:
             _sessions[session_id]["messages"].append(message)
             _sessions[session_id]["last_active"] = time.time()
-    _persist(session_id)
+            _persist(session_id)
 
 
 def get(session_id: str) -> list[dict]:
