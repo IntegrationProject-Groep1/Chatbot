@@ -3613,6 +3613,18 @@ body[data-theme="slate"] .mf-canvas-wrap {
   to { stroke-dashoffset: -20; }
 }
 
+/* Node pulse ring — expands outward when a packet arrives at a service */
+@keyframes mf-pulse-ring {
+  0%   { r: 22; opacity: .65; }
+  100% { r: 64; opacity: 0; }
+}
+.mf-node-pulse {
+  fill: none;
+  stroke-width: 2;
+  animation: mf-pulse-ring 0.85s ease-out forwards;
+  pointer-events: none;
+}
+
 /* ── Missing classes used in JSX ── */
 .mf-stats-strip { display: flex; gap: 0; padding: 0 12px 12px; }
 .mf-stat-v { font-size: 18px; font-weight: 700; font-family: var(--font-mono); color: var(--ink); line-height: 1; }

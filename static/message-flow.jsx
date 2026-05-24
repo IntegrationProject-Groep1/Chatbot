@@ -258,8 +258,27 @@ function Packet({ pkt, onDone }) {
   );
 }
 
+// ─── Node pulse ring — expands outward when a message arrives ────────────────
+function NodePulse({ pulse, onDone }) {
+  useEffect(() => {
+    const tm = setTimeout(onDone, 900);
+    return () => clearTimeout(tm);
+  }, []);
+  const node = NODES[pulse.nodeId];
+  if (!node) return null;
+  const color = pulse.level === "error" ? "var(--hot)" : node.color;
+  return (
+    <circle cx={node.cx} cy={node.cy} r="22"
+      fill="none" stroke={color} strokeWidth="2"
+      style={{ pointerEvents: "none" }}>
+      <animate attributeName="r"       values="22;64"  dur="0.85s" fill="freeze" />
+      <animate attributeName="opacity" values="0.65;0" dur="0.85s" fill="freeze" />
+    </circle>
+  );
+}
+
 // ─── SVG flow graph ───────────────────────────────────────────────────────────
-function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, packets, onPacketDone }) {
+function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, packets, onPacketDone, pulses, onPulseDone }) {
   const getStatus = id => {
     const h = nodeHealth[id] || {};
     if (h.live === true)  return "online";
@@ -380,6 +399,11 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, 
       {/* ── One-shot packets (spawned per new message) ── */}
       {(packets || []).map(pkt => (
         <Packet key={pkt.id} pkt={pkt} onDone={() => onPacketDone(pkt.id)} />
+      ))}
+
+      {/* ── Node pulse rings (fired on packet arrival at destination) ── */}
+      {(pulses || []).map(pu => (
+        <NodePulse key={pu.id} pulse={pu} onDone={() => onPulseDone(pu.id)} />
       ))}
 
       {/* ── Nodes ── */}
@@ -897,7 +921,9 @@ function MessageFlowScreen() {
   const [lastUpdate,   setLastUpdate]   = useState(null);
   const [actionFilter, setActionFilter] = useState(null);
   const [packets,      setPackets]      = useState([]);
+  const [pulses,       setPulses]       = useState([]);
   const packetSeq = useRef(0);
+  const pulseSeq  = useRef(0);
 
   // Stable set of event keys we've already displayed — not reset on re-render
   const seenKeys = useRef(new Set());
@@ -936,8 +962,19 @@ function MessageFlowScreen() {
               delay: i * 180,
               level: e.level || "info",
             }));
-          if (newPkts.length > 0)
+          if (newPkts.length > 0) {
             setPackets(prev => [...prev.slice(-20), ...newPkts]);
+            // Fire a pulse ring at the destination node timed to packet arrival (~60% of dur)
+            newPkts.forEach(pkt => {
+              const arriveMs = (pkt.delay || 0) + pkt.dur * 0.62;
+              setTimeout(() => {
+                setPulses(prev => [
+                  ...prev.slice(-12),
+                  { id: `pu-${++pulseSeq.current}`, nodeId: pkt.to, level: pkt.level },
+                ]);
+              }, arriveMs);
+            });
+          }
         }
       })
       .catch(e => {
@@ -1062,6 +1099,8 @@ function MessageFlowScreen() {
               onHover={setHovered}
               packets={packets}
               onPacketDone={id => setPackets(prev => prev.filter(p => p.id !== id))}
+              pulses={pulses}
+              onPulseDone={id => setPulses(prev => prev.filter(p => p.id !== id))}
             />
           )}
         </div>
