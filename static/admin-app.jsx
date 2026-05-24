@@ -1330,6 +1330,15 @@ function App() {
     return () => { wsRef.current?.close(); };
   }, [identity?.identity_uuid]);
 
+  // Load conversations on mount when identity is already set (e.g. after page refresh)
+  const didLoadConvs = useRef(false);
+  useEffect(() => {
+    if (identity?.identity_uuid && !didLoadConvs.current) {
+      didLoadConvs.current = true;
+      loadConversations();
+    }
+  }, [identity?.identity_uuid, loadConversations]);
+
   const handleLogin = (id) => {
     setIdentity(id);
     setMessages([]);
