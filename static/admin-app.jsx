@@ -1478,14 +1478,15 @@ function App() {
         document.querySelector(".composer textarea")?.focus();
         return;
       }
-      // Escape → blur active input
-      if (e.key === "Escape" && inInput) {
-        document.activeElement?.blur();
+      // Escape → close settings modal, then blur active input
+      if (e.key === "Escape") {
+        if (showSettings) { setShowSettings(false); return; }
+        if (inInput) document.activeElement?.blur();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleNew]);
+  }, [handleNew, showSettings]);
 
   if (!identity) {
     return <LoginScreen onLogin={handleLogin} />;
