@@ -262,7 +262,11 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
     return result
 
 
-async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tuple[str, str]:
+async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tuple[str, str, bool]:
+    """
+    Execute a tool call. Returns (call_id, result_json, should_continue_loop).
+    should_continue_loop=False means stop the agent loop immediately.
+    """
     name = tool_call["function"]["name"]
     call_id = tool_call["id"]
 
@@ -291,7 +295,7 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
         return call_id, json.dumps({
             "status": "pending_confirmation",
             "message": "Admin confirmation required. Ask the admin to type 'ja' to confirm or 'nee' to cancel.",
-        })
+        }), False  # Stop loop, don't continue
 
     try:
         # Handle local tools without going through MCP
@@ -299,7 +303,7 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
         if local_result is not None:
             duration = int((time.time() - t0) * 1000)
             await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": local_result[:120]})
-            return call_id, local_result
+            return call_id, local_result, True
 
         publish_audit_event(f"tool_called.{name}", {
             "session_id": session_id,
@@ -316,12 +320,12 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
         preview = result[:300] if isinstance(result, str) else ""
         _log.info("TOOL OK: %s duration=%dms session=%s", name, duration, session_id)
         await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": preview})
-        return call_id, result
+        return call_id, result, True
     except Exception as exc:
         duration = int((time.time() - t0) * 1000)
         _log.warning("TOOL ERROR: %s duration=%dms error=%s session=%s", name, duration, exc, session_id)
         await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "error": str(exc), "call_id": call_id})
-        return call_id, json.dumps({"error": str(exc), "status": "error"})
+        return call_id, json.dumps({"error": str(exc), "status": "error"}), True
 
 
 async def _stream_text(text: str, emit: Callable) -> None:
@@ -466,12 +470,16 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 return_exceptions=True,
             )
 
+            should_stop = False
             for tc, result in zip(tool_calls, results):
                 if isinstance(result, Exception):
                     call_id = tc["id"]
                     content = json.dumps({"error": str(result), "status": "error"})
+                    should_continue = True
                 else:
-                    call_id, content = result
+                    call_id, content, should_continue = result
+                    if not should_continue:
+                        should_stop = True
 
                 session_store.append(session_id, {
                     "role": "tool",
@@ -479,6 +487,10 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                     "name": tc["function"]["name"],
                     "content": content,
                 })
+
+            if should_stop:
+                await emit({"type": "done"})
+                return
 
             continue
 

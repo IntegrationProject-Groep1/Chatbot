@@ -602,22 +602,52 @@ function DetailPanel({ selected, edgeIdx }) {
 
 // ─── Live event feed ──────────────────────────────────────────────────────────
 function LiveFeed({ events, actionFilter, setActionFilter, newCount }) {
+  const [cachedEvents, setCachedEvents] = React.useState([]);
+  const [loadingCached, setLoadingCached] = React.useState(false);
+
+  // Load cached logs if no live events
+  React.useEffect(() => {
+    if (events.length === 0 && !loadingCached) {
+      setLoadingCached(true);
+      fetch('/api/logs/cached?limit=100')
+        .then(r => r.json())
+        .then(d => {
+          const cached = (d.logs || []).map(log => ({
+            source: log.source || 'unknown',
+            action: log.action || 'unknown',
+            message: log.message || '',
+            timestamp: log.timestamp || new Date().toISOString(),
+            level: log.level || 'info',
+            destinations: [],
+            isCached: true,
+          }));
+          setCachedEvents(cached.slice(0, 120));
+        })
+        .catch(() => setCachedEvents([]))
+        .finally(() => setLoadingCached(false));
+    }
+  }, [events.length, loadingCached]);
+
+  const displayEvents = events.length > 0 ? events : cachedEvents;
+  const isCachedMode = events.length === 0 && cachedEvents.length > 0;
+
   const actions = useMemo(() => {
     const cnt = {};
-    events.forEach(e => { cnt[e.action] = (cnt[e.action] || 0) + 1; });
+    displayEvents.forEach(e => { cnt[e.action] = (cnt[e.action] || 0) + 1; });
     return Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  }, [events]);
+  }, [displayEvents]);
 
   const shown = useMemo(() => {
-    if (!actionFilter) return events.slice(0, 120);
-    return events.filter(e => e.action === actionFilter).slice(0, 120);
-  }, [events, actionFilter]);
+    if (!actionFilter) return displayEvents.slice(0, 120);
+    return displayEvents.filter(e => e.action === actionFilter).slice(0, 120);
+  }, [displayEvents, actionFilter]);
 
   return (
     <div className="mf-feed">
       <div className="mf-feed-hdr">
         <span>Live berichten</span>
-        {newCount > 0 && <span className="mf-feed-badge">{newCount} nieuw</span>}
+        {isCachedMode && <span className="mf-feed-badge" style={{ background: 'var(--muted)', color: 'var(--surface)' }}>gecached</span>}
+        {newCount > 0 && !isCachedMode && <span className="mf-feed-badge">{newCount} nieuw</span>}
       </div>
       <div className="mf-feed-filters">
         <button className={`mf-fbtn ${!actionFilter ? "on" : ""}`}
@@ -631,16 +661,20 @@ function LiveFeed({ events, actionFilter, setActionFilter, newCount }) {
       </div>
       <div className="mf-feed-list">
         {shown.length === 0 && (
-          <div className="mf-feed-empty">Geen berichten in dit tijdvenster</div>
+          <div className="mf-feed-empty">
+            <div>Geen berichten in dit tijdvenster</div>
+            {!loadingCached && <div style={{ fontSize: '10px', marginTop: '8px', color: 'var(--muted-2)', fontStyle: 'italic' }}>Services zijn mogelijk inactief. Logs worden automatisch om de 2 uur bijgewerkt.</div>}
+          </div>
         )}
         {shown.map((ev, i) => {
           const sN  = NODES[ev.source];
-          const age = (Date.now() - new Date(ev.timestamp).getTime()) / 1000;
+          const age = !ev.isCached ? (Date.now() - new Date(ev.timestamp).getTime()) / 1000 : null;
           return (
-            <div key={i} className={`mf-fi lvl-${ev.level}${age < 12 ? " fresh" : ""}`}>
+            <div key={i} className={`mf-fi lvl-${ev.level}${age && age < 12 ? " fresh" : ""}${ev.isCached ? " cached" : ""}`}>
               <div className="mf-fi-head">
                 <span className="mf-fi-ts">{fmtTime(ev.timestamp)}</span>
-                {age < 8 && <span className="mf-fi-new">NEW</span>}
+                {age && age < 8 && <span className="mf-fi-new">NEW</span>}
+                {ev.isCached && <span className="mf-fi-new" style={{ background: 'var(--muted-2)' }}>CACHED</span>}
                 <span className="mf-fi-src" style={{ color: sN?.color || "var(--muted)" }}>
                   {sN?.label || ev.source}
                 </span>
@@ -652,7 +686,7 @@ function LiveFeed({ events, actionFilter, setActionFilter, newCount }) {
               </div>
               <div className="mf-fi-body">
                 <span className="mf-fi-action">{ACTION_NL[ev.action] || ev.action}</span>
-                {ev.message && <span className="mf-fi-msg">{ev.message.slice(0, 100)}</span>}
+                {ev.message && <span className="mf-fi-msg">{ev.message}</span>}
               </div>
             </div>
           );

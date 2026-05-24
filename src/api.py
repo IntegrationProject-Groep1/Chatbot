@@ -229,7 +229,11 @@ def _normalize_log_entry(entry: dict) -> dict:
 
 
 async def _get_monitoring_logs(limit: int = 100) -> dict:
-    """Fetch recent logs from either the current or legacy Monitoring MCP shape."""
+    """Fetch recent logs from either the current or legacy Monitoring MCP shape.
+    Also stores logs to local database for persistence during downtime.
+    """
+    import log_store
+    
     limit = min(max(int(limit or 100), 1), 1000)
     result = await _call_mcp("monitoring__get_recent_logs", {"limit": limit})
     raw_entries = []
@@ -246,6 +250,19 @@ async def _get_monitoring_logs(limit: int = 100) -> dict:
             error = fallback.get("error")
 
     entries = [_normalize_log_entry(e) for e in raw_entries if isinstance(e, dict)]
+    
+    # Store entries to local database for persistence
+    if entries:
+        log_store.store_logs_batch(entries)
+    
+    # If no live logs, fall back to cached logs with freshness indicator
+    if not entries and error:
+        cached = log_store.get_recent_logs(limit=limit, hours=24)
+        if cached:
+            entries = cached
+            error = "Showing cached logs (no live connection)"
+            _log.warning(f"Using cached logs due to monitoring error: {error}")
+    
     return {"logs": entries, "count": len(entries), "error": error}
 
 
@@ -360,6 +377,55 @@ async def dashboard_summary():
         "services_offline":  max(offline, 0),
         "services_total":    len(services),
         "active_alerts":     alerts_count,
+    }
+
+
+@app.get("/api/mcp/servers")
+async def mcp_servers_detail():
+    """Get detailed status of all MCP servers with live health checks."""
+    from datetime import datetime
+    result = await _call_mcp("monitoring__get_service_status")
+    services_map = {s.get("service", ""): s for s in result.get("services", [])}
+    
+    servers = []
+    for svc_id, meta in _SERVICE_METADATA.items():
+        svc_status = services_map.get(svc_id, {})
+        servers.append({
+            "id": svc_id,
+            "host": meta.get("host"),
+            "port": meta.get("port"),
+            "status": "online" if svc_status.get("live") else "offline",
+            "live": svc_status.get("live", False),
+            "last_seen": svc_status.get("last_seen", svc_status.get("last_heartbeat")),
+            "uptime_seconds": svc_status.get("uptime_seconds"),
+            "dependencies": meta.get("deps", []),
+            "message": svc_status.get("message", ""),
+        })
+    
+    return {"servers": servers, "timestamp": datetime.utcnow().isoformat() + "Z"}
+
+
+@app.get("/api/logs/cached")
+async def cached_logs(limit: int = 100, service: str = None):
+    """Get cached logs from local database (useful during monitoring downtime)."""
+    import log_store
+    from datetime import datetime
+    
+    limit = min(max(int(limit or 100), 1), 1000)
+    
+    if service:
+        logs = log_store.get_logs_by_service(service.lower(), limit=limit, hours=24)
+    else:
+        logs = log_store.get_recent_logs(limit=limit, hours=24)
+    
+    summary = log_store.get_logs_summary(hours=24)
+    
+    return {
+        "logs": logs,
+        "count": len(logs),
+        "summary": summary,
+        "source": "local_cache",
+        "timestamp": datetime.utcnow().isoformat() + "Z"
     }
 
 
