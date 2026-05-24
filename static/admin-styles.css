@@ -3489,18 +3489,40 @@ button.mon-row:focus-visible {
   background: var(--surface);
   display: flex; flex-direction: column;
   overflow: hidden; min-height: 0;
+  transition: width .2s ease;
+}
+.mf-feed.is-collapsed {
+  width: 32px;
+  min-width: 32px;
+  flex-shrink: 0;
+}
+.mf-body:has(.mf-feed.is-collapsed) {
+  grid-template-columns: 220px 1fr 32px;
 }
 .mf-feed-head {
   flex-shrink: 0;
   border-bottom: 1px solid var(--line);
   padding: 10px 12px 0;
 }
+.mf-feed.is-collapsed .mf-feed-head {
+  padding: 8px 0;
+  display: flex; align-items: center; justify-content: center;
+}
 .mf-feed-title {
-  display: flex; align-items: baseline; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 6px;
   font: 700 12px/1 var(--font); color: var(--ink);
   margin-bottom: 8px;
 }
+.mf-feed.is-collapsed .mf-feed-title { margin-bottom: 0; justify-content: center; }
 .mf-feed-rate { font: 400 10.5px/1 var(--font-mono); color: var(--muted); }
+.mf-feed-toggle {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted-2); padding: 3px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; line-height: 0;
+}
+.mf-feed-toggle:hover { background: var(--surface-2); color: var(--ink); }
 .mf-feed-search {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 8px;

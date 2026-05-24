@@ -869,7 +869,7 @@ function FilterChips({ events, actionFilter, setActionFilter, levelFilter, setLe
 }
 
 // ─── Live feed panel ──────────────────────────────────────────────────────────
-function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeIdx, isLive }) {
+function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeIdx, isLive, open, onToggleOpen }) {
   const [actionFilter, setActionFilter] = useState(null);
   const [levelFilter,  setLevelFilter]  = useState(null);
   const [search,       setSearch]       = useState("");
@@ -934,74 +934,93 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
   const isCachedMode = events.length === 0 && cachedEvents.length > 0;
 
   return (
-    <aside className="mf-feed">
+    <aside className={`mf-feed${open ? "" : " is-collapsed"}`}>
       <header className="mf-feed-head">
         <div className="mf-feed-title">
-          <span>{isLive ? "Live berichten" : "Historische berichten"}</span>
-          <span className="mf-feed-rate">
-            {isLive
-              ? (connected
-                  ? <>{rate.toFixed(1)}<span style={{ color: "var(--muted-3)" }}> msg/s</span></>
-                  : <span style={{ color: "var(--warn)" }}>verbinden…</span>)
-              : <span style={{ color: "var(--muted-2)" }}>historisch</span>}
-            {isCachedMode && <span style={{ marginLeft: 6, color: "var(--muted-2)", fontSize: 10 }}>· gecached</span>}
-          </span>
-        </div>
-        <div className="mf-feed-search">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/>
-          </svg>
-          <input type="text" placeholder="Zoek in berichten…"
-            value={search} onChange={e => setSearch(e.target.value)} />
-          {search && (
-            <button onClick={() => setSearch("")} style={{
-              background: "none", border: 0, cursor: "pointer",
-              color: "var(--muted-2)", padding: 0, fontSize: 11
-            }}>✕</button>
+          {open && <span className="mf-feed-title-text">{isLive ? "Live berichten" : "Historische berichten"}</span>}
+          {open && (
+            <span className="mf-feed-rate">
+              {isLive
+                ? (connected
+                    ? <>{rate.toFixed(1)}<span style={{ color: "var(--muted-3)" }}> msg/s</span></>
+                    : <span style={{ color: "var(--warn)" }}>verbinden…</span>)
+                : <span style={{ color: "var(--muted-2)" }}>historisch</span>}
+              {isCachedMode && <span style={{ marginLeft: 6, color: "var(--muted-2)", fontSize: 10 }}>· gecached</span>}
+            </span>
           )}
+          <button className="mf-feed-toggle" onClick={onToggleOpen}
+            title={open ? "Inklappen" : "Uitklappen"}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.2">
+              {open
+                ? <path d="M15 18l-6-6 6-6"/>
+                : <path d="M9 18l6-6-6-6"/>}
+            </svg>
+          </button>
         </div>
-        <FilterChips events={displayEvents}
-          actionFilter={actionFilter} setActionFilter={setActionFilter}
-          levelFilter={levelFilter}   setLevelFilter={setLevelFilter} />
+        {open && (
+          <>
+            <div className="mf-feed-search">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/>
+              </svg>
+              <input type="text" placeholder="Zoek in berichten…"
+                value={search} onChange={e => setSearch(e.target.value)} />
+              {search && (
+                <button onClick={() => setSearch("")} style={{
+                  background: "none", border: 0, cursor: "pointer",
+                  color: "var(--muted-2)", padding: 0, fontSize: 11
+                }}>✕</button>
+              )}
+            </div>
+            <FilterChips events={displayEvents}
+              actionFilter={actionFilter} setActionFilter={setActionFilter}
+              levelFilter={levelFilter}   setLevelFilter={setLevelFilter} />
+          </>
+        )}
       </header>
 
-      {isLive && paused && (
+      {open && isLive && paused && (
         <div className="mf-pause-strip" onClick={onTogglePause} style={{ cursor: "pointer" }}>
           ⏸ Gepauzeerd · klik om te hervatten
         </div>
       )}
 
-      <div className="mf-newpill-wrap">
-        <button className={`mf-newpill ${isLive && stashedCount > 0 && hovering ? "show" : ""}`}
-          onClick={flush}>
-          <span className="pulse" />
-          {stashedCount} {stashedCount === 1 ? "nieuw bericht" : "nieuwe berichten"}
-        </button>
-      </div>
+      {open && (
+        <div className="mf-newpill-wrap">
+          <button className={`mf-newpill ${isLive && stashedCount > 0 && hovering ? "show" : ""}`}
+            onClick={flush}>
+            <span className="pulse" />
+            {stashedCount} {stashedCount === 1 ? "nieuw bericht" : "nieuwe berichten"}
+          </button>
+        </div>
+      )}
 
-      <div className="mf-feed-list" ref={listRef}
-        onMouseEnter={() => setHovering(true)}
-        onMouseLeave={() => setHovering(false)}>
-        {visible.length === 0 && (
-          <div className="mf-feed-empty">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="1.4">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-            <div>Geen berichten</div>
-            <span className="hint">
-              {search || actionFilter || levelFilter
-                ? "Pas filters aan om meer te zien"
-                : "Wachten op nieuwe berichten…"}
-            </span>
-          </div>
-        )}
-        {visible.slice(0, 200).map((ev, i) => (
-          <FeedItem key={eventKey(ev) || i} ev={ev}
-            onSelect={onSelect} edgeIdx={edgeIdx} />
-        ))}
-      </div>
+      {open && (
+        <div className="mf-feed-list" ref={listRef}
+          onMouseEnter={() => setHovering(true)}
+          onMouseLeave={() => setHovering(false)}>
+          {visible.length === 0 && (
+            <div className="mf-feed-empty">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="1.4">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <div>Geen berichten</div>
+              <span className="hint">
+                {search || actionFilter || levelFilter
+                  ? "Pas filters aan om meer te zien"
+                  : "Wachten op nieuwe berichten…"}
+              </span>
+            </div>
+          )}
+          {visible.slice(0, 200).map((ev, i) => (
+            <FeedItem key={eventKey(ev) || i} ev={ev}
+              onSelect={onSelect} edgeIdx={edgeIdx} />
+          ))}
+        </div>
+      )}
     </aside>
   );
 }
@@ -1013,6 +1032,7 @@ function MessageFlowScreen() {
   const [error,       setError]       = useState(null);
   const [hours,       setHours]       = useState(null);   // null = Live mode
   const [paused,      setPaused]      = useState(false);
+  const [feedOpen,    setFeedOpen]    = useState(true);
   const [connState,   setConnState]   = useState("connected");
   const [selected,    setSelected]    = useState(null);
   const [hovered,     setHovered]     = useState(null);
@@ -1300,6 +1320,8 @@ function MessageFlowScreen() {
           onSelect={handleSelect}
           edgeIdx={edgeIdx}
           isLive={isLive}
+          open={feedOpen}
+          onToggleOpen={() => setFeedOpen(p => !p)}
         />
       </div>
 
