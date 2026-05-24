@@ -216,32 +216,32 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
         if time.time() < _pool_next_retry:
             return None
         try:
-                p = psycopg2.pool.ThreadedConnectionPool(
-                    1, 5,
-                    host=_DB_HOST, port=_DB_PORT,
-                    user=_DB_USER, password=_DB_PASS, dbname=_DB_NAME,
-                )
-                conn = p.getconn()
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS chatbot_sessions (
-                                session_id    TEXT PRIMARY KEY,
-                                identity_uuid TEXT NOT NULL,
-                                messages      TEXT NOT NULL,
-                                last_active   DOUBLE PRECISION NOT NULL
-                            )
-                        """)
-                    conn.commit()
-                finally:
-                    p.putconn(conn)
-                _pool = p
-            except Exception as e:
-                _pool_next_retry = time.time() + _RETRY_COOLDOWN
-                import logging as _lg
-                _lg.getLogger(__name__).error(
-                    "session_store: PostgreSQL unavailable, retrying in %ds: %s", int(_RETRY_COOLDOWN), e
-                )
+            p = psycopg2.pool.ThreadedConnectionPool(
+                1, 5,
+                host=_DB_HOST, port=_DB_PORT,
+                user=_DB_USER, password=_DB_PASS, dbname=_DB_NAME,
+            )
+            conn = p.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS chatbot_sessions (
+                            session_id    TEXT PRIMARY KEY,
+                            identity_uuid TEXT NOT NULL,
+                            messages      TEXT NOT NULL,
+                            last_active   DOUBLE PRECISION NOT NULL
+                        )
+                    """)
+                conn.commit()
+            finally:
+                p.putconn(conn)
+            _pool = p
+        except Exception as e:
+            _pool_next_retry = time.time() + _RETRY_COOLDOWN
+            import logging as _lg
+            _lg.getLogger(__name__).error(
+                "session_store: PostgreSQL unavailable, retrying in %ds: %s", int(_RETRY_COOLDOWN), e
+            )
     return _pool
 
 
