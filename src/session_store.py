@@ -1,15 +1,22 @@
 import json
 import os
 import re
-import sqlite3
 import threading
 import time
 from datetime import date as _date
 
+import psycopg2
+import psycopg2.pool
+
 _sessions: dict[str, dict] = {}
 _lock = threading.Lock()
 _TTL = int(os.getenv("SESSION_TTL_SECONDS", "604800"))  # 7 days
-_DB_PATH = os.getenv("SESSION_DB", os.path.join(os.path.dirname(__file__), "..", "sessions.db"))
+
+_DB_HOST = os.getenv("DB_HOST", "postgredb-service")
+_DB_PORT = int(os.getenv("DB_PORT", "5432"))
+_DB_USER = os.getenv("DB_USER", "")
+_DB_PASS = os.getenv("DB_PASSWORD", "")
+_DB_NAME = os.getenv("DB_NAME", "")
 
 # ── Section 1: Domain knowledge ────────────────────────────────────────────────
 _SYSTEM_CONTEXT = (
@@ -187,59 +194,94 @@ _SYSTEM_OUTPUT = (
 
 _SYSTEM_TEMPLATE = _SYSTEM_CONTEXT + _SYSTEM_ROUTING + _SYSTEM_OUTPUT
 
-# ── SQLite persistence ──────────────────────────────────────────────────────
+# ── PostgreSQL persistence ───────────────────────────────────────────────────
 
-_db_conn: sqlite3.Connection | None = None
-_db_lock = threading.Lock()
+_pool: psycopg2.pool.ThreadedConnectionPool | None = None
+_pool_lock = threading.Lock()
 
 
-def _get_db() -> sqlite3.Connection:
-    global _db_conn
-    with _db_lock:
-        if _db_conn is None:
-            _db_conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
-            _db_conn.execute("""
-                CREATE TABLE IF NOT EXISTS sessions (
-                    session_id    TEXT PRIMARY KEY,
-                    identity_uuid TEXT NOT NULL,
-                    messages      TEXT NOT NULL,
-                    last_active   REAL NOT NULL
+def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
+    global _pool
+    if _pool is not None:
+        return _pool
+    if not _DB_USER:
+        return None
+    with _pool_lock:
+        if _pool is None:
+            try:
+                p = psycopg2.pool.ThreadedConnectionPool(
+                    1, 5,
+                    host=_DB_HOST, port=_DB_PORT,
+                    user=_DB_USER, password=_DB_PASS, dbname=_DB_NAME,
                 )
-            """)
-            _db_conn.commit()
-        return _db_conn
+                conn = p.getconn()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            CREATE TABLE IF NOT EXISTS chatbot_sessions (
+                                session_id    TEXT PRIMARY KEY,
+                                identity_uuid TEXT NOT NULL,
+                                messages      TEXT NOT NULL,
+                                last_active   DOUBLE PRECISION NOT NULL
+                            )
+                        """)
+                    conn.commit()
+                finally:
+                    p.putconn(conn)
+                _pool = p
+            except Exception:
+                pass
+    return _pool
 
 
 def _persist(session_id: str) -> None:
     data = _sessions.get(session_id)
     if not data:
         return
+    pool = _get_pool()
+    if pool is None:
+        return
     try:
-        db = _get_db()
-        db.execute(
-            "INSERT OR REPLACE INTO sessions (session_id, identity_uuid, messages, last_active) VALUES (?,?,?,?)",
-            (session_id, data["identity_uuid"], json.dumps(data["messages"]), data["last_active"]),
-        )
-        db.commit()
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO chatbot_sessions (session_id, identity_uuid, messages, last_active)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (session_id) DO UPDATE SET
+                        identity_uuid = EXCLUDED.identity_uuid,
+                        messages      = EXCLUDED.messages,
+                        last_active   = EXCLUDED.last_active
+                """, (session_id, data["identity_uuid"], json.dumps(data["messages"]), data["last_active"]))
+            conn.commit()
+        finally:
+            pool.putconn(conn)
     except Exception:
-        pass  # never crash the app over a DB write failure
+        pass
 
 
 def _load_from_db() -> None:
     """Restore unexpired sessions into memory at startup."""
+    pool = _get_pool()
+    if pool is None:
+        return
     now = time.time()
     try:
-        db = _get_db()
-        rows = db.execute(
-            "SELECT session_id, identity_uuid, messages, last_active FROM sessions WHERE last_active > ?",
-            (now - _TTL,),
-        ).fetchall()
-        for sid, uuid, msgs_json, last_active in rows:
-            _sessions[sid] = {
-                "messages": json.loads(msgs_json),
-                "identity_uuid": uuid,
-                "last_active": last_active,
-            }
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT session_id, identity_uuid, messages, last_active FROM chatbot_sessions WHERE last_active > %s",
+                    (now - _TTL,),
+                )
+                for sid, uuid, msgs_json, last_active in cur.fetchall():
+                    _sessions[sid] = {
+                        "messages": json.loads(msgs_json),
+                        "identity_uuid": uuid,
+                        "last_active": last_active,
+                    }
+        finally:
+            pool.putconn(conn)
     except Exception:
         pass
 
@@ -269,25 +311,31 @@ def init_session(session_id: str, identity_uuid: str) -> None:
             _sessions[session_id]["last_active"] = time.time()
             return
     # Try to restore from DB (session exists from a previous connection)
-    try:
-        db = _get_db()
-        row = db.execute(
-            "SELECT messages, last_active FROM sessions WHERE session_id = ? AND last_active > ?",
-            (session_id, time.time() - _TTL),
-        ).fetchone()
-        if row:
-            msgs_json, _ = row
-            messages = json.loads(msgs_json)
-            _refresh_date(messages)
-            with _lock:
-                _sessions[session_id] = {
-                    "messages": messages,
-                    "identity_uuid": identity_uuid,
-                    "last_active": time.time(),
-                }
-            return
-    except Exception:
-        pass
+    pool = _get_pool()
+    if pool is not None:
+        try:
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT messages FROM chatbot_sessions WHERE session_id = %s AND last_active > %s",
+                        (session_id, time.time() - _TTL),
+                    )
+                    row = cur.fetchone()
+            finally:
+                pool.putconn(conn)
+            if row:
+                messages = json.loads(row[0])
+                _refresh_date(messages)
+                with _lock:
+                    _sessions[session_id] = {
+                        "messages": messages,
+                        "identity_uuid": identity_uuid,
+                        "last_active": time.time(),
+                    }
+                return
+        except Exception:
+            pass
     # Brand new session
     with _lock:
         _sessions[session_id] = {
@@ -346,10 +394,16 @@ def cleanup_expired() -> None:
         expired = [sid for sid, data in _sessions.items() if now - data["last_active"] > _TTL]
         for sid in expired:
             del _sessions[sid]
-    # Remove from DB as well
+    pool = _get_pool()
+    if pool is None:
+        return
     try:
-        db = _get_db()
-        db.execute("DELETE FROM sessions WHERE last_active < ?", (now - _TTL,))
-        db.commit()
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM chatbot_sessions WHERE last_active < %s", (now - _TTL,))
+            conn.commit()
+        finally:
+            pool.putconn(conn)
     except Exception:
         pass
