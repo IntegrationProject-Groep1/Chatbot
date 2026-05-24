@@ -2,10 +2,10 @@ name: CI Pipeline
 
 on:
   push:
-    branches: ["main", "dev"]
+    branches: ["main", "dev", "crud-mcp"]
     tags: ["v*"]
   pull_request:
-    branches: ["main", "dev"]
+    branches: ["main", "dev", "crud-mcp"]
   workflow_dispatch:
 
 jobs:
