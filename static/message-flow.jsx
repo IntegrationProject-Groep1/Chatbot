@@ -604,29 +604,34 @@ function DetailPanel({ selected, edgeIdx }) {
 function LiveFeed({ events, actionFilter, setActionFilter, newCount }) {
   const [cachedEvents, setCachedEvents] = React.useState([]);
   const [loadingCached, setLoadingCached] = React.useState(false);
+  const hasFetchedCached = React.useRef(false);
 
-  // Load cached logs if no live events
+  // Load cached logs once when there are no live events yet
   React.useEffect(() => {
-    if (events.length === 0 && !loadingCached) {
-      setLoadingCached(true);
-      fetch('/api/logs/cached?limit=100')
-        .then(r => r.json())
-        .then(d => {
-          const cached = (d.logs || []).map(log => ({
-            source: log.source || 'unknown',
-            action: log.action || 'unknown',
-            message: log.message || '',
-            timestamp: log.timestamp || new Date().toISOString(),
-            level: log.level || 'info',
-            destinations: [],
-            isCached: true,
-          }));
-          setCachedEvents(cached.slice(0, 120));
-        })
-        .catch(() => setCachedEvents([]))
-        .finally(() => setLoadingCached(false));
+    if (events.length > 0) {
+      hasFetchedCached.current = true; // live data arrived — no need for cache
+      return;
     }
-  }, [events.length, loadingCached]);
+    if (hasFetchedCached.current) return;
+    hasFetchedCached.current = true;
+    setLoadingCached(true);
+    fetch('/api/logs/cached?limit=100')
+      .then(r => r.json())
+      .then(d => {
+        const cached = (d.logs || []).map(log => ({
+          source: log.source || 'unknown',
+          action: log.action || 'unknown',
+          message: log.message || '',
+          timestamp: log.timestamp || new Date().toISOString(),
+          level: log.level || 'info',
+          destinations: [],
+          isCached: true,
+        }));
+        setCachedEvents(cached.slice(0, 120));
+      })
+      .catch(() => setCachedEvents([]))
+      .finally(() => setLoadingCached(false));
+  }, [events.length]);
 
   const displayEvents = events.length > 0 ? events : cachedEvents;
   const isCachedMode = events.length === 0 && cachedEvents.length > 0;
@@ -674,12 +679,14 @@ function LiveFeed({ events, actionFilter, setActionFilter, newCount }) {
         {shown.map((ev, i) => {
           const sN  = NODES[ev.source];
           const age = !ev.isCached ? (Date.now() - new Date(ev.timestamp).getTime()) / 1000 : null;
+          const isFresh = age !== null && age < 12;
+          const isNew   = age !== null && age < 8;
+          const key = `${ev.timestamp}|${ev.source}|${ev.action}|${i}`;
           return (
-            <div key={i} className={`mf-fi lvl-${ev.level}${age && age < 12 ? " fresh" : ""}${ev.isCached ? " cached" : ""}`}>
+            <div key={key} className={`mf-fi lvl-${ev.level}${isFresh ? " fresh" : ""}${ev.isCached ? " cached" : ""}`}>
               <div className="mf-fi-head">
                 <span className="mf-fi-ts">{fmtTime(ev.timestamp)}</span>
-                {age && age < 8 && <span className="mf-fi-new">NEW</span>}
-                {ev.isCached && <span className="mf-fi-new" style={{ background: 'var(--muted-2)' }}>CACHED</span>}
+                {isNew && <span className="mf-fi-new">NEW</span>}
                 <span className="mf-fi-src" style={{ color: sN?.color || "var(--muted)" }}>
                   {sN?.label || ev.source}
                 </span>
@@ -809,8 +816,7 @@ function MessageFlowScreen() {
   const [actionFilter, setActionFilter] = useState(null);
 
   // Stable set of event keys we've already displayed — not reset on re-render
-  const seenKeys   = useRef(new Set());
-  const newCountTs = useRef(Date.now());
+  const seenKeys = useRef(new Set());
 
   // ── Fetch ──
   const fetchData = useCallback(() => {
@@ -832,8 +838,6 @@ function MessageFlowScreen() {
         if (incoming.length > 0) {
           setLiveEvents(prev => [...incoming, ...prev].slice(0, 400));
           setNewCount(n => n + incoming.length);
-          // Auto-clear the "new" count after 6 s
-          setTimeout(() => setNewCount(0), 6000);
         }
       })
       .catch(e => { setError(e.message); setLoading(false); });
@@ -853,6 +857,13 @@ function MessageFlowScreen() {
     const id = setInterval(fetchData, 10_000);
     return () => clearInterval(id);
   }, [autoRefresh, fetchData]);
+
+  // Auto-clear the "new" badge 6s after it last changed
+  useEffect(() => {
+    if (newCount === 0) return;
+    const id = setTimeout(() => setNewCount(0), 6000);
+    return () => clearTimeout(id);
+  }, [newCount]);
 
   // Track mouse for tooltip
   const handleMouseMove = useCallback(e => {
