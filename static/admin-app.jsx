@@ -1068,9 +1068,11 @@ function App() {
       fetch("/api/monitoring/status")
         .then(r => r.json())
         .then(d => {
+          const seen = new Set();
           (d.services || []).forEach(svc => {
             const id = svc.service;
             const live = Boolean(svc.live);
+            seen.add(id);
             const prev = prevSvcStatus.current[id];
             if (prev !== undefined && prev !== live) {
               addToast(
@@ -1079,6 +1081,10 @@ function App() {
               );
             }
             prevSvcStatus.current[id] = live;
+          });
+          // Remove stale entries for services no longer reported
+          Object.keys(prevSvcStatus.current).forEach(id => {
+            if (!seen.has(id)) delete prevSvcStatus.current[id];
           });
         })
         .catch(() => {});
