@@ -71,7 +71,23 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 Visit: `http://localhost:8000`
 
-### 4. Test New Endpoints
+### 5. Agent Logic & Security Tests (Regression)
+A new test suite verifies the core agent loop, Write-Gate, and security ownership checks.
+
+```bash
+# Run logic tests
+python -m unittest tests/test_agent_logic.py -v
+```
+
+**What it tests:**
+- ✅ **Bug 6:** Confirmation matching with punctuation (e.g., "ja, doe maar!").
+- ✅ **Bug 7:** Card extraction turn-isolation (no stale data).
+- ✅ **Bug 4:** Duplicate tool call detection via JSON normalization.
+- ✅ **Bug 10:** MCP cache exclusion for write tools (`enroll`, `unenroll`).
+
+---
+
+### 6. Visual Testing in Browser
 
 **Check Servers Status:**
 ```bash
