@@ -45,35 +45,35 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
                 host=_DB_HOST, port=_DB_PORT,
                 user=_DB_USER, password=_DB_PASS, dbname=_DB_NAME,
             )
-                conn = p.getconn()
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS chatbot_logs (
-                                id             SERIAL PRIMARY KEY,
-                                source         TEXT NOT NULL,
-                                level          TEXT NOT NULL,
-                                action         TEXT,
-                                message        TEXT,
-                                timestamp      TEXT NOT NULL,
-                                correlation_id TEXT,
-                                created_at     DOUBLE PRECISION NOT NULL,
-                                UNIQUE (correlation_id)
-                            )
-                        """)
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS chatbot_log_refresh (
-                                service      TEXT PRIMARY KEY,
-                                last_refresh DOUBLE PRECISION NOT NULL
-                            )
-                        """)
-                    conn.commit()
-                finally:
-                    p.putconn(conn)
-                _pool = p
-            except Exception as e:
-                _pool_next_retry = time.time() + _RETRY_COOLDOWN
-                _log.error("log_store: PostgreSQL unavailable, retrying in %ds: %s", int(_RETRY_COOLDOWN), e)
+            conn = p.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS chatbot_logs (
+                            id             SERIAL PRIMARY KEY,
+                            source         TEXT NOT NULL,
+                            level          TEXT NOT NULL,
+                            action         TEXT,
+                            message        TEXT,
+                            timestamp      TEXT NOT NULL,
+                            correlation_id TEXT,
+                            created_at     DOUBLE PRECISION NOT NULL,
+                            UNIQUE (correlation_id)
+                        )
+                    """)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS chatbot_log_refresh (
+                            service      TEXT PRIMARY KEY,
+                            last_refresh DOUBLE PRECISION NOT NULL
+                        )
+                    """)
+                conn.commit()
+            finally:
+                p.putconn(conn)
+            _pool = p
+        except Exception as e:
+            _pool_next_retry = time.time() + _RETRY_COOLDOWN
+            _log.error("log_store: PostgreSQL unavailable, retrying in %ds: %s", int(_RETRY_COOLDOWN), e)
     return _pool
 
 
