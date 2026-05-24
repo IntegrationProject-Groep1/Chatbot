@@ -806,22 +806,18 @@ function FeedItem({ ev, onSelect, edgeIdx }) {
       style={{ "--svc-c": nc(sN), "--svc-c-dst": nc(tN), cursor: onSelect ? "pointer" : "default" }}
       onClick={handleClick}
       title={dst ? `Selecteer: ${sN?.label || ev.source} → ${tN?.label || dst}` : undefined}>
-      <div className="mf-fi-ts">
-        {fmtTime(ev.timestamp)}
-        {!ev.isCached && <span className="ago">{ago(ev.timestamp)}</span>}
-        {ev.isCached && <span className="ago" style={{ color: "var(--muted-3)" }}>cache</span>}
+      <div className="mf-fi-top">
+        <span className="mf-fi-src">{sN?.label || ev.source}</span>
+        {tN && <>
+          <span className="mf-fi-arrow">→</span>
+          <span className="mf-fi-dst">{tN.label}</span>
+        </>}
+        <span className="mf-fi-action">{ACTION_NL[ev.action] || ev.action}</span>
+        <span className="mf-fi-ts">
+          {ev.isCached ? "cache" : fmtTime(ev.timestamp)}
+        </span>
       </div>
-      <div className="mf-fi-body">
-        <div className="mf-fi-line1">
-          <span className="mf-fi-src">{sN?.label || ev.source}</span>
-          {tN && <>
-            <span className="mf-fi-arrow">→</span>
-            <span className="mf-fi-dst">{tN.label}</span>
-          </>}
-          <span className="mf-fi-action">{ACTION_NL[ev.action] || ev.action}</span>
-        </div>
-        {ev.message && <div className="mf-fi-msg" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{ev.message}</div>}
-      </div>
+      {ev.message && <div className="mf-fi-msg">{ev.message}</div>}
     </div>
   );
 }

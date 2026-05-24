@@ -3605,32 +3605,31 @@ button.mon-row:focus-visible {
 
 /* Feed items */
 .mf-fi {
-  display: grid;
-  grid-template-columns: 44px 1fr;
-  gap: 0 6px;
-  padding: 7px 10px 7px 0;
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 8px 10px 8px 12px;
   border-bottom: 1px solid var(--line);
   border-left: 3px solid var(--line-2);
   transition: background .1s;
   position: relative;
+  cursor: default;
 }
 .mf-fi:hover { background: var(--surface-2); }
-.mf-fi.cached { opacity: 0.7; }
+.mf-fi.cached { opacity: 0.65; }
 .mf-fi.lvl-error {
   border-left-color: var(--hot);
-  background: color-mix(in srgb, var(--hot-soft) 22%, transparent);
+  background: color-mix(in srgb, var(--hot-soft) 18%, transparent);
 }
-.mf-fi.lvl-error:hover { background: color-mix(in srgb, var(--hot-soft) 35%, transparent); }
+.mf-fi.lvl-error:hover { background: color-mix(in srgb, var(--hot-soft) 30%, transparent); }
 .mf-fi.lvl-warning {
   border-left-color: var(--warn);
-  background: color-mix(in srgb, var(--warn-soft) 15%, transparent);
+  background: color-mix(in srgb, var(--warn-soft) 12%, transparent);
 }
-.mf-fi.lvl-warning:hover { background: color-mix(in srgb, var(--warn-soft) 28%, transparent); }
+.mf-fi.lvl-warning:hover { background: color-mix(in srgb, var(--warn-soft) 24%, transparent); }
 .mf-fi.lvl-info { border-left-color: var(--primary-line); }
 
 /* entering animation for new items — slide-in + background flash */
 @keyframes mf-fi-in {
-  0%   { transform: translateY(-12px); opacity: 0; }
+  0%   { transform: translateY(-10px); opacity: 0; }
   100% { transform: translateY(0); opacity: 1; }
 }
 @keyframes mf-fi-flash {
@@ -3642,43 +3641,28 @@ button.mon-row:focus-visible {
   100% { background: transparent; }
 }
 .mf-fi.entering {
-  animation: mf-fi-in .26s ease-out forwards, mf-fi-flash 1.4s ease-out forwards;
+  animation: mf-fi-in .22s ease-out forwards, mf-fi-flash 1.4s ease-out forwards;
 }
 .mf-fi.entering.lvl-error {
-  animation: mf-fi-in .26s ease-out forwards, mf-fi-flash-hot 1.6s ease-out forwards;
+  animation: mf-fi-in .22s ease-out forwards, mf-fi-flash-hot 1.6s ease-out forwards;
 }
 
-.mf-fi-ts {
-  display: flex; flex-direction: column; align-items: flex-end;
-  padding-top: 2px; padding-right: 2px;
-  font: 500 9px/1.3 var(--font-mono);
-  color: var(--muted-3);
-}
-.mf-fi-ts .ago {
-  font-size: 9px;
-  color: var(--muted-3);
-  margin-top: 2px;
-}
-.mf-fi-body {
-  display: flex; flex-direction: column; gap: 3px;
-  min-width: 0;
-}
-.mf-fi-line1 {
-  display: flex; align-items: center; gap: 4px;
-  flex-wrap: wrap; min-width: 0;
+/* top row: source → dest + action badge + timestamp */
+.mf-fi-top {
+  display: flex; align-items: center; gap: 5px; min-width: 0;
 }
 .mf-fi-src {
-  font: 700 11.5px/1 var(--font);
+  font: 700 11px/1 var(--font);
   color: var(--svc-c, var(--ink));
-  flex-shrink: 0;
+  flex-shrink: 0; white-space: nowrap;
 }
 .mf-fi-arrow {
-  color: var(--muted-3); font-size: 10px; flex-shrink: 0;
+  color: var(--muted-3); font-size: 9px; flex-shrink: 0;
 }
 .mf-fi-dst {
-  font: 600 11px/1 var(--font);
-  color: var(--svc-c-dst, var(--muted));
-  flex-shrink: 0;
+  font: 500 10.5px/1 var(--font);
+  color: var(--svc-c-dst, var(--muted-2));
+  flex-shrink: 0; white-space: nowrap;
 }
 .mf-fi-action {
   margin-left: auto;
@@ -3686,19 +3670,29 @@ button.mon-row:focus-visible {
   background: var(--primary-soft);
   border: 1px solid var(--primary-line);
   border-radius: 4px;
-  padding: 1px 6px;
+  padding: 2px 6px;
   font: 600 9px/1.4 var(--font-mono);
   color: var(--primary); flex-shrink: 0;
-  letter-spacing: .02em;
+  letter-spacing: .03em; white-space: nowrap;
 }
 .mf-fi.lvl-error   .mf-fi-action { background: var(--hot-soft);  border-color: color-mix(in srgb, var(--hot) 25%, transparent);  color: var(--hot); }
 .mf-fi.lvl-warning .mf-fi-action { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--warn); }
+.mf-fi-ts {
+  font: 500 9px/1 var(--font-mono);
+  color: var(--muted-3); flex-shrink: 0;
+  white-space: nowrap;
+}
 .mf-fi-msg {
-  font: 400 10.5px/1.4 var(--font-mono);
+  font: 400 10.5px/1.45 var(--font-mono);
   color: var(--muted); word-break: break-word;
   overflow: hidden; text-overflow: ellipsis;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
+
+/* legacy grid classes — keep for compatibility */
+.mf-fi-ts .ago { display: none; }
+.mf-fi-body { display: contents; }
+.mf-fi-line1 { display: contents; }
 
 /* ============================================================
    OVERVIEW DASHBOARD — Service cards & grid
