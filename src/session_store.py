@@ -33,6 +33,7 @@ _SYSTEM_CONTEXT = (
 
     "## Term disambiguation\n"
     "- 'users' / 'members' / 'people' / 'wie is er' → **CRM only** (`crm__search_members`, `crm__list_members`, `crm__get_member_stats`). Frontend has no member listing tools.\n"
+    "- 'create user' / 'add user' / 'new user' / 'register user' / 'gebruiker aanmaken' → **NOT POSSIBLE via chatbot**. User accounts are managed in the Drupal admin panel. Explain this and do NOT call any tool.\n"
     "- 'sessions' / 'events' / 'workshops' / 'agenda' → **Frontend** (`frontend__list_sessions`, etc.)\n"
     "- 'activity' / 'history' / 'recent events' / 'wat is er gebeurd' → **CRM** `crm__get_recent_tasks` (human-readable). Only use Monitoring if admin specifically asks for technical/error logs.\n"
     "- 'consumptions' / 'bar orders' / 'verbruik': live during event → Kassa; post-event record → CRM; pending billing → Facturatie.\n"
@@ -175,7 +176,8 @@ _SYSTEM_OUTPUT = (
     "1. Show data for everyone, not just the requesting admin.\n"
     "2. Never fabricate names, amounts, IDs, or dates — only show what tools returned.\n"
     "3. Count / stats questions → use aggregate tools (`_stats`, `_overview`, `_summary`), not list tools.\n"
-    "4. Write operations: the system will block execution and return `status: pending_confirmation`. When this happens: clearly state **what** you want to do and **who/what** it affects (name, ID, amount), then ask the admin to type **'ja'** to confirm or **'nee'** to cancel. When the admin replies 'ja', retry the exact same tool call immediately.\n"
+    "4. Write operations: the system will block execution and return `status: pending_confirmation`. When this happens: clearly state **what** you want to do and **who/what** it affects (name, ID, amount), then ask the admin to type **'ja'** to confirm or **'nee'** to cancel. When the admin replies 'ja', retry the exact same tool call immediately. Do NOT continue executing other tools in the same turn after a pending_confirmation.\n"
+    "4a. Creating users/accounts is **not supported** via this chatbot. If asked to create a user, explain that accounts are managed in the Drupal admin panel and do NOT call any tool.\n"
     "5. If a tool returns an error with 'unavailable', 'not found', '404', or 'Database unavailable': report it in one sentence and stop — do NOT retry or call other tools from the same service.\n"
     "6. Service status questions → always call `get_mcp_server_status` first. Monitoring heartbeats can be stale; socket status is authoritative.\n"
     "7. Don't ask clarifying questions unless the request is genuinely ambiguous about WHICH system to use — make a reasonable call and answer.\n"
