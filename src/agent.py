@@ -123,6 +123,33 @@ _LOCAL_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_user",
+            "description": (
+                "Delete a user from the identity service and trigger the UserDeleted cascade across ALL services "
+                "(CRM, Kassa, Facturatie, Frontend). WRITE OPERATION — confirm with admin before calling. "
+                "ALWAYS resolve the master_uuid via crm__get_member_by_email first — never guess it. "
+                "This is irreversible: the user is removed from identity, CRM is soft-deleted, "
+                "Kassa wallet is zeroed, Facturatie invoices are cancelled, and frontend enrollments are removed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "master_uuid": {
+                        "type": "string",
+                        "description": "The user's master_uuid from the identity/CRM system. Resolve via crm__get_member_by_email first.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Written reason for deletion (required for audit trail). Example: 'GDPR erasure request — confirmed by user'.",
+                    },
+                },
+                "required": ["master_uuid", "reason"],
+            },
+        },
+    },
 ]
 
 
@@ -184,6 +211,18 @@ async def _handle_local_tool(name: str, args: dict) -> str | None:
         if not emails:
             return json.dumps({"error": "emails list is empty"})
         return await _batch_crm_lookup("crm__get_member_by_email", "email", emails)
+    if name == "delete_user":
+        master_uuid = args.get("master_uuid", "").strip()
+        reason = args.get("reason", "").strip()
+        if not master_uuid:
+            return json.dumps({"error": "master_uuid is required", "success": False})
+        if not reason:
+            return json.dumps({"error": "reason is required", "success": False})
+        from downstream_tools import delete_identity_user, DownstreamConfig
+        cfg = DownstreamConfig()
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, delete_identity_user, master_uuid, reason, cfg)
+        return json.dumps(result)
     return None
 
 
