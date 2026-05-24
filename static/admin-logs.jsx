@@ -1,19 +1,31 @@
 /* eslint-disable no-undef */
 /* ============================================================
-   Logs Screen — fullscreen live monitoring view
-   Polls /api/monitoring/errors (Monitoring MCP) every 30s.
+   Logs Screen — live monitoring with historical time-range browsing.
+   Live mode: polls /api/logs/query every 10s, rolling 300 entries.
+   Historical mode: fetches once per selection, reads from DB or MCP.
    ============================================================ */
 
 const LOG_SERVICES = [
-  { id: "kassa",      label: "Kassa",      svc: "kassa"      },
-  { id: "facturatie", label: "Facturatie", svc: "facturatie" },
-  { id: "crm",        label: "CRM",        svc: "crm"        },
-  { id: "frontend",   label: "Frontend",   svc: "frontend"   },
-  { id: "planning",   label: "Planning",   svc: "planning"   },
-  { id: "mailing",    label: "Mailing",    svc: "mailing"    },
-  { id: "identity-service", label: "Identity", svc: "identity-service" },
-  { id: "monitoring", label: "Monitoring", svc: "monitoring" },
+  { id: "kassa",           label: "Kassa"      },
+  { id: "facturatie",      label: "Facturatie" },
+  { id: "crm",             label: "CRM"        },
+  { id: "frontend",        label: "Frontend"   },
+  { id: "planning",        label: "Planning"   },
+  { id: "mailing",         label: "Mailing"    },
+  { id: "identity-service",label: "Identity"   },
+  { id: "monitoring",      label: "Monitoring" },
 ];
+
+const TIME_MODES = [
+  { id: "live", label: "Live",   hours: null  },
+  { id: "15m",  label: "15 min", hours: 0.25  },
+  { id: "1h",   label: "1 uur",  hours: 1     },
+  { id: "6h",   label: "6 uur",  hours: 6     },
+  { id: "24h",  label: "24 uur", hours: 24    },
+];
+
+const LIVE_LIMIT  = 300;
+const LIVE_POLL   = 10000; // ms
 
 function pad(n) { return String(n).padStart(2, "0"); }
 
@@ -28,18 +40,18 @@ function tsRawFromIso(iso) {
   return new Date(iso).getTime();
 }
 
-function groupBySource(errors) {
+function groupBySource(logs) {
   const out = {};
-  errors.forEach((e) => {
-    const src = (e.source || "unknown").toLowerCase();
+  logs.forEach((e) => {
+    const src = (e.source || e.system || "unknown").toLowerCase();
     if (!out[src]) out[src] = [];
     out[src].push({
-      id: e.correlation_id || `${src}-${e["@timestamp"] || Math.random()}`,
-      ts: tsFromIso(e["@timestamp"]),
-      tsRaw: tsRawFromIso(e["@timestamp"]),
-      level: (e.level || "info").toLowerCase(),
-      action: e.action || "—",
-      msg: e.message || "",
+      id:     e.correlation_id || `${src}-${e["@timestamp"] || Math.random()}`,
+      ts:     tsFromIso(e["@timestamp"]),
+      tsRaw:  tsRawFromIso(e["@timestamp"]),
+      level:  (e.level  || "info").toLowerCase(),
+      action: e.action  || "—",
+      msg:    e.message || e.log_message || "",
     });
   });
   return out;
@@ -55,59 +67,73 @@ function computeStats(entries) {
   return Object.values(byAction).sort((a, b) => b.count - a.count).slice(0, 6);
 }
 
-function LogsScreen({ levelFilter, setLevelFilter, query, setQuery, themeName }) {
+function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
+  const [timeMode, setTimeMode]   = React.useState("live");
+  const [svcFilter, setSvcFilter] = React.useState("all");
   const [logsBySvc, setLogsBySvc] = React.useState({});
-  const [loading, setLoading] = React.useState(true);
-  const [paused, setPaused] = React.useState(false);
-  const [refreshSecs, setRefreshSecs] = React.useState(0);
-  const [now, setNow] = React.useState(Date.now());
+  const [loading, setLoading]     = React.useState(true);
+  const [paused, setPaused]       = React.useState(false);
+  const [countdown, setCountdown] = React.useState(0);
+  const [now, setNow]             = React.useState(Date.now());
+  const [liveError, setLiveError] = React.useState(null);
+  const [dataSource, setDataSource] = React.useState("live");
+
+  const buildUrl = React.useCallback(() => {
+    const p = new URLSearchParams();
+    p.set("limit", LIVE_LIMIT);
+    const mode = TIME_MODES.find(m => m.id === timeMode);
+    if (mode && mode.hours !== null) p.set("hours", mode.hours);
+    if (svcFilter !== "all") p.set("service", svcFilter);
+    if (levelFilter !== "any") p.set("level", levelFilter);
+    return `/api/logs/query?${p}`;
+  }, [timeMode, svcFilter, levelFilter]);
 
   const fetchLogs = React.useCallback(() => {
-    fetch("/api/monitoring/errors?limit=100")
-      .then((r) => r.json())
-      .then((d) => {
-        const grouped = groupBySource(d.errors || []);
-        setLogsBySvc(grouped);
+    fetch(buildUrl())
+      .then(r => r.json())
+      .then(d => {
+        setLogsBySvc(groupBySource(d.logs || []));
         setNow(Date.now());
         setLoading(false);
+        setLiveError(d.error || null);
+        setDataSource(d.source || "live");
+        if (timeMode === "live") setCountdown(LIVE_POLL / 1000);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [buildUrl, timeMode]);
 
+  // Fetch whenever mode or filters change
   React.useEffect(() => {
+    setLoading(true);
     fetchLogs();
-  }, [fetchLogs]);
+  }, [timeMode, svcFilter, levelFilter]);
 
+  // Live polling
   React.useEffect(() => {
-    if (paused) return;
-    const id = setInterval(() => {
-      fetchLogs();
-      setRefreshSecs(0);
-    }, 30000);
+    if (timeMode !== "live" || paused) return;
+    const id = setInterval(fetchLogs, LIVE_POLL);
     return () => clearInterval(id);
-  }, [paused, fetchLogs]);
+  }, [timeMode, paused, fetchLogs]);
 
+  // Countdown ticker
   React.useEffect(() => {
-    const id = setInterval(() => setRefreshSecs((s) => s + 1), 1000);
+    if (timeMode !== "live" || paused) return;
+    const id = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [timeMode, paused]);
 
   const filterEntries = (entries) =>
-    entries.filter((e) => {
+    entries.filter(e => {
       if (levelFilter !== "any" && e.level !== levelFilter) return false;
-      if (
-        query &&
-        !e.msg.toLowerCase().includes(query.toLowerCase()) &&
-        !e.action.toLowerCase().includes(query.toLowerCase())
-      )
-        return false;
+      if (query && !e.msg.toLowerCase().includes(query.toLowerCase()) &&
+          !e.action.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
     });
 
   const totals = React.useMemo(() => {
     let info = 0, warn = 0, err = 0, total = 0;
-    Object.values(logsBySvc).forEach((list) => {
-      list.forEach((e) => {
+    Object.values(logsBySvc).forEach(list => {
+      list.forEach(e => {
         total++;
         if (e.level === "info") info++;
         else if (e.level === "warning" || e.level === "warn") warn++;
@@ -117,14 +143,23 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery, themeName })
     return { info, warn, err, total };
   }, [logsBySvc]);
 
+  const visibleServices = svcFilter === "all"
+    ? LOG_SERVICES
+    : LOG_SERVICES.filter(s => s.id === svcFilter);
+
+  const isLive = timeMode === "live";
+
   return (
     <div className="logs-screen">
-      {/* Toolbar */}
+
+      {/* ── Toolbar ── */}
       <div className="logs-toolbar">
         <div className="logs-toolbar-left">
           <h1>Live Logs</h1>
           <span className="logs-sub">
-            Monitoring MCP · {totals.total} entries fetched · real-time
+            {dataSource === "cache" ? "cached · " : ""}
+            {totals.total} entries
+            {isLive ? " · live" : ` · ${TIME_MODES.find(m => m.id === timeMode)?.label}`}
           </span>
         </div>
         <div className="logs-toolbar-right">
@@ -132,50 +167,84 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery, themeName })
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input
               type="text"
-              placeholder="Filter log message or action…"
+              placeholder="Zoek in bericht of actie…"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={e => setQuery(e.target.value)}
             />
             {query && <button className="logs-search-clear" onClick={() => setQuery("")}>×</button>}
           </div>
           <div className="logs-level-pills">
-            {["any", "info", "warning", "error"].map((lv) => (
+            {["any", "info", "warning", "error"].map(lv => (
               <button
                 key={lv}
                 className={`logs-level-pill ${lv} ${levelFilter === lv ? "is-active" : ""}`}
                 onClick={() => setLevelFilter(lv)}
-              >
-                {lv}
-              </button>
+              >{lv}</button>
             ))}
           </div>
-          <button className={`logs-pause ${paused ? "is-paused" : ""}`} onClick={() => setPaused((p) => !p)}>
-            {paused ? "▶ Resume" : "❚❚ Pause"}
-          </button>
+          {isLive && (
+            <button className={`logs-pause ${paused ? "is-paused" : ""}`} onClick={() => setPaused(p => !p)}>
+              {paused ? "▶ Hervatten" : "❚❚ Pauzeren"}
+            </button>
+          )}
           <span className="logs-refresh mono">
             <span className="dot"></span>
-            {paused ? "paused" : `refresh in ${Math.max(0, 30 - refreshSecs)}s`}
+            {!isLive ? "historisch" : paused ? "gepauzeerd" : `${countdown}s`}
           </span>
         </div>
       </div>
 
+      {/* ── Time mode + service filter bar ── */}
+      <div className="logs-filter-bar">
+        <div className="logs-time-modes">
+          {TIME_MODES.map(m => (
+            <button
+              key={m.id}
+              className={`logs-time-btn ${timeMode === m.id ? "is-active" : ""} ${m.id === "live" ? "is-live" : ""}`}
+              onClick={() => { setTimeMode(m.id); setPaused(false); }}
+            >
+              {m.id === "live" && <span className="dot"></span>}
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <div className="logs-svc-filter">
+          <button
+            className={`logs-svc-btn ${svcFilter === "all" ? "is-active" : ""}`}
+            onClick={() => setSvcFilter("all")}
+          >Alle</button>
+          {LOG_SERVICES.map(s => (
+            <button
+              key={s.id}
+              className={`logs-svc-btn ${svcFilter === s.id ? "is-active" : ""}`}
+              onClick={() => setSvcFilter(svcFilter === s.id ? "all" : s.id)}
+            >{s.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Error banner ── */}
+      {liveError && (
+        <div className="logs-error-banner">{liveError}</div>
+      )}
 
       {loading && (
         <div style={{ padding: "32px", textAlign: "center", color: "var(--muted-2)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-          Loading logs from Monitoring MCP…
+          {isLive ? "Logs ophalen…" : "Historische logs ophalen…"}
         </div>
       )}
 
-      {/* Service panels — 2-column grid */}
+      {/* ── Service panels grid ── */}
       {!loading && (
-        <div className="logs-grid">
-          {LOG_SERVICES.map((s) => (
+        <div className={`logs-grid ${svcFilter !== "all" ? "logs-grid-single" : ""}`}>
+          {visibleServices.map(s => (
             <LogPanel
               key={s.id}
               svc={s}
               logs={filterEntries(logsBySvc[s.id] || [])}
               allLogs={logsBySvc[s.id] || []}
               now={now}
+              isLive={isLive}
             />
           ))}
         </div>
@@ -184,29 +253,29 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery, themeName })
   );
 }
 
-function LogPanel({ svc, logs, allLogs, now }) {
+function LogPanel({ svc, logs, allLogs, now, isLive }) {
   const [showAll, setShowAll] = React.useState(false);
-  const stats = computeStats(allLogs);
-  const shown = showAll ? logs : logs.slice(0, 12);
+  const stats  = computeStats(allLogs);
+  const shown  = showAll ? logs : logs.slice(0, 15);
 
   return (
-    <div className="log-panel" data-svc={svc.svc}>
+    <div className="log-panel" data-svc={svc.id}>
       <div className="log-panel-head">
         <span className="log-panel-icon">{svc.label[0]}</span>
         <h3>{svc.label}</h3>
         <span className="log-panel-docs mono">{allLogs.length} entries</span>
-        <span className="log-panel-live"><span className="dot"></span>live</span>
+        {isLive && <span className="log-panel-live"><span className="dot"></span>live</span>}
       </div>
 
       <div className="log-panel-body">
-        {/* Left: stats breakdown */}
+        {/* Left: breakdown */}
         <div className="log-stats">
           <div className="log-stats-head">
             <span>level</span><span>action</span><span style={{ textAlign: "right" }}>#</span>
           </div>
           {stats.length === 0 && (
             <div style={{ padding: "8px 4px", fontSize: 10, color: "var(--muted-2)", fontFamily: "var(--font-mono)" }}>
-              no data
+              geen data
             </div>
           )}
           {stats.map((row, i) => (
@@ -218,7 +287,7 @@ function LogPanel({ svc, logs, allLogs, now }) {
           ))}
         </div>
 
-        {/* Right: live log entries */}
+        {/* Right: log stream */}
         <div className="log-stream">
           <div className="log-stream-head">
             <span style={{ width: 78 }}>@timestamp</span>
@@ -229,13 +298,13 @@ function LogPanel({ svc, logs, allLogs, now }) {
           <div className="log-stream-body">
             {shown.length === 0 && (
               <div className="log-empty mono">
-                {allLogs.length === 0 ? "no entries from Monitoring MCP" : "no entries match the filter"}
+                {allLogs.length === 0 ? "geen entries" : "geen entries voor dit filter"}
               </div>
             )}
             {shown.map((e, idx) => {
               const fresh = now - e.tsRaw < 60000;
               return (
-                <div key={e.id || idx} className={`log-line ${e.level} ${fresh ? "fresh" : ""}`}>
+                <div key={e.id || idx} className={`log-line ${e.level} ${fresh && isLive ? "fresh" : ""}`}>
                   <span className="log-ts mono">{e.ts}</span>
                   <span className={`log-lvl ${e.level}`}>{e.level}</span>
                   <span className="log-action mono">{e.action}</span>
@@ -244,9 +313,9 @@ function LogPanel({ svc, logs, allLogs, now }) {
               );
             })}
           </div>
-          {logs.length > 12 && (
+          {logs.length > 15 && (
             <button className="log-show-more" onClick={() => setShowAll(s => !s)}>
-              {showAll ? "↑ Show less" : `↓ Show ${logs.length - 12} more`}
+              {showAll ? "↑ Minder tonen" : `↓ Nog ${logs.length - 15} meer`}
             </button>
           )}
         </div>
