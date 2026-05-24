@@ -1423,12 +1423,12 @@ function App() {
   }, [history, loadConversations]);
 
   const onDelete = useCallback((id) => {
-    // Optimistic update
     setHistory(prev => prev.filter(h => h.id !== id));
+    if (id === activeConvId) setActiveConvId(null);
     fetch(`/api/conversations/${id}`, { method: "DELETE" })
       .then(r => { if (!r.ok) loadConversations(); })
       .catch(() => loadConversations());
-  }, [loadConversations]);
+  }, [activeConvId, loadConversations]);
 
   const handleSuggest = (text) => handleSend(text);
   const handleNew = useCallback(() => {
