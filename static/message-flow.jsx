@@ -998,7 +998,7 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
           </div>
         )}
         {visible.slice(0, 200).map((ev, i) => (
-          <FeedItem key={`${ev.timestamp}|${ev.source}|${ev.action}|${i}`} ev={ev}
+          <FeedItem key={eventKey(ev) || i} ev={ev}
             onSelect={onSelect} edgeIdx={edgeIdx} />
         ))}
       </div>
