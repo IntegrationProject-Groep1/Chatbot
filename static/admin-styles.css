@@ -2664,7 +2664,9 @@ button.mon-row:focus-visible {
   transition: border-color .12s, background .12s;
 }
 .logs-dash-bar:hover { background: var(--surface-2); border-color: var(--line-2); }
+.logs-dash-bar.is-active { background: var(--primary-soft); border-color: var(--primary); }
 .logs-dash-bar.has-err { border-color: color-mix(in oklab, var(--hot) 30%, var(--line)); }
+.logs-dash-bar.has-err.is-active { border-color: var(--hot); }
 .logs-dash-bar.idle { opacity: .45; }
 .logs-dash-bar-label {
   font-size: 10px;

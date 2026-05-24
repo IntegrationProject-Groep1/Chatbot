@@ -76,7 +76,7 @@ const ACTION_NL = {
 };
 
 // ── Dashboard strip ────────────────────────────────────────────────────────────
-function LogsDashboard({ logsBySvc, totals, timeMode, onSvcClick }) {
+function LogsDashboard({ logsBySvc, totals, timeMode, onSvcClick, svcFilter }) {
   // Per-service breakdown
   const svcStats = React.useMemo(() => {
     return LOG_SERVICES.map(s => {
@@ -151,7 +151,7 @@ function LogsDashboard({ logsBySvc, totals, timeMode, onSvcClick }) {
             const hasErr  = s.errors > 0;
             return (
               <button key={s.id}
-                className={`logs-dash-bar ${s.total === 0 ? "idle" : ""} ${hasErr ? "has-err" : ""}`}
+                className={`logs-dash-bar ${s.total === 0 ? "idle" : ""} ${hasErr ? "has-err" : ""} ${svcFilter === s.id ? "is-active" : ""}`}
                 onClick={() => onSvcClick(s.id)}
                 title={`${s.label}: ${s.total} entries, ${s.errors} fouten`}>
                 <span className="logs-dash-bar-label">{s.label}</span>
@@ -335,6 +335,7 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
           logsBySvc={logsBySvc}
           totals={totals}
           timeMode={timeMode}
+          svcFilter={svcFilter}
           onSvcClick={(id) => setSvcFilter(svcFilter === id ? "all" : id)}
         />
       )}
