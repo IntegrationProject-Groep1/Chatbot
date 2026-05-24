@@ -1,12 +1,12 @@
 /* eslint-disable no-undef */
 /* ============================================================
    Live Berichtenflow — inter-service message topology
-   Wrapped in IIFE so constants don't clash with admin-flow/admin-data globals.
+   Wrapped in IIFE so constants don't clash with admin-flow globals.
    ============================================================ */
 (function () {
 const { useEffect, useRef, useState, useCallback, useMemo } = React;
 
-// Error boundary — shows the actual error instead of a blank screen
+// ─── Error boundary ───────────────────────────────────────────────────────────
 class MFBoundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err }; }
@@ -23,8 +23,7 @@ class MFBoundary extends React.Component {
   }
 }
 
-// ─── Node layout (cx/cy = centre of each node) ───────────────────────────────
-// Hub layout: CRM at center; inputs top; processing sides; output bottom.
+// ─── Node layout ──────────────────────────────────────────────────────────────
 const SVG_W = 940, SVG_H = 540, NW = 118, NH = 42;
 
 const NODES = {
@@ -38,47 +37,37 @@ const NODES = {
   "monitoring":       { cx: 820, cy: 460, label: "Monitoring", color: "#6366F1" },
 };
 
-// Complete cross-service topology from XML/XSD Contract v2.3.
-// Inactive flows render as animated dashes — "defined but no logs yet".
 const TOPO = [
-  // Frontend outgoing
-  { from: "frontend",         to: "crm"              },  // registrations, users, sessions
-  { from: "frontend",         to: "kassa"            },  // user_registered dual-publish, event_ended
-  { from: "frontend",         to: "planning"         },  // calendar_invite, session requests
-  { from: "frontend",         to: "facturatie"       },  // event_ended, payment_registered (online)
-  // Kassa outgoing
-  { from: "kassa",            to: "crm"              },  // payment_registered, badge, refund
-  { from: "kassa",            to: "frontend"         },  // payment_status, wallet_balance_update
-  // CRM outgoing
-  { from: "crm",              to: "kassa"            },  // new_registration, profile_update
-  { from: "crm",              to: "facturatie"       },  // invoice_request, profile_update
-  { from: "crm",              to: "planning"         },  // session_registration_confirmed
-  { from: "crm",              to: "mailing"          },  // send_mailing
-  { from: "crm",              to: "frontend"         },  // payment_registered (back to portal)
-  { from: "crm",              to: "identity-service" },  // identity_request (RPC)
-  // Facturatie outgoing
-  { from: "facturatie",       to: "crm"              },  // invoice_status, payment_registered
-  { from: "facturatie",       to: "mailing"          },  // send_mailing
-  { from: "facturatie",       to: "frontend"         },  // invoice_available
-  // Planning outgoing — no DB, frontend owns all session data
-  { from: "planning",         to: "frontend"         },  // calendar_invite_confirmed
-  { from: "planning",         to: "mailing"          },  // email notifications
-  // Identity outgoing
-  { from: "identity-service", to: "crm"              },  // user_event fanout
-  // Monitoring outgoing
-  { from: "monitoring",       to: "mailing"          },  // system_alert
+  { from: "frontend",         to: "crm"              },
+  { from: "frontend",         to: "kassa"            },
+  { from: "frontend",         to: "planning"         },
+  { from: "frontend",         to: "facturatie"       },
+  { from: "kassa",            to: "crm"              },
+  { from: "kassa",            to: "frontend"         },
+  { from: "crm",              to: "kassa"            },
+  { from: "crm",              to: "facturatie"       },
+  { from: "crm",              to: "planning"         },
+  { from: "crm",              to: "mailing"          },
+  { from: "crm",              to: "frontend"         },
+  { from: "crm",              to: "identity-service" },
+  { from: "facturatie",       to: "crm"              },
+  { from: "facturatie",       to: "mailing"          },
+  { from: "facturatie",       to: "frontend"         },
+  { from: "planning",         to: "frontend"         },
+  { from: "planning",         to: "mailing"          },
+  { from: "identity-service", to: "crm"              },
+  { from: "monitoring",       to: "mailing"          },
 ];
 
-// Perpendicular offset (px) to separate bidirectional edge pairs visually
 const EDGE_POFF = {
-  "frontend->crm":              -11,  "crm->frontend":              11,
-  "frontend->kassa":            -10,  "kassa->frontend":            10,
-  "frontend->planning":         -11,  "planning->frontend":         11,
-  "frontend->facturatie":       -10,  "facturatie->frontend":       10,
-  "crm->kassa":                 -10,  "kassa->crm":                 10,
-  "crm->facturatie":            -10,  "facturatie->crm":            10,
-  "crm->planning":              -10,  "planning->crm":              10,
-  "crm->identity-service":      -10,  "identity-service->crm":      10,
+  "frontend->crm":             -11,  "crm->frontend":              11,
+  "frontend->kassa":           -10,  "kassa->frontend":            10,
+  "frontend->planning":        -11,  "planning->frontend":         11,
+  "frontend->facturatie":      -10,  "facturatie->frontend":       10,
+  "crm->kassa":                -10,  "kassa->crm":                 10,
+  "crm->facturatie":           -10,  "facturatie->crm":            10,
+  "crm->planning":             -10,  "planning->crm":              10,
+  "crm->identity-service":     -10,  "identity-service->crm":      10,
 };
 
 const ACTION_NL = {
@@ -88,8 +77,6 @@ const ACTION_NL = {
   refund:       "Terugbetaling", xml_validation: "XML-validatie",
   system_error: "Systeemfout",
 };
-const LEVEL_DOT   = { error: "#DC2626", warning: "#D97706", info: "#059669" };
-const LEVEL_STRIP = { error: "#DC2626", warning: "#D97706", info: "var(--line)" };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function pad2(n) { return String(n).padStart(2, "0"); }
@@ -98,13 +85,22 @@ function fmtTime(iso) {
   const d = new Date(iso);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
+function ago(iso) {
+  if (!iso) return "";
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 5)    return "zojuist";
+  if (s < 60)   return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}u`;
+  return `${Math.floor(s / 86400)}d`;
+}
 function timeSince(iso) {
   if (!iso) return null;
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 5)   return "zojuist";
-  if (s < 60)  return `${s}s geleden`;
-  if (s < 3600) return `${Math.floor(s/60)}m geleden`;
-  return `${Math.floor(s/3600)}u geleden`;
+  if (s < 5)    return "zojuist";
+  if (s < 60)   return `${s}s geleden`;
+  if (s < 3600) return `${Math.floor(s / 60)}m geleden`;
+  return `${Math.floor(s / 3600)}u geleden`;
 }
 function fmtRate(r) {
   if (r == null || r === 0) return null;
@@ -131,6 +127,7 @@ function buildEdgeIdx(edges) {
   return idx;
 }
 
+// ─── XML highlighting ─────────────────────────────────────────────────────────
 function highlightXML(raw) {
   if (!raw) return "";
   return raw
@@ -140,84 +137,57 @@ function highlightXML(raw) {
     .replace(/=&quot;([^&]*)&quot;/g, '=&quot;<span class="mf-xml-val">$1</span>&quot;');
 }
 
+// ─── Detail log item (shared by node + edge detail panels) ───────────────────
 function DetailLogItem({ m }) {
   const isXML = m.message && (m.message.includes("<") || m.message.toLowerCase().includes("xml"));
   const lvl = m.level || "info";
   return (
     <div className={`mf-detail-log-item lvl-${lvl}`}>
       <div className="mf-detail-log-head">
-        <span className="mf-detail-ts">{fmtTime(m.timestamp)}</span>
+        <span className="mf-detail-log-ts">{fmtTime(m.timestamp)}</span>
         <span className="mf-detail-lvl-badge" data-lvl={lvl}>{lvl}</span>
         {m.action && <span className="mf-detail-action-chip">{ACTION_NL[m.action] || m.action}</span>}
       </div>
       {isXML
         ? <div className="mf-detail-xml" dangerouslySetInnerHTML={{ __html: highlightXML(m.message) }} />
-        : <div className="mf-detail-text" style={{ fontSize: 11, marginTop: 2 }}>{m.message}</div>
+        : <div className="mf-detail-log-msg">{m.message}</div>
       }
     </div>
   );
 }
 
-// ─── SVG edge path ────────────────────────────────────────────────────────────
-// Uses perpendicular offset (pOff) to separate bidirectional pairs.
-// Diagonal edges (|dy| near |dx|) use corner anchors on the nodes.
+// ─── SVG helpers ──────────────────────────────────────────────────────────────
 function edgePath(fromId, toId) {
   const a = NODES[fromId], b = NODES[toId];
   if (!a || !b) return "";
   const dx = b.cx - a.cx, dy = b.cy - a.cy;
   const pOff = EDGE_POFF[`${fromId}->${toId}`] || 0;
   const absDx = Math.abs(dx), absDy = Math.abs(dy);
-
   let ax, ay, bx, by;
   if (absDy >= absDx) {
-    // Vertical-dominant: connect bottom → top (or top → bottom)
     ay = a.cy + (dy > 0 ?  NH/2 : -NH/2);
     by = b.cy + (dy > 0 ? -NH/2 :  NH/2);
     ax = a.cx + pOff; bx = b.cx + pOff;
-    const c1y = ay + (by - ay) * 0.5;
-    const c2y = by - (by - ay) * 0.5;
+    const c1y = ay + (by - ay) * 0.45;
+    const c2y = by - (by - ay) * 0.45;
     return `M ${ax} ${ay} C ${ax} ${c1y}, ${bx} ${c2y}, ${bx} ${by}`;
-  } else {
-    // Horizontal-dominant: connect right → left (or left → right)
-    ax = a.cx + (dx > 0 ?  NW/2 : -NW/2);
-    bx = b.cx + (dx > 0 ? -NW/2 :  NW/2);
-    const midX = (ax + bx) / 2;
-    ay = a.cy + pOff; by = b.cy + pOff;
-    return `M ${ax} ${ay} C ${midX} ${ay}, ${midX} ${by}, ${bx} ${by}`;
   }
+  ax = a.cx + (dx > 0 ?  NW/2 : -NW/2);
+  bx = b.cx + (dx > 0 ? -NW/2 :  NW/2);
+  const midX = (ax + bx) / 2;
+  ay = a.cy + pOff; by = b.cy + pOff;
+  return `M ${ax} ${ay} C ${midX} ${ay}, ${midX} ${by}, ${bx} ${by}`;
 }
 
-// Renders the count+rate badge mid-edge (extracted from FlowGraph to avoid IIFE in JSX)
-function renderEdgeBadge(e, mid, col) {
-  const txt = e.count > 9999 ? "9999+" : String(e.count);
-  const rate = fmtRate(e.rate);
-  const bw = Math.max(28, txt.length * 7 + 12);
-  return (
-    <g transform={`translate(${mid.x - bw / 2}, ${mid.y - 12})`}>
-      <rect x="0" y="0" width={bw} height="14" rx="5"
-        fill="var(--surface)" stroke={col} strokeWidth="1" opacity="0.96" />
-      <text x={bw / 2} y="10" textAnchor="middle" fontSize="9.5"
-        fontFamily="JetBrains Mono, monospace" fill={col} fontWeight="700">{txt}</text>
-      {rate && (
-        <text x={bw / 2} y="24" textAnchor="middle" fontSize="8"
-          fontFamily="JetBrains Mono, monospace" fill="var(--muted-2)">{rate}</text>
-      )}
-    </g>
-  );
-}
-
-// ─── Edge visual props ────────────────────────────────────────────────────────
 function edgeVis(count, errors) {
-  if (!count) return { w: 0.9, op: 0.3, dash: "6 4", n: 0 };
+  if (!count) return { w: 1, op: 0.28, dash: "5 6", tint: false };
   const errPct = errors / count;
   const tint   = errPct > 0.15;
-  if (count < 5)   return { w: 1.8, op: 0.80, dash: "none", n: 1, tint, speed: 2.0 };
-  if (count < 20)  return { w: 2.6, op: 0.88, dash: "none", n: 2, tint, speed: 1.7 };
-  if (count < 60)  return { w: 3.4, op: 0.94, dash: "none", n: 3, tint, speed: 1.4 };
-  return               { w: 4.2, op: 1.00, dash: "none", n: 4, tint, speed: 1.2 };
+  const sw = Math.min(3.6, 1.4 + Math.log10(count + 1) * 1.4);
+  return { w: sw, op: 0.92, dash: "none", tint };
 }
 
-// ─── One-shot packet — travels an edge once per message ──────────────────────
+// ─── One-shot packet that rides an edge path ──────────────────────────────────
 function Packet({ pkt, onDone }) {
   useEffect(() => {
     const tm = setTimeout(onDone, pkt.dur + (pkt.delay || 0) + 300);
@@ -226,39 +196,36 @@ function Packet({ pkt, onDone }) {
   const col = NODES[pkt.from]?.color || "#2563EB";
   const pid = `ep-${pkt.from}-${pkt.to}`;
   const r = pkt.level === "error" ? 7 : 5.5;
-  const durS = (pkt.dur / 1000).toFixed(3) + "s";
+  const durS   = (pkt.dur / 1000).toFixed(3) + "s";
   const delayS = ((pkt.delay || 0) / 1000).toFixed(3) + "s";
   return (
-    <g style={{ pointerEvents: "none" }}>
-      {/* Halo ring */}
+    <g style={{ pointerEvents: "none" }} filter="url(#mf-glow)">
       <circle r={r + 3} fill={col}>
         <animateMotion dur={durS} begin={delayS} fill="freeze" repeatCount="1">
           <mpath href={`#${pid}`} />
         </animateMotion>
-        <animate attributeName="opacity" values="0;0.3;0.3;0" keyTimes="0;0.08;0.85;1"
-                 dur={durS} begin={delayS} fill="freeze" />
+        <animate attributeName="opacity" values="0;0.28;0.28;0"
+                 keyTimes="0;0.08;0.85;1" dur={durS} begin={delayS} fill="freeze" />
       </circle>
-      {/* White shell */}
       <circle r={r} fill="white">
         <animateMotion dur={durS} begin={delayS} fill="freeze" repeatCount="1">
           <mpath href={`#${pid}`} />
         </animateMotion>
-        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.06;0.9;1"
-                 dur={durS} begin={delayS} fill="freeze" />
+        <animate attributeName="opacity" values="0;1;1;0"
+                 keyTimes="0;0.06;0.9;1" dur={durS} begin={delayS} fill="freeze" />
       </circle>
-      {/* Colored core */}
       <circle r={r - 2} fill={col}>
         <animateMotion dur={durS} begin={delayS} fill="freeze" repeatCount="1">
           <mpath href={`#${pid}`} />
         </animateMotion>
-        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.06;0.9;1"
-                 dur={durS} begin={delayS} fill="freeze" />
+        <animate attributeName="opacity" values="0;1;1;0"
+                 keyTimes="0;0.06;0.9;1" dur={durS} begin={delayS} fill="freeze" />
       </circle>
     </g>
   );
 }
 
-// ─── Node pulse ring — expands outward when a message arrives ────────────────
+// ─── Node pulse ring ──────────────────────────────────────────────────────────
 function NodePulse({ pulse, onDone }) {
   useEffect(() => {
     const tm = setTimeout(onDone, 900);
@@ -277,8 +244,27 @@ function NodePulse({ pulse, onDone }) {
   );
 }
 
+// ─── Sparkline ────────────────────────────────────────────────────────────────
+function Sparkline({ buckets, width = 64, height = 18 }) {
+  const max = Math.max(1, ...buckets);
+  const dx  = width / Math.max(1, buckets.length - 1);
+  let pts = "";
+  buckets.forEach((v, i) => {
+    const x = (i * dx).toFixed(1);
+    const y = (height - (v / max) * (height - 2) - 1).toFixed(1);
+    pts += (i === 0 ? "M" : "L") + x + " " + y;
+  });
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <path d={pts} fill="none" stroke="var(--primary)" strokeWidth="1.4"
+            strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // ─── SVG flow graph ───────────────────────────────────────────────────────────
-function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, packets, onPacketDone, pulses, onPulseDone }) {
+function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
+                     packets, onPacketDone, pulses, onPulseDone }) {
   const getStatus = id => {
     const h = nodeHealth[id] || {};
     if (h.live === true)  return "online";
@@ -286,43 +272,54 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, 
     return "unknown";
   };
   const isNodeActive = id =>
-    TOPO.some(({ from, to }) => (from === id || to === id) && (edgeIdx[`${from}->${to}`]?.count || 0) > 0);
+    TOPO.some(({ from, to }) => (from === id || to === id) &&
+      (edgeIdx[`${from}->${to}`]?.count || 0) > 0);
+
+  // Focus set: when something is selected, dim everything not connected
+  const focusSet = useMemo(() => {
+    if (!selected) return null;
+    const s = new Set();
+    if (selected.type === "node") {
+      s.add(selected.id);
+      TOPO.forEach(({ from, to }) => {
+        if (from === selected.id || to === selected.id) { s.add(from); s.add(to); }
+      });
+    } else if (selected.type === "edge") {
+      s.add(selected.from); s.add(selected.to);
+    }
+    return s;
+  }, [selected]);
 
   return (
     <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMidYMid meet"
       style={{ width: "100%", height: "100%", display: "block" }}>
       <defs>
         <filter id="mf-glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
           <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
         </filter>
-        <filter id="mf-glow-sm" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="blur" />
-          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-        <marker id="mf-arr-idle" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto">
-          <path d="M 0 0 L 10 5 L 0 10 z" fill="#C7CDDE" />
+        <marker id="mf-arr" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="5" markerHeight="5" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
         </marker>
-        {Object.entries(NODES).map(([id, n]) => (
-          <marker key={id} id={`mf-arr-${id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill={n.color} />
-          </marker>
-        ))}
       </defs>
 
-      {/* Layer watermarks */}
+      {/* Layer bands */}
       {[
-        { label: "INPUT / TRIGGERS",  y: 52,  h: 62 },
-        { label: "HUB",               y: 195, h: 62 },
-        { label: "VERWERKING",        y: 340, h: 62 },
-        { label: "OUTPUT",            y: 450, h: 62 },
+        { label: "INPUT / TRIGGERS", y: 52,  h: 62 },
+        { label: "HUB",              y: 195, h: 62 },
+        { label: "VERWERKING",       y: 340, h: 62 },
+        { label: "OUTPUT",           y: 450, h: 62 },
       ].map(({ label, y, h }) => (
         <g key={label}>
           <rect x="4" y={y} width={SVG_W - 8} height={h} rx="10"
-            fill="none" stroke="var(--line)" strokeWidth="1" strokeDasharray="3 5" opacity="0.4" />
-          <rect x="16" y={y - 8} width={label.length * 7.2 + 14} height="16" rx="4" fill="var(--bg)" />
-          <text x="22" y={y + 4.5} fontSize="8.5" fontWeight="700" letterSpacing="0.1em"
-            fontFamily="JetBrains Mono, monospace" fill="var(--muted-3)">{label}</text>
+            fill="none" stroke="var(--line)" strokeWidth="1"
+            strokeDasharray="3 5" opacity="0.35" />
+          <rect x="16" y={y - 8} width={label.length * 7 + 14} height="16"
+            rx="4" fill="var(--bg)" />
+          <text x="22" y={y + 4.5} fontSize="8.5" fontWeight="700"
+            letterSpacing="0.1em" fontFamily="JetBrains Mono, monospace"
+            fill="var(--muted-3)">{label}</text>
         </g>
       ))}
 
@@ -330,62 +327,62 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, 
       {TOPO.map(({ from, to }) => {
         const key  = `${from}->${to}`;
         const e    = edgeIdx[key] || {};
-        const { w, op, dash, n: numP, tint, speed } = edgeVis(e.count, e.errors);
+        const { w, op, dash, tint } = edgeVis(e.count, e.errors);
         const path = edgePath(from, to);
-        const col  = tint ? "#DC2626" : (NODES[from]?.color || "#8B93A8");
-        const sel  = selected?.type === "edge" && selected.key === key;
-        const hov  = hovered?.type === "edge" && hovered.key === key;
+        const col  = tint ? "var(--hot)" : (e.count ? NODES[from]?.color : "var(--line-3)");
+        const isSel = selected?.type === "edge" && selected.key === key;
+        const isHov = hovered?.type  === "edge" && hovered.key  === key;
+        const inFocus = !focusSet || (focusSet.has(from) && focusSet.has(to));
         const pid  = `ep-${from}-${to}`;
-        const mid  = (() => {
-          const a = NODES[from], b = NODES[to];
-          return { x: (a.cx + b.cx) / 2, y: (a.cy + b.cy) / 2 };
-        })();
+        const mid  = { x: (NODES[from].cx + NODES[to].cx) / 2,
+                       y: (NODES[from].cy + NODES[to].cy) / 2 };
+        const badgeW = Math.max(28, String(e.count || 0).length * 7 + 14);
 
         return (
           <g key={key}
+            style={{ opacity: inFocus ? 1 : 0.08, cursor: "pointer", transition: "opacity .2s" }}
             onMouseEnter={() => onHover({ type: "edge", key, from, to, data: e })}
             onMouseLeave={() => onHover(null)}
-            onClick={() => onSelect({ type: "edge", key, from, to, data: e })}
-            style={{ cursor: "pointer" }}>
+            onClick={() => onSelect({ type: "edge", key, from, to, data: e })}>
 
-            {/* Wide transparent hit zone */}
-            <path d={path} fill="none" stroke="transparent" strokeWidth={20} />
+            {/* Hit zone */}
+            <path d={path} fill="none" stroke="transparent" strokeWidth={22} />
 
-            {/* Selection/hover glow */}
-            {(sel || hov) && <path d={path} fill="none" stroke={col} strokeWidth={w + 8} opacity={sel ? 0.2 : 0.12} />}
-
-            {/* Main edge stroke */}
-            <path id={pid} d={path} fill="none"
-              stroke={e.count ? col : "var(--line-3)"}
-              strokeWidth={sel ? w + 1.5 : w}
-              opacity={sel ? 1 : (hov ? Math.min(1, op + 0.15) : op)}
-              strokeDasharray={dash}
-              markerEnd={e.count ? `url(#mf-arr-${from})` : "url(#mf-arr-idle)"}
-            />
-
-            {/* Dashed-edge crawl animation when inactive (CSS only — no SMIL child on path) */}
-            {!e.count && (
-              <path d={path} fill="none" stroke="var(--line-3)" strokeWidth={0.9}
-                strokeDasharray="6 4" opacity={0.3} className="mf-dash-crawl" />
+            {/* Glow on hover / selection */}
+            {(isSel || isHov) && (
+              <path d={path} fill="none" stroke={col}
+                strokeWidth={w + 10} opacity={isSel ? 0.18 : 0.12}
+                filter="url(#mf-glow)" />
             )}
 
-            {/* Animated packets on active edges */}
-            {numP > 0 && Array.from({ length: numP }).map((_, i) => (
-              <circle key={i} r={4.5} fill={col} opacity={0.92}
-                filter={numP >= 3 ? "url(#mf-glow)" : "url(#mf-glow-sm)"}>
-                <animateMotion
-                  dur={`${(speed || 1.8) + i * 0.45}s`}
-                  begin={`${(i / numP) * (speed || 1.8)}s`}
-                  repeatCount="indefinite" calcMode="linear">
-                  <mpath href={`#${pid}`} />
-                </animateMotion>
-              </circle>
-            ))}
+            {/* Hidden path for animateMotion + arrowhead */}
+            <path id={pid} d={path} fill="none" stroke={col}
+              strokeWidth={isSel ? w + 1.2 : (isHov ? w + 0.8 : w)}
+              strokeDasharray={dash} opacity={op}
+              style={{ transition: "stroke-width .15s" }}
+              markerEnd="url(#mf-arr)" />
 
-            {/* Count + rate badge on active edges */}
-            {e.count > 0 && renderEdgeBadge(e, mid, col)}
+            {/* Crawl animation on idle edges */}
+            {!e.count && (
+              <path d={path} fill="none" stroke="var(--line-3)"
+                strokeWidth="0.9" strokeDasharray="5 6"
+                opacity="0.25" className="mf-dash-crawl" />
+            )}
 
-            {/* "Geen logs" label on silent TOPO edges */}
+            {/* Count badge */}
+            {e.count > 0 && (
+              <g transform={`translate(${mid.x - badgeW/2}, ${mid.y - 9})`}
+                pointerEvents="none">
+                <rect width={badgeW} height={17} rx="5"
+                  fill="var(--surface)" stroke={col} strokeWidth="1.2" opacity="0.97" />
+                <text x={badgeW/2} y={11.5} textAnchor="middle" fontSize="10"
+                  fontFamily="JetBrains Mono, monospace" fontWeight="700" fill={col}>
+                  {e.count > 9999 ? "9999+" : e.count}
+                </text>
+              </g>
+            )}
+
+            {/* "geen logs" on defined-but-silent edges */}
             {!e.count && (
               <text x={mid.x} y={mid.y + 3} textAnchor="middle" fontSize="8.5"
                 fontFamily="Inter, sans-serif" fill="var(--muted-3)" fontStyle="italic">
@@ -396,12 +393,12 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, 
         );
       })}
 
-      {/* ── One-shot packets (spawned per new message) ── */}
+      {/* ── One-shot packets ── */}
       {(packets || []).map(pkt => (
         <Packet key={pkt.id} pkt={pkt} onDone={() => onPacketDone(pkt.id)} />
       ))}
 
-      {/* ── Node pulse rings (fired on packet arrival at destination) ── */}
+      {/* ── Node pulse rings ── */}
       {(pulses || []).map(pu => (
         <NodePulse key={pu.id} pulse={pu} onDone={() => onPulseDone(pu.id)} />
       ))}
@@ -410,96 +407,69 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, 
       {Object.entries(NODES).map(([id, node]) => {
         const status   = getStatus(id);
         const active   = isNodeActive(id);
-        const sel      = selected?.type === "node" && selected.id === id;
-        const hov      = hovered?.type  === "node" && hovered.id  === id;
+        const isSel    = selected?.type === "node" && selected.id === id;
+        const isHov    = hovered?.type  === "node" && hovered.id  === id;
+        const inFocus  = !focusSet || focusSet.has(id);
         const isInfra  = id === "monitoring";
-        const hc       = status === "online" ? "#10B981" : status === "offline" ? "#DC2626" : "#8B93A8";
-        const nx       = node.cx - NW/2;
-        const ny       = node.cy - NH/2;
-        const nodeCol  = (!active && !isInfra) ? "#8B93A8" : node.color;
+        const hc       = status === "online" ? "var(--ok)"
+                       : status === "offline" ? "var(--hot)" : "var(--muted-3)";
+        const col      = active ? node.color : "var(--muted-3)";
+        const border   = status === "offline" ? "var(--hot)"
+                       : (isSel ? node.color : (active ? node.color : "var(--line-2)"));
+        const bw       = isSel ? 2.4 : active ? 1.6 : 1;
+        const nx = node.cx - NW/2, ny = node.cy - NH/2;
 
         return (
           <g key={id} transform={`translate(${nx}, ${ny})`}
+            style={{ opacity: inFocus ? 1 : 0.2, cursor: "pointer", transition: "opacity .2s" }}
             onMouseEnter={() => onHover({ type: "node", id, node })}
             onMouseLeave={() => onHover(null)}
-            onClick={() => onSelect({ type: "node", id, node })}
-            style={{ cursor: "pointer" }}>
+            onClick={ev => { ev.stopPropagation(); onSelect({ type: "node", id, node }); }}>
 
-            {/* Selection glow */}
-            {(sel || hov) && (
-              <rect x="-5" y="-5" width={NW+10} height={NH+10} rx="13"
-                fill={nodeCol} opacity={sel ? 0.16 : 0.08} />
+            {/* Hover/sel glow */}
+            {(isSel || isHov) && (
+              <rect x="-6" y="-6" width={NW+12} height={NH+12} rx="14"
+                fill={node.color} opacity={isSel ? 0.14 : 0.09}
+                filter="url(#mf-glow)" />
             )}
 
-            {/* Node body */}
+            {/* Body */}
             <rect x="0" y="0" width={NW} height={NH} rx="9"
-              fill="var(--surface)"
-              stroke={sel ? nodeCol : (active ? nodeCol : (status === "offline" ? "#DC2626" : "var(--line)"))}
-              strokeWidth={sel ? 2.5 : (active ? 1.5 : 1)}
-            />
+              fill="var(--surface)" stroke={border} strokeWidth={bw}
+              style={{ transition: "stroke .2s, stroke-width .15s" }} />
 
-            {/* Color accent bar */}
-            <rect x="0" y="0" width="5" height={NH} rx="2" fill={nodeCol} />
-
-            {/* Health ring + dot */}
-            {status === "online" && (
-              <circle cx={NW-12} cy={NH/2} r="7" fill={hc} opacity="0.15">
-                <animate attributeName="r" values="7;11;7" dur="2.5s" repeatCount="indefinite" />
-                <animate attributeName="opacity" values="0.15;0;0.15" dur="2.5s" repeatCount="indefinite" />
-              </circle>
-            )}
-            <circle cx={NW-12} cy={NH/2} r="4.5" fill={hc} />
-
-            {/* INFRA badge for monitoring */}
-            {isInfra && (
-              <rect x={NW/2-14} y={NH-10} width="28" height="10" rx="3" fill={nodeCol} opacity="0.18" />
-            )}
-            {isInfra && (
-              <text x={NW/2} y={NH-2} textAnchor="middle" fontSize="7.5"
-                fontFamily="JetBrains Mono, monospace" fill={nodeCol} fontWeight="700" letterSpacing="0.06em">
-                INFRA
-              </text>
-            )}
-
-            {/* "Geen logs" subtext for silent services */}
-            {!active && !isInfra && (
-              <text x={NW/2 + 2} y={NH - 5} textAnchor="middle" fontSize="8"
-                fontFamily="Inter, sans-serif" fill="var(--muted-3)">geen logs</text>
+            {/* Tinted fill when active */}
+            {active && (
+              <rect x="0" y="0" width={NW} height={NH} rx="9"
+                fill={node.color} opacity="0.05" />
             )}
 
             {/* Service name */}
-            <text x={NW/2 + 2}
-              y={active || isInfra ? NH/2 + 5 : NH/2 + 1}
-              textAnchor="middle" fontSize="12.5" fontWeight="600"
-              fontFamily="Inter, sans-serif" fill={active ? "var(--ink)" : "var(--muted)"}>
+            <text x={NW/2 - 6} y={NH/2 + 4.5} textAnchor="middle"
+              fontSize="12" fontWeight="600" fontFamily="Inter, sans-serif"
+              fill={active ? "var(--ink)" : "var(--muted)"}>
               {node.label}
             </text>
+
+            {/* INFRA badge */}
+            {isInfra && (
+              <text x={NW/2 - 6} y={NH - 5} textAnchor="middle"
+                fontSize="7.5" fontWeight="700" letterSpacing="0.08em"
+                fontFamily="JetBrains Mono, monospace"
+                fill={node.color} opacity="0.8">INFRA</text>
+            )}
+
+            {/* Health dot + pulse */}
+            {status === "online" && (
+              <circle cx={NW-9} cy={NH/2} r="4" fill="var(--ok)" opacity="0.35">
+                <animate attributeName="r"       values="4;9;4"        dur="2.6s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.35;0;0.35"  dur="2.6s" repeatCount="indefinite" />
+              </circle>
+            )}
+            <circle cx={NW-9} cy={NH/2} r="4" fill={hc} />
           </g>
         );
       })}
-
-      {/* Legend */}
-      <g transform={`translate(6, ${SVG_H - 82})`}>
-        <rect width="170" height="76" rx="8"
-          fill="var(--surface)" stroke="var(--line)" strokeWidth="1" opacity="0.97" />
-        <text x="10" y="16" fontSize="8" fontWeight="700" letterSpacing="0.1em"
-          fontFamily="JetBrains Mono, monospace" fill="var(--muted-2)">LEGENDA</text>
-        {[
-          { y: 30, col: "#7C3AED", label: "Actieve flow (met berichten)", w: 2.5 },
-          { y: 45, col: "#DC2626", label: "Foutberichten (>15%)",         w: 2.5 },
-          { y: 60, col: "#C7CDDE", label: "Verwachte flow — geen logs",   w: 1, dash: "6 4" },
-          { y: 72, col: "#10B981", dot: true, label: "Service online" },
-        ].map(({ y, col, label, w, dash, dot }) => (
-          <g key={label}>
-            {dot
-              ? <circle cx="18" cy={y} r="4" fill={col} opacity="0.9" />
-              : <line x1="8" y1={y} x2="34" y2={y} stroke={col} strokeWidth={w} strokeDasharray={dash || "none"} />
-            }
-            {!dot && <circle cx="22" cy={y} r="3" fill={col} opacity={dash ? 0.4 : 0.9} />}
-            <text x="34" y={y + 3.5} fontSize="9" fontFamily="Inter, sans-serif" fill="var(--muted)">{label}</text>
-          </g>
-        ))}
-      </g>
     </svg>
   );
 }
@@ -508,158 +478,142 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover, 
 function HoverTooltip({ hovered, edgeIdx, nodeHealth, pos }) {
   if (!hovered || !pos) return null;
 
-  let content;
+  let left = pos.x + 14, top = pos.y - 10;
+  if (left + 280 > window.innerWidth) left = pos.x - 260;
+  if (top  + 200 > window.innerHeight) top = pos.y - 200;
+
+  let body;
   if (hovered.type === "edge") {
     const e   = edgeIdx[hovered.key] || {};
-    const fN  = NODES[hovered.from];
-    const tN  = NODES[hovered.to];
-    const top = Object.entries(e.actions || {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
-    content = (
+    const fN  = NODES[hovered.from], tN = NODES[hovered.to];
+    const top3 = Object.entries(e.actions || {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    body = (
       <>
         <div className="mf-tt-title">
           <span style={{ color: fN?.color }}>{fN?.label || hovered.from}</span>
-          <span className="mf-tt-arrow"> → </span>
+          <span style={{ color: "var(--muted-3)" }}> → </span>
           <span style={{ color: tN?.color }}>{tN?.label || hovered.to}</span>
         </div>
         {e.count
           ? <>
               <div className="mf-tt-row"><span>Berichten</span><b>{e.count}</b></div>
-              {e.errors > 0 && <div className="mf-tt-row hot"><span>Fouten</span><b>{e.errors}</b></div>}
+              {e.errors > 0 && <div className="mf-tt-row hot"><span>Fouten</span><b>{e.errors} ({Math.round(e.errors/e.count*100)}%)</b></div>}
               {fmtRate(e.rate) && <div className="mf-tt-row"><span>Tempo</span><b>{fmtRate(e.rate)}</b></div>}
               {e.lastMsg && <div className="mf-tt-row"><span>Laatste</span><b>{timeSince(e.lastMsg)}</b></div>}
-              {top.length > 0 && (
-                <div className="mf-tt-actions">
-                  {top.map(([a, c]) => (
-                    <span key={a} className="mf-tt-tag">{ACTION_NL[a] || a} {c}</span>
+              {top3.length > 0 && (
+                <div style={{ marginTop: 5, display: "flex", gap: 3, flexWrap: "wrap" }}>
+                  {top3.map(([a, c]) => (
+                    <span key={a} style={{ padding: "1px 6px", background: "var(--surface-3)",
+                      borderRadius: 4, fontSize: 10, fontWeight: 600, color: "var(--ink)" }}>
+                      {ACTION_NL[a] || a} {c}
+                    </span>
                   ))}
                 </div>
               )}
             </>
-          : <div className="mf-tt-nodata">Geen logs in dit tijdvenster</div>
+          : <div className="mf-tt-hint">Verbinding gedefinieerd · geen berichten in venster</div>
         }
       </>
     );
   } else if (hovered.type === "node") {
-    const id     = hovered.id;
-    const h      = nodeHealth[id] || {};
-    const status = h.live === true ? "online" : h.live === false ? "offline" : "onbekend";
-    const node   = NODES[id];
-    const out    = TOPO.filter(t => t.from === id).map(t => ({ ...t, cnt: edgeIdx[`${t.from}->${t.to}`]?.count || 0 }));
-    const inn    = TOPO.filter(t => t.to   === id).map(t => ({ ...t, cnt: edgeIdx[`${t.from}->${t.to}`]?.count || 0 }));
-    content = (
+    const id   = hovered.id;
+    const h    = nodeHealth[id] || {};
+    const stat = h.live === true ? "online" : h.live === false ? "offline" : "onbekend";
+    const node = NODES[id];
+    const out  = TOPO.filter(t => t.from === id);
+    const inn  = TOPO.filter(t => t.to   === id);
+    body = (
       <>
         <div className="mf-tt-title" style={{ color: node?.color }}>{node?.label}</div>
-        <div className="mf-tt-row">
-          <span>Status</span>
-          <b style={{ color: status === "online" ? "#10B981" : status === "offline" ? "#DC2626" : "#8B93A8" }}>
-            {status}
+        <div className="mf-tt-row"><span>Status</span>
+          <b style={{ color: stat === "online" ? "var(--ok)" : stat === "offline" ? "var(--hot)" : "var(--muted)" }}>
+            {stat}
           </b>
         </div>
-        {h.uptime != null && (
-          <div className="mf-tt-row"><span>Uptime</span><b>{h.uptime}s</b></div>
-        )}
-        {out.length > 0 && (
-          <div className="mf-tt-flows">
-            {out.map(t => (
-              <div key={t.to} className="mf-tt-flow-row">
-                <span className="mf-tt-arrow">→</span>
-                <span style={{ color: NODES[t.to]?.color }}>{NODES[t.to]?.label || t.to}</span>
-                <span className="mf-tt-cnt">{t.cnt || "—"}</span>
+        {h.uptime != null && <div className="mf-tt-row"><span>Uptime</span><b>{h.uptime}s</b></div>}
+        <div style={{ marginTop: 6, fontSize: 10.5 }}>
+          {out.map(t => {
+            const cnt = edgeIdx[`${t.from}->${t.to}`]?.count || 0;
+            return (
+              <div key={t.to} style={{ display: "flex", gap: 4, alignItems: "center", padding: "1px 0" }}>
+                <span style={{ color: "var(--muted-3)", fontFamily: "var(--font-mono)", fontSize: 9 }}>→</span>
+                <span style={{ color: NODES[t.to]?.color, fontWeight: 600 }}>{NODES[t.to]?.label || t.to}</span>
+                <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontWeight: 700,
+                  color: cnt ? "var(--ink)" : "var(--muted-3)" }}>{cnt || "—"}</span>
               </div>
-            ))}
-          </div>
-        )}
-        {inn.length > 0 && (
-          <div className="mf-tt-flows">
-            {inn.map(t => (
-              <div key={t.from} className="mf-tt-flow-row">
-                <span style={{ color: NODES[t.from]?.color }}>{NODES[t.from]?.label || t.from}</span>
-                <span className="mf-tt-arrow">→</span>
-                <span>deze</span>
-                <span className="mf-tt-cnt">{t.cnt || "—"}</span>
-              </div>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
       </>
     );
   }
 
-  const style = {
-    position: "fixed",
-    left: pos.x + 14,
-    top:  pos.y - 10,
-    zIndex: 9999,
-    pointerEvents: "none",
-  };
-  // Flip left if near right edge
-  if (pos.x > window.innerWidth - 230) {
-    style.left = pos.x - 210;
-  }
-
   return (
-    <div className="mf-tooltip" style={style}>
-      {content}
+    <div className="mf-tt" style={{ position: "fixed", left, top, zIndex: 9999, pointerEvents: "none" }}>
+      {body}
     </div>
   );
 }
 
-// ─── Click detail panel ────────────────────────────────────────────────────────
+// ─── Detail panel (left rail) ─────────────────────────────────────────────────
 function DetailPanel({ selected, edgeIdx }) {
   if (!selected) return (
-    <div className="mf-detail-empty">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--muted-3)" strokeWidth="1.5">
-        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+    <div className="mf-detail-hint">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <circle cx="11" cy="11" r="7"/><path d="m21 21-3.5-3.5"/>
       </svg>
-      <span>Klik op een service of verbinding</span>
+      <div>Klik op een service of verbinding voor details.</div>
     </div>
   );
 
   if (selected.type === "node") {
     const { id, node } = selected;
-    const out = TOPO.filter(t => t.from === id).map(t => ({ key: `${t.from}->${t.to}`, ...t, d: edgeIdx[`${t.from}->${t.to}`] || {} }));
-    const inn = TOPO.filter(t => t.to   === id).map(t => ({ key: `${t.from}->${t.to}`, ...t, d: edgeIdx[`${t.from}->${t.to}`] || {} }));
-    const totalOut = out.reduce((s, e) => s + (e.d.count || 0), 0);
-    const totalIn  = inn.reduce((s, e) => s + (e.d.count || 0), 0);
+    const out = TOPO.filter(t => t.from === id).map(t => ({
+      key: `${t.from}->${t.to}`, ...t, d: edgeIdx[`${t.from}->${t.to}`] || {}
+    }));
+    const inn = TOPO.filter(t => t.to === id).map(t => ({
+      key: `${t.from}->${t.to}`, ...t, d: edgeIdx[`${t.from}->${t.to}`] || {}
+    }));
+    const totalOut  = out.reduce((s, e) => s + (e.d.count || 0), 0);
+    const totalIn   = inn.reduce((s, e) => s + (e.d.count || 0), 0);
+    const totalErr  = [...out, ...inn].reduce((s, e) => s + (e.d.errors || 0), 0);
+    const recentMsgs = [...out, ...inn]
+      .flatMap(e => e.d.recent || [])
+      .sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""))
+      .slice(0, 12);
 
     return (
       <div className="mf-detail">
         <div className="mf-detail-hdr">
-          <span className="mf-detail-dot" style={{ background: node.color }}></span>
           <b style={{ color: node.color }}>{node.label}</b>
         </div>
-        <div className="mf-detail-kv"><span>Berichten in</span><b>{totalIn}</b></div>
-        <div className="mf-detail-kv"><span>Berichten uit</span><b>{totalOut}</b></div>
+        <div className="mf-detail-kv"><span>Inkomend</span><b>{totalIn}</b></div>
+        <div className="mf-detail-kv"><span>Uitgaand</span><b>{totalOut}</b></div>
+        {totalErr > 0 && <div className="mf-detail-kv hot"><span>Fouten</span><b>{totalErr}</b></div>}
         {out.length > 0 && <div className="mf-detail-sub">Uitgaand</div>}
         {out.map(e => (
-          <div key={e.to} className="mf-detail-flow">
-            <span className="mf-detail-arrow">→</span>
-            <span style={{ color: NODES[e.to]?.color, fontWeight: 500 }}>{NODES[e.to]?.label || e.to}</span>
-            <span className={`mf-detail-cnt ${e.d.count ? "" : "zero"}`}>{e.d.count || "—"}</span>
+          <div key={e.to} style={{ display: "flex", alignItems: "center", padding: "3px 0", fontSize: 11.5 }}>
+            <span style={{ color: "var(--muted-3)", marginRight: 4, fontFamily: "var(--font-mono)", fontSize: 9 }}>OUT</span>
+            <span style={{ color: NODES[e.to]?.color, fontWeight: 600 }}>{NODES[e.to]?.label || e.to}</span>
+            <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontWeight: 700,
+              color: e.d.count ? "var(--ink)" : "var(--muted-3)" }}>{e.d.count || "—"}</span>
           </div>
         ))}
         {inn.length > 0 && <div className="mf-detail-sub">Inkomend</div>}
         {inn.map(e => (
-          <div key={e.from} className="mf-detail-flow">
-            <span style={{ color: NODES[e.from]?.color, fontWeight: 500 }}>{NODES[e.from]?.label || e.from}</span>
-            <span className="mf-detail-arrow">→</span>
-            <span>hier</span>
-            <span className={`mf-detail-cnt ${e.d.count ? "" : "zero"}`}>{e.d.count || "—"}</span>
+          <div key={e.from} style={{ display: "flex", alignItems: "center", padding: "3px 0", fontSize: 11.5 }}>
+            <span style={{ color: "var(--muted-3)", marginRight: 4, fontFamily: "var(--font-mono)", fontSize: 9 }}>IN</span>
+            <span style={{ color: NODES[e.from]?.color, fontWeight: 600 }}>{NODES[e.from]?.label || e.from}</span>
+            <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontWeight: 700,
+              color: e.d.count ? "var(--ink)" : "var(--muted-3)" }}>{e.d.count || "—"}</span>
           </div>
         ))}
-        {(() => {
-          const msgs = [...out, ...inn]
-            .flatMap(e => (e.d.recent || []))
-            .sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""))
-            .slice(0, 10);
-          if (!msgs.length) return null;
-          return <>
-            <div className="mf-detail-sub">Recente berichten</div>
-            <div className="mf-detail-log">
-              {msgs.map((m, i) => <DetailLogItem key={i} m={m} />)}
-            </div>
-          </>;
-        })()}
+        {recentMsgs.length > 0 && <>
+          <div className="mf-detail-sub">Recente berichten</div>
+          <div className="mf-detail-log">
+            {recentMsgs.map((m, i) => <DetailLogItem key={i} m={m} />)}
+          </div>
+        </>}
       </div>
     );
   }
@@ -668,29 +622,33 @@ function DetailPanel({ selected, edgeIdx }) {
     const { from, to, data: e } = selected;
     const fN = NODES[from], tN = NODES[to];
     const actions = Object.entries(e.actions || {}).sort((a, b) => b[1] - a[1]);
-
     return (
       <div className="mf-detail">
-        <div className="mf-detail-hdr" style={{ flexWrap: "wrap", gap: 4 }}>
-          <span style={{ color: fN?.color, fontWeight: 600 }}>{fN?.label || from}</span>
+        <div className="mf-detail-hdr">
+          <b style={{ color: fN?.color }}>{fN?.label || from}</b>
           <span className="mf-detail-arrow"> → </span>
-          <span style={{ color: tN?.color, fontWeight: 600 }}>{tN?.label || to}</span>
+          <b style={{ color: tN?.color }}>{tN?.label || to}</b>
         </div>
         {!e.count
-          ? <div className="mf-nodata-block">Geen berichten in dit venster</div>
+          ? <div style={{ padding: "8px 4px", color: "var(--muted-2)", fontSize: 11.5, fontStyle: "italic" }}>
+              Geen berichten in dit venster
+            </div>
           : <>
               <div className="mf-detail-kv"><span>Berichten</span><b>{e.count}</b></div>
-              {e.errors > 0 && <div className="mf-detail-kv hot"><span>Fouten</span><b>{e.errors} ({Math.round(e.errors/e.count*100)}%)</b></div>}
+              {e.errors > 0 && <div className="mf-detail-kv hot"><span>Fouten</span>
+                <b>{e.errors} ({Math.round(e.errors/e.count*100)}%)</b></div>}
               {fmtRate(e.rate) && <div className="mf-detail-kv"><span>Tempo</span><b>{fmtRate(e.rate)}</b></div>}
               {e.lastMsg && <div className="mf-detail-kv"><span>Laatste</span><b>{timeSince(e.lastMsg)}</b></div>}
               {actions.length > 0 && <>
                 <div className="mf-detail-sub">Per type</div>
-                {actions.map(([a, c]) => (
-                  <div key={a} className="mf-detail-flow">
-                    <span className="mf-detail-tag">{ACTION_NL[a] || a}</span>
-                    <span className="mf-detail-cnt">{c}</span>
-                  </div>
-                ))}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                  {actions.map(([a, c]) => (
+                    <span key={a} className="mf-detail-tag">
+                      {ACTION_NL[a] || a}
+                      <span style={{ marginLeft: 4, color: "var(--muted)" }}>{c}</span>
+                    </span>
+                  ))}
+                </div>
               </>}
               {e.recent?.length > 0 && <>
                 <div className="mf-detail-sub">Recente berichten</div>
@@ -706,239 +664,321 @@ function DetailPanel({ selected, edgeIdx }) {
   return null;
 }
 
-// ─── Live event feed ──────────────────────────────────────────────────────────
-function LiveFeed({ events, actionFilter, setActionFilter, newCount }) {
-  const [cachedEvents, setCachedEvents] = React.useState([]);
-  const [loadingCached, setLoadingCached] = React.useState(false);
-  const hasFetchedCached = React.useRef(false);
+// ─── Left rail ────────────────────────────────────────────────────────────────
+function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, hours }) {
+  const nodeMap = useMemo(() => Object.fromEntries((nodes || []).map(n => [n.id, n])), [nodes]);
 
-  // Load cached logs once when there are no live events yet
-  React.useEffect(() => {
-    if (events.length > 0) {
-      hasFetchedCached.current = true; // live data arrived — no need for cache
-      return;
+  const svcCounts = useMemo(() => {
+    const c = {};
+    for (const id of Object.keys(NODES)) c[id] = 0;
+    for (const ev of liveEvents) {
+      const dst = ev.destinations?.[0];
+      if (c[ev.source] != null) c[ev.source]++;
+      if (dst && c[dst] != null) c[dst]++;
     }
-    if (hasFetchedCached.current) return;
-    hasFetchedCached.current = true;
-    setLoadingCached(true);
-    fetch('/api/logs/cached?limit=100')
-      .then(r => { if (!r.ok) throw new Error(`Server ${r.status}`); return r.json(); })
-      .then(d => {
-        const cached = (d.logs || []).map(log => ({
-          source: log.source || 'unknown',
-          action: log.action || 'unknown',
-          message: log.message || '',
-          timestamp: log.timestamp || new Date().toISOString(),
-          level: log.level || 'info',
-          destinations: [],
-          isCached: true,
-        }));
-        setCachedEvents(cached.slice(0, 120));
-      })
-      .catch(() => setCachedEvents([]))
-      .finally(() => setLoadingCached(false));
-  }, [events.length]);
+    return c;
+  }, [liveEvents]);
 
-  const displayEvents = events.length > 0 ? events : cachedEvents;
-  const isCachedMode = events.length === 0 && cachedEvents.length > 0;
-
-  const actions = useMemo(() => {
-    const cnt = {};
-    displayEvents.forEach(e => { cnt[e.action] = (cnt[e.action] || 0) + 1; });
-    return Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  }, [displayEvents]);
-
-  const shown = useMemo(() => {
-    if (!actionFilter) return displayEvents.slice(0, 120);
-    return displayEvents.filter(e => e.action === actionFilter).slice(0, 120);
-  }, [displayEvents, actionFilter]);
+  const totalMsgs   = useMemo(() => liveEvents.length, [liveEvents]);
+  const activeFlows = useMemo(
+    () => Object.values(edgeIdx).filter(e => e.count > 0).length,
+    [edgeIdx]
+  );
 
   return (
-    <div className="mf-feed">
-      <div className="mf-feed-hdr">
-        <span>Live berichten</span>
-        {isCachedMode && <span className="mf-feed-badge" style={{ background: 'var(--muted)', color: 'var(--surface)' }}>gecached</span>}
-        {newCount > 0 && !isCachedMode && <span className="mf-feed-badge">{newCount} nieuw</span>}
-      </div>
-      <div className="mf-feed-filters">
-        <button className={`mf-fbtn ${!actionFilter ? "on" : ""}`}
-          onClick={() => setActionFilter(null)}>Alles</button>
-        {actions.map(([a, c]) => (
-          <button key={a} className={`mf-fbtn ${actionFilter === a ? "on" : ""}`}
-            onClick={() => setActionFilter(f => f === a ? null : a)}>
-            {ACTION_NL[a] || a} <span>{c}</span>
-          </button>
-        ))}
-      </div>
-      <div className="mf-feed-list">
-        {shown.length === 0 && (
-          <div className="mf-feed-empty">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4">
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 6 6l.91-.91a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 16.92z"/>
-            </svg>
-            <span>Geen berichten in dit tijdvenster</span>
-            <span style={{ fontSize: '10px', color: 'var(--muted-3)', fontFamily: 'var(--font-mono)' }}>
-              {loadingCached ? "Gecachte logs laden…" : "Services zijn mogelijk inactief"}
-            </span>
+    <div className="mf-rail">
+      <div className="mf-rail-section">
+        <h3 className="mf-rail-title">Live <span className="sub">— venster {hours < 1 ? `${Math.round(hours*60)}m` : `${hours}u`}</span></h3>
+        <div className="mf-readout">
+          <div className="mf-rd">
+            <div className="mf-rd-v">{totalMsgs}</div>
+            <div className="mf-rd-l">berichten</div>
           </div>
-        )}
-        {shown.map((ev, i) => {
-          const sN  = NODES[ev.source];
-          const age = !ev.isCached ? (Date.now() - new Date(ev.timestamp).getTime()) / 1000 : null;
-          const isFresh = age !== null && age < 12;
-          const isNew   = age !== null && age < 8;
-          const key = `${ev.timestamp}|${ev.source}|${ev.action}|${i}`;
-          return (
-            <div key={key} className={`mf-fi lvl-${ev.level}${isFresh ? " fresh" : ""}${ev.isCached ? " cached" : ""}`}>
-              <div className="mf-fi-head">
-                <span className="mf-fi-ts">{fmtTime(ev.timestamp)}</span>
-                {isNew && <span className="mf-fi-new">NEW</span>}
-                <span className="mf-fi-src" style={{ color: sN?.color || "var(--muted)" }}>
-                  {sN?.label || ev.source}
-                </span>
-                {ev.destinations?.length > 0 && (
-                  <span className="mf-fi-dst">
-                    {ev.destinations.map(d => NODES[d]?.label || d).join(", ")}
-                  </span>
-                )}
-              </div>
-              <div className="mf-fi-body">
-                <span className="mf-fi-action">{ACTION_NL[ev.action] || ev.action}</span>
-                {ev.message && <span className="mf-fi-msg">{ev.message}</span>}
-              </div>
-            </div>
-          );
-        })}
+          <div className={`mf-rd ${errCount > 0 ? "hot" : ""}`}>
+            <div className="mf-rd-v">{errCount}</div>
+            <div className="mf-rd-l">fouten</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mf-rail-section">
+        <h3 className="mf-rail-title">Services
+          <span className="sub"> {activeFlows}/{TOPO.length} flows actief</span>
+        </h3>
+        <div className="mf-svcs">
+          {Object.entries(NODES).map(([id, node]) => {
+            const nd     = nodeMap[id] || {};
+            const status = nd.live === true ? "online" : nd.live === false ? "offline" : "unknown";
+            const cnt    = svcCounts[id] || 0;
+            const isSel  = selected?.type === "node" && selected.id === id;
+            return (
+              <button key={id}
+                className={`mf-svc ${cnt === 0 ? "idle" : ""} ${isSel ? "on" : ""}`}
+                style={{ "--svc-c": node.color }}
+                onClick={() => onSelect(isSel ? null : { type: "node", id, node })}>
+                <div className="mf-svc-bar" />
+                <div className={`mf-svc-health ${status}`} />
+                <div className="mf-svc-name">{node.label}</div>
+                <div className="mf-svc-count">{cnt || "—"}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mf-rail-section" style={{ flex: 1, minHeight: 0 }}>
+        <h3 className="mf-rail-title">Detail</h3>
+        <DetailPanel selected={selected} edgeIdx={edgeIdx} />
       </div>
     </div>
   );
 }
 
-// ─── Left sidebar ─────────────────────────────────────────────────────────────
-function LeftPanel({ nodes, edgeIdx, selected, onSelect, hours }) {
-  const nodeMap  = useMemo(() => Object.fromEntries((nodes || []).map(n => [n.id, n])), [nodes]);
-  const topFlows = useMemo(() => {
-    const flows = [];
-    for (const { from, to } of TOPO) {
-      const k = `${from}->${to}`;
-      const e = edgeIdx[k];
-      if (e?.count > 0) flows.push({ from, to, key: k, count: e.count, errors: e.errors, rate: e.rate });
-    }
-    return flows.sort((a, b) => b.count - a.count).slice(0, 6);
-  }, [edgeIdx]);
+// ─── Feed item ────────────────────────────────────────────────────────────────
+function FeedItem({ ev }) {
+  const sN = NODES[ev.source];
+  const dst = ev.destinations?.[0];
+  const tN = dst ? NODES[dst] : null;
+  const isNew = !ev.isCached && (Date.now() - new Date(ev.timestamp).getTime()) < 2500;
+  return (
+    <div className={`mf-fi lvl-${ev.level}${isNew ? " entering" : ""}${ev.isCached ? " cached" : ""}`}
+      style={{ "--svc-c": sN?.color || "var(--muted)",
+               "--svc-c-dst": tN?.color || "var(--muted-2)" }}>
+      <div className="mf-fi-ts">
+        {fmtTime(ev.timestamp)}
+        {!ev.isCached && <span className="ago">{ago(ev.timestamp)}</span>}
+        {ev.isCached && <span className="ago" style={{ color: "var(--muted-3)" }}>cache</span>}
+      </div>
+      <div className="mf-fi-body">
+        <div className="mf-fi-line1">
+          <span className="mf-fi-src">{sN?.label || ev.source}</span>
+          {tN && <>
+            <span className="mf-fi-arrow">→</span>
+            <span className="mf-fi-dst">{tN.label}</span>
+          </>}
+          <span className="mf-fi-action">{ACTION_NL[ev.action] || ev.action}</span>
+        </div>
+        {ev.message && <div className="mf-fi-msg">{ev.message}</div>}
+      </div>
+    </div>
+  );
+}
 
-  const totalMsgs   = useMemo(() => topFlows.reduce((s, f) => s + f.count, 0), [topFlows]);
-  const totalErrors = useMemo(() => topFlows.reduce((s, f) => s + f.errors, 0), [topFlows]);
-  const activeFlows = topFlows.length;
+// ─── Filter chips ─────────────────────────────────────────────────────────────
+function FilterChips({ events, actionFilter, setActionFilter, levelFilter, setLevelFilter }) {
+  const topActions = useMemo(() => {
+    const c = {};
+    for (const e of events) c[e.action] = (c[e.action] || 0) + 1;
+    return Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  }, [events]);
+  const lvlCounts = useMemo(() => {
+    const c = { error: 0, warning: 0 };
+    for (const e of events) if (c[e.level] != null) c[e.level]++;
+    return c;
+  }, [events]);
 
   return (
-    <div className="mf-left">
-      {/* Stats strip */}
-      <div className="mf-stats-strip">
-        <div className="mf-stat">
-          <div className="mf-stat-v">{totalMsgs}</div>
-          <div className="mf-stat-l">Berichten</div>
-        </div>
-        <div className={`mf-stat ${totalErrors > 0 ? "hot" : ""}`}>
-          <div className="mf-stat-v">{totalErrors}</div>
-          <div className="mf-stat-l">Fouten</div>
-        </div>
-        <div className="mf-stat">
-          <div className="mf-stat-v">{activeFlows}</div>
-          <div className="mf-stat-l">Flows</div>
-        </div>
-      </div>
-
-      {/* Service health */}
-      <div className="mf-section-lbl">Services</div>
-      <div className="mf-svc-list">
-        {Object.entries(NODES).map(([id, node]) => {
-          const nd     = nodeMap[id] || {};
-          const status = nd.live === true ? "online" : nd.live === false ? "offline" : "onbekend";
-          const hc     = status === "online" ? "#10B981" : status === "offline" ? "#DC2626" : "#8B93A8";
-          const active = TOPO.some(({ from, to }) => (from === id || to === id) && (edgeIdx[`${from}->${to}`]?.count || 0) > 0);
-          const isSel  = selected?.type === "node" && selected.id === id;
-          return (
-            <button key={id} className={`mf-svc ${isSel ? "sel" : ""}`}
-              onClick={() => onSelect({ type: "node", id, node })}>
-              <span className="mf-svc-dot" style={{ background: hc }}></span>
-              <span className="mf-svc-name" style={{ color: active ? node.color : "var(--muted)" }}>
-                {node.label}
-              </span>
-              {active && <span className="mf-svc-pulse"></span>}
-              <span className="mf-svc-status">{status}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Top flows */}
-      {topFlows.length > 0 && <>
-        <div className="mf-section-lbl" style={{ marginTop: 10 }}>
-          Top flows — {hours < 1 ? `${Math.round(hours * 60)}m` : `${hours}h`}
-        </div>
-        <div className="mf-top-flows">
-          {topFlows.map(f => {
-            const fN = NODES[f.from], tN = NODES[f.to];
-            const sel = selected?.type === "edge" && selected.key === f.key;
-            return (
-              <button key={f.key} className={`mf-flow-row ${sel ? "sel" : ""}`}
-                onClick={() => onSelect({ type: "edge", key: f.key, from: f.from, to: f.to, data: edgeIdx[f.key] || {} })}>
-                <span className="mf-flow-bar" style={{ width: `${Math.min(100, (f.count / (topFlows[0]?.count || 1)) * 100)}%`, background: fN?.color || "var(--primary)" }}></span>
-                <span className="mf-flow-label">
-                  <span style={{ color: fN?.color }}>{fN?.label}</span>
-                  <span className="mf-detail-arrow"> → </span>
-                  <span style={{ color: tN?.color }}>{tN?.label}</span>
-                </span>
-                <span className="mf-flow-cnt">{f.count}</span>
-              </button>
-            );
-          })}
-        </div>
-      </>}
-
-      {/* Detail */}
-      <div className="mf-section-lbl" style={{ marginTop: 8 }}>
-        {selected ? (selected.type === "node" ? "Service detail" : "Verbinding detail") : "Detail"}
-      </div>
-      <DetailPanel selected={selected} edgeIdx={edgeIdx} />
+    <div className="mf-chips">
+      <button className={`mf-chip ${!actionFilter && !levelFilter ? "on" : ""}`}
+        onClick={() => { setActionFilter(null); setLevelFilter(null); }}>
+        Alles <span className="mf-chip-c">{events.length}</span>
+      </button>
+      {lvlCounts.error > 0 && (
+        <button className={`mf-chip mf-chip-lvl-error ${levelFilter === "error" ? "on" : ""}`}
+          onClick={() => setLevelFilter(f => f === "error" ? null : "error")}>
+          Fouten <span className="mf-chip-c">{lvlCounts.error}</span>
+        </button>
+      )}
+      {lvlCounts.warning > 0 && (
+        <button className={`mf-chip mf-chip-lvl-warning ${levelFilter === "warning" ? "on" : ""}`}
+          onClick={() => setLevelFilter(f => f === "warning" ? null : "warning")}>
+          Waarsch. <span className="mf-chip-c">{lvlCounts.warning}</span>
+        </button>
+      )}
+      {topActions.map(([a, c]) => (
+        <button key={a}
+          className={`mf-chip ${actionFilter === a ? "on" : ""}`}
+          onClick={() => setActionFilter(f => f === a ? null : a)}>
+          {ACTION_NL[a] || a} <span className="mf-chip-c">{c}</span>
+        </button>
+      ))}
     </div>
+  );
+}
+
+// ─── Live feed panel ──────────────────────────────────────────────────────────
+function Feed({ events, rate, connected, paused, onTogglePause }) {
+  const [actionFilter, setActionFilter] = useState(null);
+  const [levelFilter,  setLevelFilter]  = useState(null);
+  const [search,       setSearch]       = useState("");
+  const [hovering,     setHovering]     = useState(false);
+  const visibleRef = useRef([]);
+  const listRef    = useRef(null);
+
+  // Load cached logs once when live feed is empty
+  const [cachedEvents, setCachedEvents] = useState([]);
+  const hasFetchedCached = useRef(false);
+  useEffect(() => {
+    if (events.length > 0) { hasFetchedCached.current = true; return; }
+    if (hasFetchedCached.current) return;
+    hasFetchedCached.current = true;
+    fetch('/api/logs/cached?limit=100')
+      .then(r => { if (!r.ok) throw new Error(`Server ${r.status}`); return r.json(); })
+      .then(d => {
+        setCachedEvents((d.logs || []).slice(0, 120).map(log => ({
+          source: log.source || "unknown",
+          action: log.action || "unknown",
+          message: log.message || "",
+          timestamp: log.timestamp || new Date().toISOString(),
+          level: log.level || "info",
+          destinations: [],
+          isCached: true,
+        })));
+      })
+      .catch(() => {});
+  }, [events.length]);
+
+  const displayEvents = events.length > 0 ? events : cachedEvents;
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return displayEvents.filter(e => {
+      if (actionFilter && e.action !== actionFilter) return false;
+      if (levelFilter  && e.level  !== levelFilter)  return false;
+      if (q) {
+        const hay = `${e.message} ${e.source} ${(e.destinations || []).join(" ")} ${e.action}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [displayEvents, actionFilter, levelFilter, search]);
+
+  // Freeze list while hovering over it; count stashed new items
+  useEffect(() => {
+    if (!hovering) visibleRef.current = filtered;
+  }, [hovering, filtered]);
+
+  const visible      = hovering ? visibleRef.current : filtered;
+  const stashedCount = hovering
+    ? Math.max(0, filtered.length - (visibleRef.current?.length || 0))
+    : 0;
+
+  const flush = () => {
+    visibleRef.current = filtered;
+    if (listRef.current) listRef.current.scrollTop = 0;
+    setHovering(false);
+  };
+
+  const isCachedMode = events.length === 0 && cachedEvents.length > 0;
+
+  return (
+    <aside className="mf-feed">
+      <header className="mf-feed-head">
+        <div className="mf-feed-title">
+          <span>Live berichten</span>
+          <span className="mf-feed-rate">
+            {connected
+              ? <>{rate.toFixed(1)}<span style={{ color: "var(--muted-3)" }}> msg/s</span></>
+              : <span style={{ color: "var(--warn)" }}>verbinden…</span>}
+            {isCachedMode && <span style={{ marginLeft: 6, color: "var(--muted-2)", fontSize: 10 }}>· gecached</span>}
+          </span>
+        </div>
+        <div className="mf-feed-search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/>
+          </svg>
+          <input type="text" placeholder="Zoek in berichten…"
+            value={search} onChange={e => setSearch(e.target.value)} />
+          {search && (
+            <button onClick={() => setSearch("")} style={{
+              background: "none", border: 0, cursor: "pointer",
+              color: "var(--muted-2)", padding: 0, fontSize: 11
+            }}>✕</button>
+          )}
+        </div>
+        <FilterChips events={displayEvents}
+          actionFilter={actionFilter} setActionFilter={setActionFilter}
+          levelFilter={levelFilter}   setLevelFilter={setLevelFilter} />
+      </header>
+
+      {paused && (
+        <div className="mf-pause-strip" onClick={onTogglePause} style={{ cursor: "pointer" }}>
+          ⏸ Gepauzeerd · klik om te hervatten
+        </div>
+      )}
+
+      <div className="mf-newpill-wrap">
+        <button className={`mf-newpill ${stashedCount > 0 && hovering ? "show" : ""}`}
+          onClick={flush}>
+          <span className="pulse" />
+          {stashedCount} {stashedCount === 1 ? "nieuw bericht" : "nieuwe berichten"}
+        </button>
+      </div>
+
+      <div className="mf-feed-list" ref={listRef}
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}>
+        {visible.length === 0 && (
+          <div className="mf-feed-empty">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="1.4">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <div>Geen berichten</div>
+            <span className="hint">
+              {search || actionFilter || levelFilter
+                ? "Pas filters aan om meer te zien"
+                : "Wachten op nieuwe berichten…"}
+            </span>
+          </div>
+        )}
+        {visible.slice(0, 200).map((ev, i) => (
+          <FeedItem key={`${ev.timestamp}|${ev.source}|${ev.action}|${i}`} ev={ev} />
+        ))}
+      </div>
+    </aside>
   );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 function MessageFlowScreen() {
-  const [data,         setData]         = useState(null);
-  const [loading,      setLoading]      = useState(true);
-  const [error,        setError]        = useState(null);
-  const [hours,        setHours]        = useState(1);
-  const [autoRefresh,  setAutoRefresh]  = useState(true);
-  const [selected,     setSelected]     = useState(null);
-  const [hovered,      setHovered]      = useState(null);
-  const [tooltipPos,   setTooltipPos]   = useState(null);
-  const [liveEvents,   setLiveEvents]   = useState([]);
-  const [newCount,     setNewCount]     = useState(0);
-  const [lastUpdate,   setLastUpdate]   = useState(null);
-  const [actionFilter, setActionFilter] = useState(null);
-  const [packets,      setPackets]      = useState([]);
-  const [pulses,       setPulses]       = useState([]);
+  const [data,        setData]        = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState(null);
+  const [hours,       setHours]       = useState(1);
+  const [paused,      setPaused]      = useState(false);
+  const [connState,   setConnState]   = useState("connected");
+  const [selected,    setSelected]    = useState(null);
+  const [hovered,     setHovered]     = useState(null);
+  const [tooltipPos,  setTooltipPos]  = useState(null);
+  const [liveEvents,  setLiveEvents]  = useState([]);
+  const [packets,     setPackets]     = useState([]);
+  const [pulses,      setPulses]      = useState([]);
+  const [buckets,     setBuckets]     = useState(() => new Array(60).fill(0));
+  const [now,         setNow]         = useState(Date.now());
+
+  const seenKeys  = useRef(new Set());
   const packetSeq = useRef(0);
   const pulseSeq  = useRef(0);
 
-  // Stable set of event keys we've already displayed — not reset on re-render
-  const seenKeys = useRef(new Set());
+  // Tick "now" once/s so ago() timestamps stay live
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // ── Fetch ──
   const fetchData = useCallback(() => {
+    if (paused) return;
     fetch(`/api/monitoring/message-flow?hours=${hours}&limit=1000`)
       .then(r => { if (!r.ok) throw new Error(`Server ${r.status}`); return r.json(); })
       .then(d => {
         setData(d);
-        setLastUpdate(new Date());
         setError(null);
         setLoading(false);
+        setConnState("connected");
 
-        // Only surface genuinely new events to the live feed
         const incoming = (d.recent_events || []).filter(e => {
           const k = eventKey(e);
           if (seenKeys.current.has(k)) return false;
@@ -947,75 +987,84 @@ function MessageFlowScreen() {
         });
         if (incoming.length > 0) {
           setLiveEvents(prev => [...incoming, ...prev].slice(0, 400));
-          setNewCount(n => n + incoming.length);
-          // Spawn one-shot packet per new event on a known edge
+          // Spawn packets
           const topoSet = new Set(TOPO.map(t => `${t.from}->${t.to}`));
           const newPkts = incoming
-            .map(e => ({ ...e, to: e.target || (e.destinations && e.destinations[0]) }))
+            .map(e => ({ ...e, to: e.destinations?.[0] }))
             .filter(e => e.source && e.to && topoSet.has(`${e.source}->${e.to}`))
             .slice(0, 6)
             .map((e, i) => ({
-              id: `pkt-${++packetSeq.current}`,
-              from: e.source,
-              to: e.to,
-              dur: 1500 + Math.random() * 800,
+              id:    `pkt-${++packetSeq.current}`,
+              from:  e.source,
+              to:    e.to,
+              dur:   1500 + Math.random() * 800,
               delay: i * 180,
               level: e.level || "info",
             }));
           if (newPkts.length > 0) {
             setPackets(prev => [...prev.slice(-20), ...newPkts]);
-            // Fire a pulse ring at the destination node timed to packet arrival (~60% of dur)
             newPkts.forEach(pkt => {
-              const arriveMs = (pkt.delay || 0) + pkt.dur * 0.62;
               setTimeout(() => {
                 setPulses(prev => [
                   ...prev.slice(-12),
                   { id: `pu-${++pulseSeq.current}`, nodeId: pkt.to, level: pkt.level },
                 ]);
-              }, arriveMs);
+              }, (pkt.delay || 0) + pkt.dur * 0.62);
             });
           }
         }
       })
       .catch(e => {
         const msg = e.message || String(e);
-        // 502/503 = pod restarting during deploy — show friendlier message
+        setConnState("reconnecting");
         setError(msg.includes("502") || msg.includes("503")
           ? "Server herstart… even geduld"
           : msg);
         setLoading(false);
       });
-  }, [hours]);
+  }, [hours, paused]);
 
-  // Reset live feed when time window changes
+  // Reset on window/pause change
   useEffect(() => {
     seenKeys.current.clear();
     setLiveEvents([]);
-    setNewCount(0);
     setLoading(true);
     fetchData();
   }, [fetchData]);
 
   useEffect(() => {
-    if (!autoRefresh) return;
     const id = setInterval(fetchData, 10_000);
     return () => clearInterval(id);
-  }, [autoRefresh, fetchData]);
+  }, [fetchData]);
 
-  // Auto-clear the "new" badge 6s after it last changed
+  // Bucket throughput (last 60s) for sparkline
   useEffect(() => {
-    if (newCount === 0) return;
-    const id = setTimeout(() => setNewCount(0), 6000);
-    return () => clearTimeout(id);
-  }, [newCount]);
+    const id = setInterval(() => {
+      const cutoff = Date.now() - 60_000;
+      const next = new Array(60).fill(0);
+      for (const e of liveEvents) {
+        const t = new Date(e.timestamp).getTime();
+        if (t > cutoff) {
+          const bi = Math.min(59, Math.max(0, Math.floor((t - cutoff) / 1000)));
+          next[bi]++;
+        }
+      }
+      setBuckets(next);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [liveEvents]);
 
-  // Track mouse for tooltip
-  const handleMouseMove = useCallback(e => {
-    setTooltipPos({ x: e.clientX, y: e.clientY });
-  }, []);
+  const liveRate = useMemo(() => {
+    const cutoff = now - 10_000;
+    return liveEvents.filter(e => new Date(e.timestamp).getTime() > cutoff).length / 10;
+  }, [liveEvents, now]);
 
-  // Derived state
-  const edgeIdx    = useMemo(() => buildEdgeIdx(data?.edges),   [data?.edges]);
+  const errCount = useMemo(
+    () => liveEvents.filter(e => e.level === "error").length,
+    [liveEvents]
+  );
+
+  const edgeIdx    = useMemo(() => buildEdgeIdx(data?.edges), [data?.edges]);
   const nodeHealth = useMemo(() => {
     const h = {};
     for (const n of (data?.nodes || [])) h[n.id] = n;
@@ -1023,12 +1072,17 @@ function MessageFlowScreen() {
   }, [data?.nodes]);
 
   const handleSelect = useCallback(item => {
+    if (!item) { setSelected(null); return; }
     setSelected(prev => {
       if (!prev) return item;
       const same = (item.type === "node" && prev.type === "node" && prev.id === item.id)
                 || (item.type === "edge" && prev.type === "edge" && prev.key === item.key);
       return same ? null : item;
     });
+  }, []);
+
+  const handleMouseMove = useCallback(e => {
+    setTooltipPos({ x: e.clientX, y: e.clientY });
   }, []);
 
   const WINDOWS = [
@@ -1043,52 +1097,80 @@ function MessageFlowScreen() {
     <div className="mf-screen" onMouseMove={handleMouseMove}>
 
       {/* ── Header ── */}
-      <div className="mf-header">
-        <div className="mf-hdr-left">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2.2">
-            <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-          </svg>
-          <h2>Live Berichtenflow</h2>
-          <span className="mf-hdr-sub">Berichten tussen services · {TOPO.length} verbindingen gedefinieerd</span>
-        </div>
-        <div className="mf-hdr-right">
-          <div className="mf-win-group">
-            {WINDOWS.map(({ l, h }) => (
-              <button key={l} className={`mf-win ${hours === h ? "on" : ""}`}
-                onClick={() => { setHours(h); setSelected(null); }}>
-                {l}
-              </button>
-            ))}
-          </div>
-          <button className={`mf-live-btn ${autoRefresh ? "on" : ""}`}
-            onClick={() => setAutoRefresh(v => !v)}>
-            <span className={`mf-live-dot ${autoRefresh ? "pulse" : ""}`}></span>
-            {autoRefresh ? "Live" : "Gepauzeerd"}
-          </button>
-          {lastUpdate && (
-            <span className="mf-hdr-ts">{fmtTime(lastUpdate.toISOString())}</span>
-          )}
-          <button className="mf-refresh-icon" onClick={fetchData} title="Nu vernieuwen">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="23 4 23 10 17 10"/>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      <header className="mf-head">
+        <div className="mf-brand">
+          <div className="glyph">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+              stroke="white" strokeWidth="2.4">
+              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51"  x2="8.59"  y2="10.49"/>
             </svg>
-          </button>
+          </div>
+          Live Berichtenflow
+          <span className="sub">· {TOPO.length} verbindingen</span>
         </div>
-      </div>
+
+        <div className="mf-head-sep" />
+
+        <div className="mf-spark" title="Berichten per seconde (laatste 60s)">
+          <Sparkline buckets={buckets} />
+          <span className="mf-spark-rate">{liveRate.toFixed(1)}</span>
+          <span className="mf-spark-unit">msg/s</span>
+        </div>
+
+        <div className="mf-head-spacer" />
+
+        <div className="mf-windows">
+          {WINDOWS.map(w => (
+            <button key={w.l} className={`mf-win ${hours === w.h ? "on" : ""}`}
+              onClick={() => { setHours(w.h); setSelected(null); }}>
+              {w.l}
+            </button>
+          ))}
+        </div>
+
+        <button
+          className={`mf-live ${paused ? "" : "on"} ${connState === "reconnecting" ? "reconnecting" : ""}`}
+          onClick={() => setPaused(p => !p)}
+          title={paused ? "Klik om live te hervatten" : "Klik om te pauzeren"}>
+          <span className="mf-live-dot" />
+          {paused ? "Gepauzeerd" : connState === "reconnecting" ? "Verbinden…" : "Live"}
+        </button>
+
+        <button className="mf-icon-btn" onClick={fetchData} title="Nu vernieuwen">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+      </header>
 
       {/* ── Body ── */}
       <div className="mf-body">
-        <LeftPanel nodes={data?.nodes} edgeIdx={edgeIdx} selected={selected}
-          onSelect={handleSelect} hours={hours} />
+        <LeftRail
+          nodes={data?.nodes}
+          edgeIdx={edgeIdx}
+          liveEvents={liveEvents}
+          errCount={errCount}
+          selected={selected}
+          onSelect={handleSelect}
+          hours={hours}
+        />
 
-        <div className="mf-canvas-wrap">
+        <main className="mf-canvas">
           {loading && !data && (
             <div className="mf-loading"><span className="mf-spin"></span> Laden…</div>
           )}
-          {error && <div className="mf-error"><b>Fout:</b> {error}</div>}
+          {error && (
+            <div className="mf-error" style={{ position: "absolute", bottom: 16, right: 16,
+              zIndex: 5, padding: "8px 14px", borderRadius: 6, background: "var(--surface)",
+              border: "1px solid var(--line)", fontSize: 12 }}>
+              <b>Fout:</b> {error}
+            </div>
+          )}
           {(!loading || data) && (
             <FlowGraph
               nodeHealth={nodeHealth}
@@ -1103,18 +1185,40 @@ function MessageFlowScreen() {
               onPulseDone={id => setPulses(prev => prev.filter(p => p.id !== id))}
             />
           )}
-        </div>
 
-        <LiveFeed
+          {/* Compact legend */}
+          <div className="mf-legend">
+            <div className="mf-legend-it">
+              <span className="mf-legend-bar" style={{ background: "var(--svc-crm)" }} />
+              Actief
+            </div>
+            <div className="mf-legend-it">
+              <span className="mf-legend-bar" style={{ background: "var(--hot)" }} />
+              Fouten &gt;15%
+            </div>
+            <div className="mf-legend-it">
+              <span className="mf-legend-bar"
+                style={{ background: "var(--line-3)", opacity: .6 }} />
+              Geen logs
+            </div>
+            <div className="mf-legend-it">
+              <span className="mf-legend-dot" style={{ background: "var(--ok)" }} />
+              Online
+            </div>
+          </div>
+        </main>
+
+        <Feed
           events={liveEvents}
-          actionFilter={actionFilter}
-          setActionFilter={setActionFilter}
-          newCount={newCount}
+          rate={liveRate}
+          connected={connState === "connected"}
+          paused={paused}
+          onTogglePause={() => setPaused(p => !p)}
         />
       </div>
 
-      {/* ── Floating tooltip ── */}
-      <HoverTooltip hovered={hovered} edgeIdx={edgeIdx} nodeHealth={nodeHealth} pos={tooltipPos} />
+      <HoverTooltip hovered={hovered} edgeIdx={edgeIdx}
+        nodeHealth={nodeHealth} pos={tooltipPos} />
     </div>
   );
 }
@@ -1128,4 +1232,4 @@ function MessageFlowScreenWithBoundary() {
 }
 
 Object.assign(window, { MessageFlowScreen: MessageFlowScreenWithBoundary });
-})(); // end IIFE — keeps NODES, TOPO etc. out of global scope
+})();
