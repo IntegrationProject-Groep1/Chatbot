@@ -192,6 +192,7 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
   const [now, setNow]             = React.useState(Date.now());
   const [liveError, setLiveError] = React.useState(null);
   const [dataSource, setDataSource] = React.useState("live");
+  const [clearing, setClearing]   = React.useState(false);
 
   const buildUrl = React.useCallback(() => {
     const p = new URLSearchParams();
@@ -224,6 +225,15 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
       })
       .catch(() => { setLoading(false); setLiveError("Verbinding mislukt — logs tijdelijk niet beschikbaar"); });
   }, [buildUrl, timeMode]);
+
+  const handleClearLogs = React.useCallback(() => {
+    if (!window.confirm("Alle gecachte logs uit de database verwijderen?")) return;
+    setClearing(true);
+    fetch("/api/logs/clear", { method: "DELETE" })
+      .then(r => r.json())
+      .then(() => { setClearing(false); fetchLogs(); })
+      .catch(() => setClearing(false));
+  }, [fetchLogs]);
 
   // Fetch whenever mode or filters change
   React.useEffect(() => {
@@ -311,6 +321,9 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
               {paused ? "▶ Hervatten" : "❚❚ Pauzeren"}
             </button>
           )}
+          <button className="logs-clear-btn" onClick={handleClearLogs} disabled={clearing} title="Verwijder alle gecachte logs uit de database">
+            {clearing ? "Bezig…" : "Cache wissen"}
+          </button>
           <span className="logs-refresh mono">
             <span className="dot"></span>
             {!isLive ? "historisch" : paused ? "gepauzeerd" : `${countdown}s`}
