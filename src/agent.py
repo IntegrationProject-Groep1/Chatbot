@@ -556,9 +556,20 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
     Returns a reconstructed message dict compatible with the old non-streaming shape.
     """
     tools = _LOCAL_TOOLS + mcp_client.get().get_tool_definitions()
+
+    # The NVIDIA LLaMA endpoint rejects assistant messages where content is null
+    # alongside tool_calls. Strip null content fields before sending.
+    def _sanitize(msgs: list[dict]) -> list[dict]:
+        result = []
+        for m in msgs:
+            if m.get("role") == "assistant" and m.get("tool_calls") and m.get("content") is None:
+                m = {k: v for k, v in m.items() if k != "content"}
+            result.append(m)
+        return result
+
     payload: dict = {
         "model": _MODEL,
-        "messages": messages,
+        "messages": _sanitize(messages),
         "temperature": 0.3,
         "max_tokens": 4096,
         "stream": True,
