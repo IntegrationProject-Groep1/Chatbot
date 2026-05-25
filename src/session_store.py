@@ -84,8 +84,8 @@ _SYSTEM_ROUTING = (
     "state what/who is affected and ask admin to type 'ja' to confirm or 'nee' to cancel before executing.\n\n"
 
     "**WRITE exceptions — always use local orchestration tools, never raw MCP:**\n"
-    "- New user across all services → `create_user` only. NEVER crm__create_member + frontend__create_user separately.\n"
-    "- Delete user cascade → `delete_user` only. NEVER individual service deletes.\n"
+    "- New user across all services → `create_user` only. NEVER call raw `crm__create_member` or `frontend__create_user` separately.\n"
+    "- Delete user cascade → `delete_user` only. NEVER call raw `crm__delete_member` directly.\n"
     "- Wallet balance correction → `admin_set_wallet_balance` only. NEVER kassa__set_wallet_balance directly.\n"
     "- Wallet lease grant → `grant_wallet_lease` (read wallet first — abort if already Leased).\n"
     "- Wallet lease return → `return_wallet_lease` (read wallet first — abort if NOT Leased).\n\n"
