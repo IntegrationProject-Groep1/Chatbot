@@ -26,7 +26,7 @@ import logging
 
 _log = logging.getLogger(__name__)
 
-MAX_LOOPS = 6
+MAX_LOOPS = 10
 
 import re
 import hashlib
@@ -688,6 +688,30 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
     except json.JSONDecodeError:
         _log.warning("Malformed tool arguments JSON for %s: %r", tool_call["function"]["name"], raw_args)
         args = {}
+
+    # Coerce string values to their declared types — some models output "10" instead of 10
+    try:
+        tool_defs = mcp_client.get().get_tool_definitions()
+        schema_props = next(
+            (t["function"]["parameters"].get("properties", {})
+             for t in tool_defs if t["function"]["name"] == name),
+            {},
+        )
+        for param, schema in schema_props.items():
+            if param in args and isinstance(args[param], str):
+                t = schema.get("type")
+                if t == "integer":
+                    try:
+                        args[param] = int(args[param])
+                    except (ValueError, TypeError):
+                        pass
+                elif t == "number":
+                    try:
+                        args[param] = float(args[param])
+                    except (ValueError, TypeError):
+                        pass
+    except Exception:
+        pass  # schema lookup is best-effort
 
     await emit({"type": "tool_start", "tool": name, "label": name.replace("_", " ").title(), "call_id": call_id, "arguments": args})
     t0 = time.time()

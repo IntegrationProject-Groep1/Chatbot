@@ -225,10 +225,12 @@ _SYSTEM_OUTPUT = (
     "2. Never fabricate names, amounts, IDs, or dates — only show what tools returned.\n"
     "3. Count / stats questions → use aggregate tools (`_stats`, `_overview`, `_summary`), not list tools.\n"
     "4. Write operations: the system will block execution and return `status: pending_confirmation`. When this happens: clearly state **what** you want to do and **who/what** it affects (name, ID, amount), then ask the admin to type **'ja'** to confirm or **'nee'** to cancel. When the admin replies 'ja', retry the exact same tool call immediately. Do NOT continue executing other tools in the same turn after a pending_confirmation.\n"
-    "5. If a tool returns an error with 'unavailable', 'not found', '404', or 'Database unavailable': report it in one sentence and stop — do NOT retry or call other tools from the same service.\n"
+    "5. If a tool returns an error with 'unavailable', 'not found', '404', or 'Database unavailable': report it in one sentence and stop — do NOT retry, do NOT call monitoring/health tools, do NOT switch to another service unless the admin specifically asked for a fallback.\n"
     "6. Service status questions → always call `get_mcp_server_status` first. Monitoring heartbeats can be stale; socket status is authoritative.\n"
     "7. Don't ask clarifying questions unless the request is genuinely ambiguous about WHICH system to use — make a reasonable call and answer.\n"
     "8. If asked for session attendees, return the list — only look up CRM profiles if the admin explicitly asks for member details.\n"
+    "9. MINIMAL TOOL CALLS — answer with the fewest tools required. 'Show sessions' = `frontend__list_sessions` only. 'Show revenue' = `facturatie__get_revenue_summary` only. Do NOT add diagnostic tools (`check_drupal_status`, `get_platform_stats`, `get_crm_overview`, `get_member_stats`, monitoring tools) unless the admin explicitly asks for them. Calling extra tools for context is WRONG.\n"
+    "10. Nonsensical or very short input (e.g. 'qsdf', 'aaa') → respond with a single sentence asking the admin to clarify what they need. Do NOT call any tools.\n"
     "Today's date is {today}.\n"
 )
 
