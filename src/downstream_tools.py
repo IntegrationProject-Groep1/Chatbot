@@ -32,7 +32,10 @@ def _rpc_call(queue: str, xml: str, timeout: float) -> str:
     except Exception:
         client.reconnect()
         result = client.call(queue, xml.encode("utf-8"), timeout_seconds=timeout)
-    return result.body.decode("utf-8", errors="replace")
+    try:
+        return result.body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"Identity service response is not valid UTF-8: {exc}") from exc
 
 
 def create_identity_user(email: str, cfg: DownstreamConfig) -> dict:

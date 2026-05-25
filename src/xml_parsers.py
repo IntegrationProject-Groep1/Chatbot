@@ -1,6 +1,9 @@
+import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -48,7 +51,7 @@ def _get_body(xml_text: str) -> ET.Element:
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
-        raise RuntimeError(f"Invalid XML: {exc}")
+        raise RuntimeError(f"Invalid XML: {exc}") from exc
 
     if root.tag == "message":
         body = root.find("body")
@@ -79,6 +82,8 @@ def _parse_sessions_from(parent: ET.Element) -> list[Session]:
         description = _text(el, "description") or None
         if session_id and name:
             sessions.append(Session(session_id, name, date, location, description))
+        elif session_id:
+            _log.warning("Dropping session %s: missing name/title field", session_id)
     return sessions
 
 
@@ -88,7 +93,13 @@ def _parse_invoices_from(parent: ET.Element) -> list[Invoice]:
     for el in els:
         invoice_id = _text(el, "invoice_id")
         amount_el = el.find("amount")
-        amount = (amount_el.text or "0").strip() if amount_el is not None else _text(el, "amount")
+        if amount_el is not None:
+            raw_amount = (amount_el.text or "").strip()
+            if not raw_amount:
+                _log.warning("Invoice %s has empty <amount> element", invoice_id)
+            amount = raw_amount or "0"
+        else:
+            amount = _text(el, "amount")
         date = _text(el, "date")
         status = _text(el, "status") or "unknown"
         description = _text(el, "description") or None

@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 import re
 import threading
 import time
 from datetime import date as _date
+
+_log = logging.getLogger(__name__)
 
 import psycopg2
 import psycopg2.pool
@@ -318,8 +321,8 @@ def _persist(session_id: str, identity_uuid: str, messages: list, last_active: f
             conn.commit()
         finally:
             pool.putconn(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("_persist failed for session %s: %s", session_id, e)
 
 
 def _load_from_db(session_id: str) -> dict | None:
@@ -345,8 +348,8 @@ def _load_from_db(session_id: str) -> dict | None:
                     }
         finally:
             pool.putconn(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("_load_from_db failed for session %s: %s", session_id, e)
     return None
 
 # ── Public API ──────────────────────────────────────────────────────────────
@@ -369,9 +372,14 @@ def init_session(session_id: str, identity_uuid: str) -> None:
     # Always try to load from DB or create new — no global memory dict
     session = _load_from_db(session_id)
     if session:
+        stored_uuid = session.get("identity_uuid", "")
+        if stored_uuid and stored_uuid != identity_uuid:
+            raise ValueError(
+                f"Session {session_id} belongs to a different user — reconnect rejected"
+            )
         msgs = session["messages"]
         _refresh_date(msgs)
-        _persist(session_id, identity_uuid, msgs, time.time(), session.get("pending_write"))
+        _persist(session_id, stored_uuid or identity_uuid, msgs, time.time(), session.get("pending_write"))
         return
 
     # Brand new session
@@ -399,6 +407,28 @@ def append(session_id: str, message: dict) -> None:
 def get(session_id: str) -> list[dict]:
     session = _load_from_db(session_id)
     return list(session.get("messages", [])) if session else []
+
+
+def remove_pending_tool_results(session_id: str) -> None:
+    """Remove tool messages with pending_confirmation or blocked status from session history.
+    Called before re-executing a confirmed write tool so the history doesn't contain duplicate results.
+    """
+    session = _load_from_db(session_id)
+    if not session:
+        return
+    import json as _json
+    filtered = []
+    for m in session["messages"]:
+        if m.get("role") == "tool":
+            try:
+                content = _json.loads(m.get("content", "{}"))
+                if content.get("status") in ("pending_confirmation", "blocked"):
+                    continue
+            except Exception:
+                pass
+        filtered.append(m)
+    if len(filtered) != len(session["messages"]):
+        _persist(session_id, session["identity_uuid"], filtered, time.time(), session.get("pending_write"))
 
 
 def set_pending_write(session_id: str, tool_call: dict | None) -> None:
@@ -467,8 +497,8 @@ def cleanup_expired() -> None:
             conn.commit()
         finally:
             pool.putconn(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("cleanup_old_sessions failed: %s", e)
 
 
 # ── Conversation metadata (per-admin, cross-device) ─────────────────────────
@@ -493,8 +523,8 @@ def upsert_conversation(session_id: str, identity_uuid: str, label: str) -> None
             conn.commit()
         finally:
             pool.putconn(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("upsert_conversation failed for session %s: %s", session_id, e)
 
 
 def get_conversations(identity_uuid: str) -> list[dict]:
@@ -516,7 +546,8 @@ def get_conversations(identity_uuid: str) -> list[dict]:
                 return [dict(zip(cols, row)) for row in cur.fetchall()]
         finally:
             pool.putconn(conn)
-    except Exception:
+    except Exception as e:
+        _log.warning("get_conversations failed for uuid %s: %s", identity_uuid, e)
         return []
 
 
@@ -538,7 +569,8 @@ def set_pinned(session_id: str, identity_uuid: str, pinned: bool) -> bool:
             return updated
         finally:
             pool.putconn(conn)
-    except Exception:
+    except Exception as e:
+        _log.warning("set_pinned failed for session %s: %s", session_id, e)
         return False
 
 
@@ -563,5 +595,6 @@ def delete_conversation(session_id: str, identity_uuid: str) -> bool:
             return deleted
         finally:
             pool.putconn(conn)
-    except Exception:
+    except Exception as e:
+        _log.warning("delete_conversation failed for session %s: %s", session_id, e)
         return False

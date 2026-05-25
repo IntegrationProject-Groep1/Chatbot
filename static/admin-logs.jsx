@@ -201,6 +201,9 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
       // Only push service filter to API for historical queries — live always fetches
       // all services and filters client-side to avoid count mismatches.
       if (svcFilter !== "all") p.set("service", svcFilter);
+    } else {
+      // Live mode: cap at 15 minutes so the API only returns the rolling window.
+      p.set("hours", "0.25");
     }
     if (levelFilter !== "any") p.set("level", levelFilter);
     return `/api/logs/query?${p}`;
@@ -217,7 +220,7 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
         setDataSource(d.source || "live");
         if (timeMode === "live") setCountdown(LIVE_POLL / 1000);
       })
-      .catch(() => setLoading(false));
+      .catch(() => { setLoading(false); setLiveError("Verbinding mislukt — logs tijdelijk niet beschikbaar"); });
   }, [buildUrl, timeMode]);
 
   // Fetch whenever mode or filters change
@@ -252,7 +255,7 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
     let info = 0, warn = 0, err = 0, total = 0;
     const svcIds = svcFilter === "all" ? Object.keys(logsBySvc) : [svcFilter];
     svcIds.forEach(svcId => {
-      (logsBySvc[svcId] || []).forEach(e => {
+      filterEntries(logsBySvc[svcId] || []).forEach(e => {
         total++;
         if (e.level === "info") info++;
         else if (e.level === "warning" || e.level === "warn") warn++;
@@ -260,7 +263,7 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
       });
     });
     return { info, warn, err, total };
-  }, [logsBySvc, svcFilter]);
+  }, [logsBySvc, svcFilter, query, levelFilter]);
 
   const visibleServices = svcFilter === "all"
     ? LOG_SERVICES

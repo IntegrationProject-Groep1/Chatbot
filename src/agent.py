@@ -629,7 +629,11 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
     call_id = tool_call["id"]
 
     raw_args = tool_call["function"].get("arguments", "{}")
-    args = json.loads(raw_args) if raw_args else {}
+    try:
+        args = json.loads(raw_args) if raw_args else {}
+    except json.JSONDecodeError:
+        _log.warning("Malformed tool arguments JSON for %s: %r", tool_call["function"]["name"], raw_args)
+        args = {}
 
     await emit({"type": "tool_start", "tool": name, "label": name.replace("_", " ").title(), "call_id": call_id, "arguments": args})
     t0 = time.time()
@@ -767,11 +771,15 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     if _has_confirmation(session_id) and pending_tc:
         # Clear pending write from DB (stateless)
         session_store.set_pending_write(session_id, None)
-        
+
+        # Remove the pending_confirmation/blocked placeholders so the real result doesn't duplicate them.
+        session_store.remove_pending_tool_results(session_id)
+
         tc = pending_tc
         name = tc["function"]["name"]
         await emit({"type": "status", "status": "executing_tools", "count": 1})
-        session_store.append(session_id, {"role": "assistant", "content": None, "tool_calls": [tc]})
+        # The assistant message with tool_calls was already appended when the write was blocked —
+        # do NOT append it again here or the LLM will see it twice.
         call_id, result = await _execute_tool(tc, session_id, emit)
         session_store.append(session_id, {
             "role": "tool", "tool_call_id": call_id, "name": name, "content": result
@@ -851,8 +859,11 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 tc = write_calls[0]
                 name = tc["function"]["name"]
                 call_id = tc["id"]
-                args = json.loads(tc["function"].get("arguments", "{}"))
-                
+                try:
+                    args = json.loads(tc["function"].get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    args = {}
+
                 # Persist pending write to DB (stateless)
                 session_store.set_pending_write(session_id, tc)
                 _log.info("WRITE BLOCKED pending confirmation: tool=%s session=%s", name, session_id)
