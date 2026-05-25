@@ -1004,6 +1004,7 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 return_exceptions=True,
             )
 
+            tool_contents: list[str] = []
             for tc, result in zip(tool_calls, results):
                 if isinstance(result, Exception):
                     call_id = tc["id"]
@@ -1017,6 +1018,45 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                     "name": tc["function"]["name"],
                     "content": content,
                 })
+                tool_contents.append(content)
+
+            # If every tool in this round returned an error/unavailable, inject a
+            # one-time directive so the model stops calling tools and summarises instead.
+            def _is_error_content(c: str) -> bool:
+                try:
+                    d = json.loads(c)
+                    return bool(d.get("error") or d.get("status") == "error")
+                except Exception:
+                    return False
+
+            if tool_contents and all(_is_error_content(c) for c in tool_contents):
+                messages_next = session_store.get(session_id) + [{
+                    "role": "system",
+                    "content": (
+                        "STOP: all tools returned errors. Do NOT call any more tools. "
+                        "Report the error(s) to the admin in one or two sentences and end your response."
+                    ),
+                }]
+                await emit({"type": "status", "status": "thinking", "step": loop_idx + 2})
+                try:
+                    response_msg = await _call_llama(messages_next, emit=emit)
+                except Exception as exc:
+                    await emit({"type": "error", "message": f"AI error: {exc}", "recoverable": True})
+                    return
+                final_text = (response_msg.get("content") or "").strip()
+                if not final_text:
+                    errors = []
+                    for c in tool_contents:
+                        try:
+                            errors.append(json.loads(c).get("error", "unknown error"))
+                        except Exception:
+                            pass
+                    final_text = "Service unavailable: " + "; ".join(e[:120] for e in errors[:3])
+                    await _stream_text(final_text, emit)
+                session_store.append(session_id, {"role": "assistant", "content": final_text})
+                await emit({"type": "suggestions", "items": _build_suggestions(session_id)})
+                await emit({"type": "done"})
+                return
 
             continue
 
