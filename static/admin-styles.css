@@ -1227,10 +1227,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* ============================================================
    CUSTOM CURSOR (Message Flow)
    ============================================================ */
-.mf-canvas {
+.mf-canvas,
+.mf-screen {
   cursor: none !important;
 }
-.mf-canvas * {
+.mf-canvas *,
+.mf-screen * {
   cursor: none !important;
 }
 
