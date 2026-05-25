@@ -11,8 +11,14 @@ import pika
 def _connection_params() -> pika.ConnectionParameters:
     host = os.getenv("RABBITMQ_HOST", "localhost")
     port = int(os.getenv("RABBITMQ_PORT", "5672"))
-    user = os.getenv("RABBIT_USER") or os.getenv("RABBITMQ_USER", "guest")
-    password = os.getenv("RABBIT_PASS") or os.getenv("RABBITMQ_PASSWORD", "guest")
+    # RABBITMQCHATBOT_USER/PASS are the team-prefixed names in the shared Infra .env.
+    # RABBIT_USER/PASS are the standard override names (docker-compose local dev, K8s direct inject).
+    user = (os.getenv("RABBIT_USER")
+            or os.getenv("RABBITMQCHATBOT_USER")
+            or os.getenv("RABBITMQ_USER", "guest"))
+    password = (os.getenv("RABBIT_PASS")
+                or os.getenv("RABBITMQCHATBOT_PASS")
+                or os.getenv("RABBITMQ_PASSWORD", "guest"))
     vhost = os.getenv("RABBITMQ_VHOST", "/")
     return pika.ConnectionParameters(
         host=host,
@@ -240,6 +246,49 @@ class RabbitMQRpcClient:
             body=body,
             properties=props,
         )
+
+
+def publish_xml_to_queue(queue: str, xml: str) -> None:
+    """Fire-and-forget: publish raw XML to a named queue (direct/default exchange). Retries once on failure."""
+    import logging
+    _log = logging.getLogger(__name__)
+    for attempt in range(2):
+        try:
+            client = get_thread_client()
+            if attempt > 0:
+                client.reconnect()
+            client._channel.basic_publish(
+                exchange="",
+                routing_key=queue,
+                body=xml.encode("utf-8"),
+                properties=pika.BasicProperties(content_type="application/xml", delivery_mode=2),
+            )
+            return
+        except Exception as exc:
+            if attempt > 0:
+                _log.warning("XML publish to queue '%s' failed: %s", queue, exc)
+
+
+def publish_xml_to_exchange(exchange: str, routing_key: str, xml: str) -> None:
+    """Fire-and-forget: publish raw XML to a topic exchange. Retries once on failure."""
+    import logging
+    _log = logging.getLogger(__name__)
+    for attempt in range(2):
+        try:
+            client = get_thread_client()
+            if attempt > 0:
+                client.reconnect()
+            client._channel.exchange_declare(exchange=exchange, exchange_type="topic", durable=True)
+            client._channel.basic_publish(
+                exchange=exchange,
+                routing_key=routing_key,
+                body=xml.encode("utf-8"),
+                properties=pika.BasicProperties(content_type="application/xml", delivery_mode=2),
+            )
+            return
+        except Exception as exc:
+            if attempt > 0:
+                _log.warning("XML publish to exchange '%s/%s' failed: %s", exchange, routing_key, exc)
 
 
 def publish_audit_event(routing_key: str, event_data: dict) -> None:

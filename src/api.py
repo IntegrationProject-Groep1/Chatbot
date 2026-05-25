@@ -152,10 +152,24 @@ async def identify(request: Request):
             return JSONResponse({"error": "Incorrect email or password."}, status_code=401)
 
     try:
-        from downstream_tools import resolve_identity_by_email, DownstreamConfig
+        from downstream_tools import resolve_identity_by_email, create_identity_user, DownstreamConfig
+        from xml_parsers import IdentityUser
         cfg = DownstreamConfig()
         loop = asyncio.get_event_loop()
-        user = await loop.run_in_executor(None, resolve_identity_by_email, email, cfg)
+        try:
+            user = await loop.run_in_executor(None, resolve_identity_by_email, email, cfg)
+        except RuntimeError as lookup_exc:
+            # User not in identity service yet — auto-register to get a master UUID
+            if "not_found" in str(lookup_exc).lower() or "not found" in str(lookup_exc).lower():
+                created = await loop.run_in_executor(None, create_identity_user, email, cfg)
+                if not created.get("success"):
+                    raise RuntimeError(created.get("error", "Failed to register with identity service"))
+                user = IdentityUser(
+                    identity_uuid=created["master_uuid"],
+                    email=created.get("email", email),
+                )
+            else:
+                raise
         result = {"identity_uuid": user.identity_uuid, "email": user.email}
         resp = JSONResponse(result)
         token = create_token(email, user.identity_uuid)
