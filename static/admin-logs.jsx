@@ -359,12 +359,10 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
               {paused ? "▶ Hervatten" : "❚❚ Pauzeren"}
             </button>
           )}
-          {(!isLive || dataSource === "cache") && (
-            <button className="logs-clear-btn" onClick={handleClearLogs} disabled={clearing}
-              title={dataSource === "cache" ? "Verwijder gecachte logs (MCP niet beschikbaar)" : "Verwijder gecachte logs uit de lokale database"}>
-              {clearing ? "Bezig…" : "Cache wissen"}
-            </button>
-          )}
+          <button className="logs-clear-btn" onClick={handleClearLogs} disabled={clearing}
+            title={dataSource === "cache" ? "Verwijder gecachte logs (MCP niet beschikbaar)" : "Verwijder gecachte logs uit de lokale database"}>
+            {clearing ? "Bezig…" : "Cache wissen"}
+          </button>
           <span className="logs-refresh mono">
             <span className="dot"></span>
             {!isLive ? "historisch" : paused ? "gepauzeerd" : `${countdown}s`}
