@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from rabbitmq_rpc import get_thread_client
 from xml_builders import (
+    build_identity_create_request,
     build_identity_lookup_by_email_request,
     build_identity_lookup_by_uuid_request,
     build_identity_delete_request
@@ -18,6 +19,7 @@ def _env(name: str, default: str) -> str:
 @dataclass(frozen=True)
 class DownstreamConfig:
     identity_queue: str          = _env("IDENTITY_RPC_QUEUE", "identity.user.lookup.email.request")
+    identity_create_queue: str   = _env("IDENTITY_CREATE_QUEUE", "identity.user.create.request")
     identity_delete_queue: str   = _env("IDENTITY_DELETE_QUEUE", "identity.user.delete.request")
     rpc_timeout: float           = float(os.getenv("RPC_TIMEOUT", "10.0"))
 
@@ -31,6 +33,22 @@ def _rpc_call(queue: str, xml: str, timeout: float) -> str:
         client.reconnect()
         result = client.call(queue, xml.encode("utf-8"), timeout_seconds=timeout)
     return result.body.decode("utf-8", errors="replace")
+
+
+def create_identity_user(email: str, cfg: DownstreamConfig) -> dict:
+    """Register a new user with the Identity service and return their master_uuid.
+
+    Idempotent: if the email already exists, returns the existing master_uuid.
+    On success triggers a UserCreated fanout to user.events (Kassa + Facturatie auto-create their records).
+    Returns {"success": True, "master_uuid": "...", "email": "..."} or {"success": False, "error": "..."}.
+    """
+    try:
+        xml = build_identity_create_request(email)
+        response = _rpc_call(cfg.identity_create_queue, xml, cfg.rpc_timeout)
+        user = parse_identity_response(response)
+        return {"success": True, "master_uuid": user.identity_uuid, "email": user.email}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
 
 
 def resolve_identity_by_email(email: str, cfg: DownstreamConfig) -> IdentityUser:

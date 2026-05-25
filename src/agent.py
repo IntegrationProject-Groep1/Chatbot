@@ -33,6 +33,9 @@ _WRITE_PREFIXES = (
     "update_", "delete_", "cancel_", "create_",
     "mark_", "set_", "process_refund", "topup_",
     "enroll_", "unenroll_",
+    "grant_",   # grant_wallet_lease
+    "return_",  # return_wallet_lease
+    "admin_",   # admin_set_wallet_balance
 )
 _CONFIRM_WORDS_SINGLE = frozenset({
     "ja", "yes", "ok", "bevestig", "confirm", "proceed",
@@ -163,6 +166,119 @@ _LOCAL_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_user",
+            "description": (
+                "Create a new user across ALL services in the correct order. WRITE OPERATION — confirm first. "
+                "Step 1: registers with the Identity service → gets master_uuid (idempotent — safe if user already exists). "
+                "Step 2: creates CRM member (Salesforce) with that UUID. "
+                "Step 3: creates Drupal account linked to that UUID so enrollments work. "
+                "Step 4: Identity's UserCreated event notifies Kassa + Facturatie automatically. "
+                "ALWAYS use this tool — never call crm__create_member + frontend__create_user separately, "
+                "as those do NOT link the master_uuid and will break enrollments and cross-service lookups."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "email":        {"type": "string", "description": "Email address (must be unique across all systems)."},
+                    "first_name":   {"type": "string", "description": "First name."},
+                    "last_name":    {"type": "string", "description": "Last name."},
+                    "user_type":    {"type": "string", "enum": ["Bedrijf", "Particulier"], "description": "'Particulier' for individual, 'Bedrijf' for company."},
+                    "username":     {"type": "string", "description": "Drupal login username (no spaces). Defaults to the email prefix if not provided."},
+                    "company_name": {"type": "string", "description": "Company name — required when user_type is 'Bedrijf'."},
+                },
+                "required": ["email", "first_name", "last_name", "user_type"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "grant_wallet_lease",
+            "description": (
+                "Admin manually grants Kassa live wallet control for a member when the badge scan did not trigger "
+                "the automatic lease flow. WRITE OPERATION — confirm with admin before calling. "
+                "Pre-flight: ALWAYS call crm__get_member_wallet first — abort if Wallet_Status__c is already 'Leased'. "
+                "This tool: (1) sets Wallet_Status__c='Leased' in Salesforce via CRM MCP, "
+                "(2) publishes wallet_lease_grant XML to kassa.incoming so Kassa activates the live wallet."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "master_uuid": {
+                        "type": "string",
+                        "description": "Member's Master_UUID__c. Resolve via crm__get_member_by_email — never guess.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Reason for manual lease grant. Example: 'Badge scan failed at gate — manual grant by admin'.",
+                    },
+                },
+                "required": ["master_uuid", "reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "return_wallet_lease",
+            "description": (
+                "Admin manually returns wallet lease authority from Kassa back to CRM when an event ends "
+                "or the badge-out scan was missed. WRITE OPERATION — confirm with admin before calling. "
+                "Pre-flight: ALWAYS call crm__get_member_wallet first — abort if Wallet_Status__c is NOT 'Leased'. "
+                "This tool: (1) reads live final balance from Kassa, "
+                "(2) publishes wallet_lease_return XML to kassa.exchange so CRM reconciles the balance in Salesforce."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "master_uuid": {
+                        "type": "string",
+                        "description": "Member's Master_UUID__c. Resolve via crm__get_member_by_email — never guess.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Reason for manual lease return. Example: 'Event ended — admin forced lease close'.",
+                    },
+                },
+                "required": ["master_uuid", "reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "admin_set_wallet_balance",
+            "description": (
+                "Admin correction: set absolute wallet balance for a member AND broadcast the change to all services. "
+                "WRITE OPERATION — confirm with admin before calling. "
+                "Use this instead of kassa__set_wallet_balance directly — this wrapper calls Kassa AND then "
+                "publishes wallet_balance_update XML to kassa.exchange so Frontend and CRM both reflect the new value. "
+                "kassa__set_wallet_balance alone does NOT broadcast the update."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "master_uuid": {
+                        "type": "string",
+                        "description": "Member's Master_UUID__c. Resolve via crm__get_member_by_email — never guess.",
+                    },
+                    "amount": {
+                        "type": "number",
+                        "description": "New wallet balance in EUR (≥ 0). Replaces the current balance.",
+                        "minimum": 0,
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Reason for balance correction. Example: 'Refund for cancelled event — €25 credit'.",
+                    },
+                },
+                "required": ["master_uuid", "amount", "reason"],
+            },
+        },
+    },
 ]
 
 
@@ -236,6 +352,202 @@ async def _handle_local_tool(name: str, args: dict) -> str | None:
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, delete_identity_user, master_uuid, reason, cfg)
         return json.dumps(result)
+    if name == "create_user":
+        email      = args.get("email", "").strip().lower()
+        first_name = args.get("first_name", "").strip()
+        last_name  = args.get("last_name", "").strip()
+        user_type  = args.get("user_type", "").strip()
+        username   = args.get("username", "").strip() or email.split("@")[0]
+        company    = args.get("company_name", "").strip() or None
+        if not all([email, first_name, last_name, user_type]):
+            return json.dumps({"error": "email, first_name, last_name, and user_type are all required.", "success": False})
+        from downstream_tools import create_identity_user, DownstreamConfig
+        cfg = DownstreamConfig()
+        loop = asyncio.get_event_loop()
+        # Step 1: register with Identity → get master_uuid (also fires UserCreated fanout to Kassa + Facturatie)
+        identity_result = await loop.run_in_executor(None, create_identity_user, email, cfg)
+        if not identity_result.get("success"):
+            return json.dumps({"error": f"Identity service: {identity_result.get('error')}", "success": False})
+        master_uuid = identity_result["master_uuid"]
+        client = mcp_client.get()
+        # Step 2: create CRM member with the correct master_uuid
+        crm_args: dict = {
+            "first_name": first_name, "last_name": last_name,
+            "email": email, "user_type": user_type, "master_uuid": master_uuid,
+        }
+        if company:
+            crm_args["company_name"] = company
+        try:
+            crm_raw = await client.call_tool("crm__create_member", crm_args)
+            crm_result = json.loads(crm_raw)
+        except Exception as exc:
+            crm_result = {"error": str(exc)}
+        # Step 3: create Drupal account with master_uuid stored in users_data
+        try:
+            fe_raw = await client.call_tool("frontend__create_user", {
+                "name": username, "email": email,
+                "first_name": first_name, "last_name": last_name,
+                "master_uuid": master_uuid,
+            })
+            fe_result = json.loads(fe_raw)
+        except Exception as exc:
+            fe_result = {"error": str(exc)}
+        publish_audit_event("user.created", {
+            "master_uuid": master_uuid, "email": email,
+            "first_name": first_name, "last_name": last_name,
+        })
+        return json.dumps({
+            "success": True,
+            "master_uuid": master_uuid,
+            "email": email,
+            "crm": crm_result,
+            "drupal": fe_result,
+            "kassa_facturatie": "Notified automatically via Identity UserCreated event.",
+            "message": f"User {first_name} {last_name} ({email}) created across all services. master_uuid: {master_uuid}",
+        })
+    if name == "grant_wallet_lease":
+        master_uuid = args.get("master_uuid", "").strip()
+        reason = args.get("reason", "").strip()
+        if not master_uuid or not reason:
+            return json.dumps({"error": "master_uuid and reason are required", "success": False})
+        client = mcp_client.get()
+        # Step 1: Read current wallet state from CRM
+        try:
+            wallet_raw = await client.call_tool("crm__get_member_wallet", {"master_uuid": master_uuid})
+            wallet = json.loads(wallet_raw)
+        except Exception as exc:
+            return json.dumps({"error": f"Failed to read wallet from CRM: {exc}", "success": False})
+        if wallet.get("error"):
+            return json.dumps({"error": wallet["error"], "success": False})
+        if wallet.get("Wallet_Status__c") == "Leased":
+            return json.dumps({
+                "error": (
+                    f"Wallet is already Leased (lease_id={wallet.get('Last_Lease_ID__c')}). "
+                    "Cannot grant a second lease. Use crm__list_active_leases to review."
+                ),
+                "success": False,
+            })
+        current_balance = float(wallet.get("Wallet_Balance__c") or 0.0)
+        import uuid as _uuid_mod
+        lease_id = f"LEASE-ADMIN-{_uuid_mod.uuid4().hex[:8].upper()}"
+        # Step 2: Set Wallet_Status__c='Leased' in Salesforce via CRM MCP
+        try:
+            update_raw = await client.call_tool("crm__update_member_wallet", {
+                "master_uuid": master_uuid,
+                "wallet_status": "Leased",
+                "reason": reason,
+            })
+            update = json.loads(update_raw)
+        except Exception as exc:
+            return json.dumps({"error": f"CRM wallet update failed: {exc}", "success": False})
+        if update.get("error"):
+            return json.dumps({"error": update["error"], "success": False})
+        # Step 3: Publish wallet_lease_grant XML to kassa.incoming
+        from xml_builders import build_wallet_lease_grant
+        from rabbitmq_rpc import publish_xml_to_queue
+        xml = build_wallet_lease_grant(master_uuid=master_uuid, current_balance=current_balance, lease_id=lease_id)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, publish_xml_to_queue, "kassa.incoming", xml)
+        publish_audit_event("wallet.lease_granted", {
+            "master_uuid": master_uuid, "lease_id": lease_id,
+            "balance": current_balance, "reason": reason,
+        })
+        return json.dumps({
+            "success": True,
+            "master_uuid": master_uuid,
+            "lease_id": lease_id,
+            "balance_sent_to_kassa": current_balance,
+            "message": f"Wallet lease granted. Kassa notified with balance €{current_balance:.2f}. Lease ID: {lease_id}.",
+        })
+    if name == "return_wallet_lease":
+        master_uuid = args.get("master_uuid", "").strip()
+        reason = args.get("reason", "").strip()
+        if not master_uuid or not reason:
+            return json.dumps({"error": "master_uuid and reason are required", "success": False})
+        client = mcp_client.get()
+        # Step 1: Confirm wallet is currently Leased
+        try:
+            crm_raw = await client.call_tool("crm__get_member_wallet", {"master_uuid": master_uuid})
+            crm_wallet = json.loads(crm_raw)
+        except Exception as exc:
+            return json.dumps({"error": f"Failed to read wallet from CRM: {exc}", "success": False})
+        if crm_wallet.get("error"):
+            return json.dumps({"error": crm_wallet["error"], "success": False})
+        if crm_wallet.get("Wallet_Status__c") != "Leased":
+            return json.dumps({
+                "error": (
+                    f"Wallet is not currently Leased (status={crm_wallet.get('Wallet_Status__c')}). "
+                    "Nothing to return."
+                ),
+                "success": False,
+            })
+        lease_id = crm_wallet.get("Last_Lease_ID__c") or "UNKNOWN"
+        # Step 2: Read live final balance from Kassa
+        try:
+            kassa_raw = await client.call_tool("kassa__get_wallet_by_master_uuid", {"master_uuid": master_uuid})
+            kassa_wallet = json.loads(kassa_raw)
+        except Exception as exc:
+            return json.dumps({"error": f"Failed to read live wallet from Kassa: {exc}", "success": False})
+        if kassa_wallet.get("error"):
+            return json.dumps({"error": kassa_wallet["error"], "success": False})
+        final_balance = float(
+            kassa_wallet.get("wallet_balance") or kassa_wallet.get("x_wallet_balance") or 0.0
+        )
+        # Step 3: Publish wallet_lease_return XML via kassa.exchange so CRM receiver picks it up
+        from xml_builders import build_wallet_lease_return
+        from rabbitmq_rpc import publish_xml_to_exchange
+        xml = build_wallet_lease_return(
+            master_uuid=master_uuid, final_balance=final_balance, lease_id=lease_id
+        )
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, publish_xml_to_exchange, "kassa.exchange", "kassa.to.crm.wallet_lease_return", xml
+        )
+        publish_audit_event("wallet.lease_returned", {
+            "master_uuid": master_uuid, "final_balance": final_balance,
+            "lease_id": lease_id, "reason": reason,
+        })
+        return json.dumps({
+            "success": True,
+            "master_uuid": master_uuid,
+            "final_balance": final_balance,
+            "lease_id": lease_id,
+            "message": f"Wallet lease returned. CRM notified with final balance €{final_balance:.2f}.",
+        })
+    if name == "admin_set_wallet_balance":
+        master_uuid = args.get("master_uuid", "").strip()
+        amount = args.get("amount")
+        reason = args.get("reason", "").strip()
+        if not master_uuid or amount is None or not reason:
+            return json.dumps({"error": "master_uuid, amount, and reason are required", "success": False})
+        client = mcp_client.get()
+        # Step 1: Call Kassa to set balance in Odoo
+        try:
+            kassa_raw = await client.call_tool("kassa__set_wallet_balance", {
+                "master_uuid": master_uuid, "amount": amount, "reason": reason,
+            })
+            kassa_result = json.loads(kassa_raw)
+        except Exception as exc:
+            return json.dumps({"error": f"Kassa balance update failed: {exc}", "success": False})
+        if kassa_result.get("error"):
+            return json.dumps(kassa_result)
+        new_balance = float(kassa_result.get("new_balance") or amount)
+        # Step 2: Broadcast wallet_balance_update to Frontend and CRM via kassa.exchange
+        from xml_builders import build_wallet_balance_update
+        from rabbitmq_rpc import publish_xml_to_exchange
+        xml = build_wallet_balance_update(master_uuid=master_uuid, new_balance=new_balance, authority="chatbot")
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, publish_xml_to_exchange, "kassa.exchange", "kassa.frontend.wallet", xml
+        )
+        publish_audit_event("wallet.balance_corrected", {
+            "master_uuid": master_uuid, "new_balance": new_balance, "reason": reason,
+        })
+        return json.dumps({
+            **kassa_result,
+            "broadcast_sent": True,
+            "message": (kassa_result.get("message") or "") + " Balance broadcast to all services.",
+        })
     return None
 
 
