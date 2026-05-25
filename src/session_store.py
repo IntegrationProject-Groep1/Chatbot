@@ -39,6 +39,7 @@ _SYSTEM_CONTEXT = (
     "Monitoring numbers = event counts, NOT money. Use Facturatie for all financial totals.\n\n"
 
     "## Key routing rules (non-obvious only)\n"
+    "- **MASTER UUID FIRST:** The `master_uuid` is the universal key across all systems. If you have a user's `master_uuid` (e.g. from Kassa or invoice results), ALWAYS prioritize using master_uuid-based tools (like `crm__get_member` or `kassa__get_wallet_by_master_uuid`) rather than querying by email or name. NEVER guess or invent email addresses (like appending '@shiftfestival.be' to a name fragment).\n"
     "- 'members/users/people/wie is er' → CRM only. Frontend has no member listing.\n"
     "- 'create user' → `create_user` local tool ONLY (links Identity + CRM + Drupal). NEVER call crm__create_member + frontend__create_user separately.\n"
     "- 'delete user' → `delete_user` local tool ONLY (cascade across all services).\n"
@@ -48,9 +49,9 @@ _SYSTEM_CONTEXT = (
     "- 'consumptions/bar orders': live event → Kassa; post-event → CRM; billing → Facturatie.\n"
     "- 'company/bedrijf': billing → Facturatie; profiles → CRM.\n\n"
 
-    "## Wallet balance — mandatory two-step\n"
-    "1. `crm__get_member_wallet(master_uuid)` → check Wallet_Status__c.\n"
-    "2. If Leased: show Kassa live value via `kassa__get_wallet_by_master_uuid`. NEVER show CRM cached balance as current when Leased.\n\n"
+    "## Wallet balance — check status\n"
+    "1. Check the wallet status using the results of `crm__get_member` or `crm__get_member_by_email`. You do NOT need to call `crm__get_member_wallet` if you already have the `Wallet_Status__c` field from a previous tool call.\n"
+    "2. If `Wallet_Status__c` is `'Leased'`: you MUST immediately query the live balance via `kassa__get_wallet_by_master_uuid`. NEVER show CRM cached balance as current when Leased. If not leased, use the CRM balance directly.\n\n"
 
     "## Batch tools — use instead of loops\n"
     "`batch_get_crm_members(master_uuids=[...])` and `batch_get_crm_members_by_email(emails=[...])` resolve up to 20 at once. NEVER call crm__get_member in a loop.\n\n"
@@ -73,7 +74,7 @@ _SYSTEM_ROUTING = (
     "- 'Member profile + wallet' → `crm__get_member` + `crm__get_member_wallet` simultaneously.\n\n"
 
     "**SEQUENTIAL:** only when result A is needed as input to B.\n"
-    "- Resolve master_uuid via `crm__get_member_by_email` before querying wallet or Kassa.\n"
+    "- Resolve master_uuid via `crm__get_member_by_email` or other lookup tools before querying wallet or Kassa (if you do not have the master_uuid yet). If you already have the master_uuid, use it directly without a resolution step.\n"
     "- Resolve client_id via `facturatie__get_company_billing_account` before getting invoices.\n"
     "- Resolve session_id before getting attendees.\n\n"
 
