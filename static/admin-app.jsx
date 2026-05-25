@@ -1339,12 +1339,11 @@ function App() {
     }
   }, [identity?.identity_uuid, loadConversations]);
 
-  const handleLogin = (id) => {
+  const handleLogin = useCallback((id) => {
     setIdentity(id);
     setMessages([]);
     streamRef.current = { text: "", cards: [], msgId: null };
-    loadConversations();
-  };
+  }, []);
 
   const handleSend = (text) => {
     if (!connected || busy) return;

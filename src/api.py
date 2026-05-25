@@ -161,6 +161,8 @@ async def identify(request: Request):
         token = create_token(email, user.identity_uuid)
         resp.set_cookie(_COOKIE, token, httponly=True, samesite="lax", max_age=60 * 60 * 8)
         return resp
+    except TimeoutError:
+        return JSONResponse({"error": "Identity service tijdelijk niet bereikbaar. Probeer het opnieuw."}, status_code=503)
     except RuntimeError as exc:
         msg = str(exc).lower()
         if "missing" in msg or "not found" in msg or "uuid" in msg:
