@@ -44,29 +44,36 @@ Rules:
 5. If the user asks for something outside your schema (e.g. billing data from the planning agent), return: SELECT 'UNSUPPORTED_QUERY' as error.
 6. Use LIMIT 50 to prevent huge responses."""
 
-        try:
-            response = httpx.post(
-                self.api_url,
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"User is asking: {query}"}
-                    ],
-                    "temperature": 0.0
-                },
-                timeout=12.0
-            )
-            response.raise_for_status()
-            sql = response.json()['choices'][0]['message']['content'].strip()
-            # Clean possible markdown artifacts
-            sql = sql.replace("```sql", "").replace("```", "").strip()
-            self._cache[cache_key] = sql
-            return sql
-        except Exception as e:
-            print(f"[{self.team_name}] LLM Error: {e}")
-            return "SELECT 'LLM_REASONING_FAILED' as error"
+        for attempt in range(3):
+            try:
+                response = httpx.post(
+                    self.api_url,
+                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"User is asking: {query}"}
+                        ],
+                        "temperature": 0.0
+                    },
+                    timeout=12.0
+                )
+                if response.status_code == 429 or response.status_code >= 500:
+                    if attempt < 2:
+                        time.sleep(1.5 * (attempt + 1))
+                        continue
+                response.raise_for_status()
+                sql = response.json()['choices'][0]['message']['content'].strip()
+                # Clean possible markdown artifacts
+                sql = sql.replace("```sql", "").replace("```", "").strip()
+                self._cache[cache_key] = sql
+                return sql
+            except Exception as e:
+                if attempt == 2:
+                    print(f"[{self.team_name}] LLM Error: {e}")
+                    return "SELECT 'LLM_REASONING_FAILED' as error"
+                time.sleep(1.5 * (attempt + 1))
 
     def handle_query(self, identity_uuid: str, scope: str, query: str) -> tuple[str, list]:
         """Translates NL to SQL, executes it safely, and returns results."""
