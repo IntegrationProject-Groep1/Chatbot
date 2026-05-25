@@ -922,30 +922,7 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
   const visibleRef = useRef([]);
   const listRef    = useRef(null);
 
-  // Load cached logs once when live feed is empty
-  const [cachedEvents, setCachedEvents] = useState([]);
-  const hasFetchedCached = useRef(false);
-  useEffect(() => {
-    if (events.length > 0) { hasFetchedCached.current = true; return; }
-    if (hasFetchedCached.current) return;
-    hasFetchedCached.current = true;
-    fetch('/api/logs/cached?limit=100')
-      .then(r => { if (!r.ok) throw new Error(`Server ${r.status}`); return r.json(); })
-      .then(d => {
-        setCachedEvents((d.logs || []).slice(0, 120).map(log => ({
-          source: log.source || "unknown",
-          action: log.action || "unknown",
-          message: log.message || "",
-          timestamp: log.timestamp || new Date().toISOString(),
-          level: log.level || "info",
-          destinations: [],
-          isCached: true,
-        })));
-      })
-      .catch(() => {});
-  }, [events.length]);
-
-  const displayEvents = events.length > 0 ? events : cachedEvents;
+  const displayEvents = events;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -984,8 +961,6 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
     setHovering(false);
   };
 
-  const isCachedMode = events.length === 0 && cachedEvents.length > 0;
-
   return (
     <aside className={`mf-feed${open ? "" : " is-collapsed"}`}>
       <header className="mf-feed-head">
@@ -1006,7 +981,6 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
                     ? <>{rate.toFixed(1)}<span style={{ color: "var(--muted-3)" }}> msg/s</span></>
                     : <span style={{ color: "var(--warn)" }}>verbinden…</span>)
                 : <span style={{ color: "var(--muted-2)" }}>historisch</span>}
-              {isCachedMode && <span style={{ marginLeft: 6, color: "var(--muted-2)", fontSize: 10 }}>· gecached</span>}
             </span>
           )}
           <button className="mf-feed-toggle" onClick={onToggleOpen}
