@@ -354,9 +354,14 @@ def init_session(session_id: str, identity_uuid: str) -> None:
     # Always try to load from DB or create new — no global memory dict
     session = _load_from_db(session_id)
     if session:
+        stored_uuid = session.get("identity_uuid", "")
+        if stored_uuid and stored_uuid != identity_uuid:
+            raise ValueError(
+                f"Session {session_id} belongs to a different user — reconnect rejected"
+            )
         msgs = session["messages"]
         _refresh_date(msgs)
-        _persist(session_id, identity_uuid, msgs, time.time(), session.get("pending_write"))
+        _persist(session_id, stored_uuid or identity_uuid, msgs, time.time(), session.get("pending_write"))
         return
 
     # Brand new session
@@ -384,6 +389,28 @@ def append(session_id: str, message: dict) -> None:
 def get(session_id: str) -> list[dict]:
     session = _load_from_db(session_id)
     return list(session.get("messages", [])) if session else []
+
+
+def remove_pending_tool_results(session_id: str) -> None:
+    """Remove tool messages with pending_confirmation or blocked status from session history.
+    Called before re-executing a confirmed write tool so the history doesn't contain duplicate results.
+    """
+    session = _load_from_db(session_id)
+    if not session:
+        return
+    import json as _json
+    filtered = []
+    for m in session["messages"]:
+        if m.get("role") == "tool":
+            try:
+                content = _json.loads(m.get("content", "{}"))
+                if content.get("status") in ("pending_confirmation", "blocked"):
+                    continue
+            except Exception:
+                pass
+        filtered.append(m)
+    if len(filtered) != len(session["messages"]):
+        _persist(session_id, session["identity_uuid"], filtered, time.time(), session.get("pending_write"))
 
 
 def set_pending_write(session_id: str, tool_call: dict | None) -> None:

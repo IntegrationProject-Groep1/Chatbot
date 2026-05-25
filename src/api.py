@@ -161,6 +161,8 @@ async def identify(request: Request):
         token = create_token(email, user.identity_uuid)
         resp.set_cookie(_COOKIE, token, httponly=True, samesite="lax", max_age=60 * 60 * 8)
         return resp
+    except TimeoutError:
+        return JSONResponse({"error": "Identity service tijdelijk niet bereikbaar. Probeer het opnieuw."}, status_code=503)
     except RuntimeError as exc:
         msg = str(exc).lower()
         if "missing" in msg or "not found" in msg or "uuid" in msg:
@@ -225,13 +227,15 @@ def _is_connection_noise(entry: dict) -> bool:
 
 
 def _is_http_transport_success(entry: dict) -> bool:
-    """Detect internal HTTP transport logs for successful requests (status 2xx).
+    """Detect internal HTTP transport logs for successful 2xx requests.
     These are emitted by the elasticsearch-py/urllib3 client on every poll and
     carry zero actionable information — they should never reach the dashboard.
-    Pattern: 'METHOD http://*-service:PORT/... [status:2XX duration:Xs]'
+    Checks for the specific '[status:2XX' bracket that urllib3 appends, combined
+    with a known internal service hostname pattern (e.g. 'monitoring-service:9200').
+    Only filters on explicit 2xx bracket to avoid false positives on error logs.
     """
-    msg = (entry.get("message") or entry.get("log_message") or "").lower()
-    return "http://" in msg and "-service" in msg and "[status:2" in msg
+    msg = (entry.get("message") or entry.get("log_message") or "")
+    return "[status:2" in msg and ("http://" in msg or "https://" in msg)
 
 
 def _deduplicate_connection_noise(entries: list) -> list:
@@ -318,6 +322,7 @@ async def _get_monitoring_logs(limit: int = 100, hours: float = 24.0) -> dict:
         elif isinstance(fallback, dict) and fallback.get("error") and not error:
             error = fallback.get("error")
 
+    mcp_had_data = bool(raw_entries)
     entries = [
         _normalize_log_entry(e) for e in raw_entries
         if isinstance(e, dict) and not _is_http_transport_success(e)
@@ -326,8 +331,8 @@ async def _get_monitoring_logs(limit: int = 100, hours: float = 24.0) -> dict:
     if entries:
         log_store.store_logs_batch(entries)
 
-    # Fall back to cached DB logs whenever live MCP returns nothing (empty or error)
-    if not entries:
+    # Fall back to cached DB logs only when MCP returned nothing at all (not just noise-filtered)
+    if not mcp_had_data:
         cached = log_store.get_recent_logs(limit=limit, hours=hours)
         if cached:
             for c in cached:
@@ -526,11 +531,11 @@ async def logs_query(
         raw = mcp_result.get("logs") or []
         error = mcp_result.get("error")
 
+    from_live = bool(raw)  # MCP returned data (even if all filtered out as noise)
     entries = [
         _normalize_log_entry(e) for e in raw
         if isinstance(e, dict) and not _is_http_transport_success(e)
     ]
-    from_live = bool(entries)
     if entries:
         log_store.store_logs_batch(entries)
 
@@ -992,7 +997,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             await emit({"type": "error", "message": "Not authenticated. Please log in to the portal.", "recoverable": False})
             return
 
-        session_store.init_session(session_id, identity_uuid)
+        try:
+            session_store.init_session(session_id, identity_uuid)
+        except ValueError:
+            await emit({"type": "error", "message": "Session belongs to a different user.", "recoverable": False})
+            return
         _log.info("WS connected: session=%s identity=%s", session_id, identity_uuid)
         await emit({"type": "ready", "session_id": session_id})
 

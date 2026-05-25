@@ -1150,6 +1150,7 @@ function MessageFlowScreen() {
           setLiveEvents(prev =>
             [...incoming, ...prev]
               .filter(e => new Date(e.timestamp).getTime() > cutoff15m)
+              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
               .slice(0, 400)
           );
           // Spawn packets

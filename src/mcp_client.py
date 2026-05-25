@@ -203,7 +203,13 @@ class MCPClient:
                 return json.dumps({"error": f"Tool '{name}' timed out after {timeout}s", "status": "timeout"})
             except Exception as exc:
                 err_str = str(exc).lower()
-                is_session_error = any(k in err_str for k in ("session", "terminated", "closed", "connection", "404"))
+                # Match errors that indicate the MCP session/transport was reset,
+                # not just any message containing common words like "connection".
+                is_session_error = any(k in err_str for k in (
+                    "session terminated", "session closed", "session not found",
+                    "connection reset", "connection refused", "connection closed",
+                    "eof", "broken pipe", "404",
+                ))
                 if attempt == 0 and is_session_error and label in self._servers:
                     _log.warning("MCP [%s] session lost (%s) — reconnecting…", label, exc)
                     try:

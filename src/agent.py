@@ -459,11 +459,15 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     if _has_confirmation(session_id) and pending_tc:
         # Clear pending write from DB (stateless)
         session_store.set_pending_write(session_id, None)
-        
+
+        # Remove the pending_confirmation/blocked placeholders so the real result doesn't duplicate them.
+        session_store.remove_pending_tool_results(session_id)
+
         tc = pending_tc
         name = tc["function"]["name"]
         await emit({"type": "status", "status": "executing_tools", "count": 1})
-        session_store.append(session_id, {"role": "assistant", "content": None, "tool_calls": [tc]})
+        # The assistant message with tool_calls was already appended when the write was blocked —
+        # do NOT append it again here or the LLM will see it twice.
         call_id, result = await _execute_tool(tc, session_id, emit)
         session_store.append(session_id, {
             "role": "tool", "tool_call_id": call_id, "name": name, "content": result

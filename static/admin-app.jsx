@@ -1019,7 +1019,7 @@ function App() {
   const [messages, setMessages] = useState([]);
 
   // In-flight assistant state (streaming)
-  const streamRef = useRef({ text: "", cards: [], msgId: null });
+  const streamRef = useRef({ text: "", cards: [], msgId: null, awaitingResponse: false });
   const toolBundleRef = useRef(null); // current tool bundle msgId
 
   // Flow graph state
@@ -1221,7 +1221,8 @@ function App() {
               : m);
           }
           const bundleId = "bundle-" + ev.call_id;
-          toolBundleRef.current = bundleId;
+          // Set ref outside updater — this is a best-effort tracking ID used only for cleanup.
+          setTimeout(() => { toolBundleRef.current = bundleId; }, 0);
           return [...msgs, { id: bundleId, kind: "bundle", tools: [newTool] }];
         });
         break;
@@ -1259,6 +1260,8 @@ function App() {
       }
 
       case "stream_token": {
+        // Ignore late tokens that arrive after the stream has already finished.
+        if (!streamRef.current.awaitingResponse && !streamRef.current.msgId) break;
         setIsThinking(false);
         setStats(s => ({ ...s, tokens: s.tokens + 1 }));
         streamRef.current.text += ev.token;
@@ -1300,7 +1303,7 @@ function App() {
         setIsThinking(false);
         clearActive(); // stops the traveling dot; lit paths stay highlighted
         setMessages(msgs => msgs.map(m => m.kind === "assistant" ? { ...m, streaming: false } : m));
-        streamRef.current = { text: "", cards: [], msgId: null };
+        streamRef.current = { text: "", cards: [], msgId: null, awaitingResponse: false };
         toolBundleRef.current = null;
         setBusy(false);
         break;
@@ -1309,6 +1312,7 @@ function App() {
         setIsThinking(false);
         clearActive();
         setMessages(msgs => msgs.map(m => m.kind === "assistant" ? { ...m, streaming: false } : m));
+        streamRef.current.awaitingResponse = false;
         setBusy(false);
         if (ev.message) {
           const errId = "err-" + Date.now();
@@ -1339,12 +1343,12 @@ function App() {
     }
   }, [identity?.identity_uuid, loadConversations]);
 
-  const handleLogin = (id) => {
+  const handleLogin = useCallback((id) => {
     setIdentity(id);
     setMessages([]);
-    streamRef.current = { text: "", cards: [], msgId: null };
+    streamRef.current = { text: "", cards: [], msgId: null, awaitingResponse: false };
     loadConversations();
-  };
+  }, [loadConversations]);
 
   const handleSend = (text) => {
     if (!connected || busy) return;
@@ -1363,7 +1367,7 @@ function App() {
       }
       return [...msgs, { id: "user-" + Date.now(), kind: "user", text, ts: Date.now() }];
     });
-    streamRef.current = { text: "", cards: [], msgId: null };
+    streamRef.current = { text: "", cards: [], msgId: null, awaitingResponse: true };
     toolBundleRef.current = null;
     setDoneNodes(new Set());
     setLitNodes(new Set());

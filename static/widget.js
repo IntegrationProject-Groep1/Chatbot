@@ -344,7 +344,7 @@
     wrap.appendChild(bubble);
     $messages.appendChild(wrap);
 
-    activeBubble = { wrap, badgeRow, statusLine, bubble, cursor, rawText: '', cardArea: null, chipArea: null };
+    activeBubble = { wrap, badgeRow, statusLine, bubble, cursor, rawText: '', cardArea: null, chipArea: null, bumpedUnread: false };
     scrollBottom();
   }
 
@@ -449,7 +449,10 @@
     bubble.appendChild(cursor);
 
     scrollBottom();
-    if (!isOpen) bumpUnread();
+    if (!isOpen && !activeBubble.bumpedUnread) {
+      activeBubble.bumpedUnread = true;
+      bumpUnread();
+    }
   }
 
   // ─── Card rendering ──────────────────────────────────────────────────────────

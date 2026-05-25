@@ -99,14 +99,18 @@ class PersistentRabbitMQClient:
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
             method_frame, header_frame, response_body = self._channel.basic_get(
-                queue=self._reply_queue, auto_ack=True
+                queue=self._reply_queue, auto_ack=False
             )
-            if method_frame and header_frame and header_frame.correlation_id == corr_id:
-                return RpcResult(
-                    body=response_body,
-                    correlation_id=corr_id,
-                    content_type=getattr(header_frame, "content_type", None),
-                )
+            if method_frame:
+                # Always ack to keep the exclusive queue clean; only return on ID match.
+                self._channel.basic_ack(method_frame.delivery_tag)
+                if header_frame and header_frame.correlation_id == corr_id:
+                    return RpcResult(
+                        body=response_body,
+                        correlation_id=corr_id,
+                        content_type=getattr(header_frame, "content_type", None),
+                    )
+                # Stale reply from a previous timed-out call — discard and keep polling.
             self._connection.process_data_events(time_limit=0.2)
         raise TimeoutError(f"RPC timeout waiting for response from '{request_queue}'")
 
@@ -121,7 +125,7 @@ class PersistentRabbitMQClient:
         """Publishes a fire-and-forget event (Audit/Logging)."""
         # Ensure exchange exists
         self._channel.exchange_declare(exchange=exchange_name, exchange_type="topic", durable=True)
-        
+
         body = json.dumps(event_data, ensure_ascii=False).encode("utf-8")
         props = pika.BasicProperties(
             content_type=content_type,
@@ -199,14 +203,16 @@ class RabbitMQRpcClient:
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
             method_frame, header_frame, response_body = self._channel.basic_get(
-                queue=self._reply_queue, auto_ack=True
+                queue=self._reply_queue, auto_ack=False
             )
-            if method_frame and header_frame and header_frame.correlation_id == corr_id:
-                return RpcResult(
-                    body=response_body,
-                    correlation_id=corr_id,
-                    content_type=getattr(header_frame, "content_type", None),
-                )
+            if method_frame:
+                self._channel.basic_ack(method_frame.delivery_tag)
+                if header_frame and header_frame.correlation_id == corr_id:
+                    return RpcResult(
+                        body=response_body,
+                        correlation_id=corr_id,
+                        content_type=getattr(header_frame, "content_type", None),
+                    )
             self._connection.process_data_events(time_limit=0.2)
         raise TimeoutError(f"RPC timeout waiting for response from '{request_queue}'")
 
@@ -221,7 +227,7 @@ class RabbitMQRpcClient:
         """Publishes a fire-and-forget event (Audit/Logging)."""
         # Ensure exchange exists
         self._channel.exchange_declare(exchange=exchange_name, exchange_type="topic", durable=True)
-        
+
         body = json.dumps(event_data, ensure_ascii=False).encode("utf-8")
         props = pika.BasicProperties(
             content_type=content_type,
