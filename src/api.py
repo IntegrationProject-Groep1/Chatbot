@@ -1040,6 +1040,34 @@ async def delete_conversation(session_id: str, request: Request):
     return {"ok": True}
 
 
+@app.put("/api/conversations/{session_id}/active")
+async def set_active_conversation(session_id: str, request: Request):
+    """Mark a conversation as active in the database."""
+    auth = _get_auth(request)
+    if not auth:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    _, identity_uuid = auth
+    if not identity_uuid:
+        return JSONResponse({"error": "session too old — please log in again"}, status_code=401)
+    ok = session_store.set_active(session_id, identity_uuid)
+    if not ok:
+        return JSONResponse({"error": "conversation not found"}, status_code=404)
+    return {"ok": True, "active_session_id": session_id}
+
+
+@app.delete("/api/conversations/active")
+async def deactivate_conversations(request: Request):
+    """Deactivate all conversations for the authenticated admin in the database."""
+    auth = _get_auth(request)
+    if not auth:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    _, identity_uuid = auth
+    if not identity_uuid:
+        return JSONResponse({"error": "session too old — please log in again"}, status_code=401)
+    session_store.set_active(None, identity_uuid)
+    return {"ok": True}
+
+
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()

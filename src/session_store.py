@@ -162,6 +162,10 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
                         )
                     """)
                     cur.execute("""
+                        ALTER TABLE chatbot_conversations
+                        ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT FALSE
+                    """)
+                    cur.execute("""
                         CREATE INDEX IF NOT EXISTS idx_conv_identity
                         ON chatbot_conversations (identity_uuid, last_active DESC)
                     """)
@@ -420,7 +424,7 @@ def get_conversations(identity_uuid: str) -> list[dict]:
         try:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT session_id, label, created_at, last_active, pinned
+                    SELECT session_id, label, created_at, last_active, pinned, active
                     FROM chatbot_conversations
                     WHERE identity_uuid = %s
                     ORDER BY pinned DESC, last_active DESC
@@ -433,6 +437,37 @@ def get_conversations(identity_uuid: str) -> list[dict]:
     except Exception as e:
         _log.warning("get_conversations failed for uuid %s: %s", identity_uuid, e)
         return []
+
+
+def set_active(session_id: str | None, identity_uuid: str) -> bool:
+    pool = _get_pool()
+    if pool is None:
+        return False
+    try:
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE chatbot_conversations
+                    SET active = FALSE
+                    WHERE identity_uuid = %s
+                """, (identity_uuid,))
+                updated = False
+                if session_id:
+                    cur.execute("""
+                        UPDATE chatbot_conversations
+                        SET active = TRUE
+                        WHERE session_id = %s AND identity_uuid = %s
+                    """, (session_id, identity_uuid))
+                    updated = cur.rowcount > 0
+            conn.commit()
+            return updated if session_id else True
+        finally:
+            pool.putconn(conn)
+    except Exception as e:
+        import logging as _lg
+        _lg.getLogger(__name__).warning("set_active failed for session %s: %s", session_id, e)
+        return False
 
 
 def set_pinned(session_id: str, identity_uuid: str, pinned: bool) -> bool:
