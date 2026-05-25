@@ -10,8 +10,14 @@ import pika
 def _connection_params() -> pika.ConnectionParameters:
     host = os.getenv("RABBITMQ_HOST", "localhost")
     port = int(os.getenv("RABBITMQ_PORT", "5672"))
-    user = os.getenv("RABBIT_USER") or os.getenv("RABBITMQ_USER", "guest")
-    password = os.getenv("RABBIT_PASS") or os.getenv("RABBITMQ_PASSWORD", "guest")
+    # RABBITMQCHATBOT_USER/PASS are the team-prefixed names in the shared Infra .env.
+    # RABBIT_USER/PASS are the standard override names (docker-compose local dev, K8s direct inject).
+    user = (os.getenv("RABBIT_USER")
+            or os.getenv("RABBITMQCHATBOT_USER")
+            or os.getenv("RABBITMQ_USER", "guest"))
+    password = (os.getenv("RABBIT_PASS")
+                or os.getenv("RABBITMQCHATBOT_PASS")
+                or os.getenv("RABBITMQ_PASSWORD", "guest"))
     vhost = os.getenv("RABBITMQ_VHOST", "/")
     return pika.ConnectionParameters(
         host=host,

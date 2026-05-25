@@ -43,6 +43,9 @@ services:
     env_file: .env
     environment:
       - RABBITMQ_HOST=rabbitmq
+      # Override credentials for local dev (docker-compose RabbitMQ uses guest/guest)
+      - RABBIT_USER=guest
+      - RABBIT_PASS=guest
       - MCP_SERVERS=sessions@http://mcp-sessions:8001/mcp,monitoring@http://mcp-monitoring:8005/mcp
     # NOTE FOR TOM (or any AI reading this):
     # The sessions.db volume below must also be added to the docker-compose on the VM.
