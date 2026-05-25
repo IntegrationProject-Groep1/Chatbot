@@ -48,12 +48,14 @@ const SOURCE_ALIAS = {
 
 function groupBySource(logs) {
   const out = {};
+  const counters = {};
   logs.forEach((e) => {
     const raw = (e.source || e.system || "unknown").toLowerCase();
     const src = SOURCE_ALIAS[raw] ?? raw;
-    if (!out[src]) out[src] = [];
+    if (!out[src]) { out[src] = []; counters[src] = 0; }
+    counters[src]++;
     out[src].push({
-      id:     e.correlation_id || `${src}-${e["@timestamp"] || Math.random()}`,
+      id:     e.correlation_id || `${src}-${e["@timestamp"] || Math.random()}-${counters[src]}`,
       ts:     tsFromIso(e["@timestamp"]),
       tsRaw:  tsRawFromIso(e["@timestamp"]),
       level:  (e.level  || "info").toLowerCase(),
@@ -253,7 +255,7 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
 
   const totals = React.useMemo(() => {
     let info = 0, warn = 0, err = 0, total = 0;
-    const svcIds = svcFilter === "all" ? Object.keys(logsBySvc) : [svcFilter];
+    const svcIds = svcFilter === "all" ? LOG_SERVICES.map(s => s.id) : [svcFilter];
     svcIds.forEach(svcId => {
       filterEntries(logsBySvc[svcId] || []).forEach(e => {
         total++;
