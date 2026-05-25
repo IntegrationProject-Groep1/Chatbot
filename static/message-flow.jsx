@@ -832,6 +832,51 @@ function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, ho
         </div>
       </div>
 
+      <div className="mf-rail-section mf-rail-section--grow">
+        <h3 className="mf-rail-title">Verbindingen
+          <span className="sub"> actief</span>
+        </h3>
+        {(() => {
+          const activeEdges = Object.entries(edgeIdx)
+            .filter(([, e]) => e.count > 0)
+            .sort(([, a], [, b]) => b.count - a.count);
+          if (activeEdges.length === 0) {
+            return (
+              <div className="mf-rail-empty">
+                <span>Geen verkeer in dit venster</span>
+                <span className="mf-rail-hint">Klik op een service of verbinding in de flow voor details</span>
+              </div>
+            );
+          }
+          return (
+            <div className="mf-conn-list">
+              {activeEdges.map(([key, e]) => {
+                const [src, dst] = key.split("->");
+                const srcNode = NODES[src];
+                const dstNode = NODES[dst];
+                const isSel = selected?.type === "edge" && selected.key === key;
+                const hasErr = (e.errors || 0) > 0;
+                return (
+                  <button key={key}
+                    className={`mf-conn ${hasErr ? "has-err" : ""} ${isSel ? "on" : ""}`}
+                    onClick={() => onSelect(isSel ? null : { type: "edge", key, from: src, to: dst, data: e })}>
+                    <div className="mf-conn-route">
+                      <span className="mf-conn-svc" style={{ color: `var(--svc-${src}, var(--muted))` }}>{srcNode?.label || src}</span>
+                      <span className="mf-conn-arrow">→</span>
+                      <span className="mf-conn-svc" style={{ color: `var(--svc-${dst}, var(--muted))` }}>{dstNode?.label || dst}</span>
+                    </div>
+                    <div className="mf-conn-stats">
+                      <span className="mf-conn-count">{e.count}</span>
+                      {hasErr && <span className="mf-conn-err">{e.errors}✕</span>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
+
     </div>
   );
 }
