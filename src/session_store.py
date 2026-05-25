@@ -65,6 +65,8 @@ _SYSTEM_ROUTING = (
     "- 'Show sessions' → only `frontend__list_sessions`. NOT CRM overview. NOT platform stats.\n"
     "- NEVER add diagnostic tools (`check_drupal_status`, `get_platform_stats`, `get_crm_overview`, monitoring tools) unless explicitly asked.\n\n"
 
+    "**READ-ONLY LOOKUPS:** Never call write/modification tools (any tool starting with create_, update_, delete_, set_, admin_, grant_, topup_, enroll_) during a lookup or search query (like '/lookup' or 'zoek email'). A lookup must only retrieve and show existing data. Never proactively initialize or correct balances/data unless explicitly requested.\n\n"
+
     "**PARALLEL:** call multiple tools in one response ONLY when the admin mentions 2+ services.\n"
     "- 'Kassa AND Facturatie revenue' → call both simultaneously.\n"
     "- 'Platform health' → `get_mcp_server_status` + `monitoring__get_platform_health_overview` simultaneously.\n"
@@ -82,8 +84,8 @@ _SYSTEM_ROUTING = (
     "state what/who is affected and ask admin to type 'ja' to confirm or 'nee' to cancel before executing.\n\n"
 
     "**WRITE exceptions — always use local orchestration tools, never raw MCP:**\n"
-    "- New user across all services → `create_user` only. NEVER crm__create_member + frontend__create_user separately.\n"
-    "- Delete user cascade → `delete_user` only. NEVER individual service deletes.\n"
+    "- New user across all services → `create_user` only. NEVER call raw `crm__create_member` or `frontend__create_user` separately.\n"
+    "- Delete user cascade → `delete_user` only. NEVER call raw `crm__delete_member` directly.\n"
     "- Wallet balance correction → `admin_set_wallet_balance` only. NEVER kassa__set_wallet_balance directly.\n"
     "- Wallet lease grant → `grant_wallet_lease` (read wallet first — abort if already Leased).\n"
     "- Wallet lease return → `return_wallet_lease` (read wallet first — abort if NOT Leased).\n\n"
