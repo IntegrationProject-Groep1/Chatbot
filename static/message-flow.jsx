@@ -1123,7 +1123,7 @@ function MessageFlowScreen() {
   // ── Fetch ──
   const fetchData = useCallback(() => {
     const live = hours === null;
-    const apiHours = live ? 0.083 : hours;
+    const apiHours = live ? 0.25 : hours;
     fetch(`/api/monitoring/message-flow?hours=${apiHours}&limit=1000`)
       .then(r => { if (!r.ok) throw new Error(`Server ${r.status}`); return r.json(); })
       .then(d => {
