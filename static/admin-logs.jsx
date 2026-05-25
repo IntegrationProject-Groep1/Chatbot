@@ -201,6 +201,9 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
       // Only push service filter to API for historical queries — live always fetches
       // all services and filters client-side to avoid count mismatches.
       if (svcFilter !== "all") p.set("service", svcFilter);
+    } else {
+      // Live mode: cap at 15 minutes so the API only returns the rolling window.
+      p.set("hours", "0.25");
     }
     if (levelFilter !== "any") p.set("level", levelFilter);
     return `/api/logs/query?${p}`;
