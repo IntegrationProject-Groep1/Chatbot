@@ -274,6 +274,10 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
                         )
                     """)
                     cur.execute("""
+                        ALTER TABLE chatbot_sessions
+                        ADD COLUMN IF NOT EXISTS pending_write TEXT
+                    """)
+                    cur.execute("""
                         CREATE TABLE IF NOT EXISTS chatbot_conversations (
                             session_id    TEXT PRIMARY KEY,
                             identity_uuid TEXT NOT NULL,
