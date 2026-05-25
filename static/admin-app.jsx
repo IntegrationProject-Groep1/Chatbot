@@ -1417,7 +1417,7 @@ function App() {
           label: c.label,
           time: c.last_active ? new Date(c.last_active * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
           pinned: c.pinned,
-          active: false,
+          active: c.active,
         }));
         setHistory(convs);
       })
@@ -1461,12 +1461,14 @@ function App() {
     if (identity?.identity_uuid) initWS(identity.identity_uuid);
   }, [history, identity, initWS, addToast]);
 
-  // Persist activeConvId to sessionStorage when it changes
+  // Persist activeConvId to sessionStorage and Database when it changes
   useEffect(() => {
     if (activeConvId) {
       sessionStorage.setItem("active_conv_id", activeConvId);
+      fetch(`/api/conversations/${activeConvId}/active`, { method: "PUT" }).catch(() => {});
     } else {
       sessionStorage.removeItem("active_conv_id");
+      fetch("/api/conversations/active", { method: "DELETE" }).catch(() => {});
     }
   }, [activeConvId]);
 
@@ -1474,12 +1476,20 @@ function App() {
   const didRestore = useRef(false);
   useEffect(() => {
     if (identity?.identity_uuid && history.length > 0 && !activeConvId && !didRestore.current) {
-      const savedActiveId = sessionStorage.getItem("active_conv_id");
-      if (savedActiveId) {
-        const entry = history.find(h => h.id === savedActiveId);
-        if (entry) {
-          didRestore.current = true;
-          onPick(entry.id);
+      // 1. Try DB-persisted active conversation first
+      const dbActiveEntry = history.find(h => h.active);
+      if (dbActiveEntry) {
+        didRestore.current = true;
+        onPick(dbActiveEntry.id);
+      } else {
+        // 2. Fall back to sessionStorage if DB active is not found/not set yet
+        const savedActiveId = sessionStorage.getItem("active_conv_id");
+        if (savedActiveId) {
+          const entry = history.find(h => h.id === savedActiveId);
+          if (entry) {
+            didRestore.current = true;
+            onPick(entry.id);
+          }
         }
       }
     }
