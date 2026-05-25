@@ -46,12 +46,6 @@ _CONFIRM_PHRASES = frozenset({
     "do it", "doe het", "go ahead", "ga door",
 })
 
-# Pending write calls blocked by the write-gate — keyed by session_id
-_PENDING_WRITE: dict[str, dict] = {}
-
-
-import re
-
 def _is_write_tool(tool_name: str) -> bool:
     bare = tool_name.split("__")[-1].lower()
     return any(bare.startswith(p) for p in _WRITE_PREFIXES)
