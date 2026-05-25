@@ -613,63 +613,105 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
     tool_calls_acc: dict[int, dict] = {}
     is_tool_response = False  # becomes True as soon as we see a tool_call delta
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        async with client.stream("POST", _API_URL, json=payload, headers=_HEADERS) as resp:
-            if resp.status_code >= 400:
-                body = await resp.aread()
-                _log.error(
-                    "NVIDIA API %d: model=%s msgs=%d body=%s",
-                    resp.status_code, _MODEL, len(payload.get("messages", [])),
-                    body.decode("utf-8", errors="replace")[:600],
+    max_retries = 5
+    backoff = 1.0
+
+    for attempt in range(max_retries):
+        full_content = ""
+        tool_calls_acc = {}
+        is_tool_response = False
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                async with client.stream("POST", _API_URL, json=payload, headers=_HEADERS) as resp:
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        body = await resp.aread()
+                        _log.warning(
+                            "NVIDIA API %d (Attempt %d/%d): model=%s msgs=%d body=%s",
+                            resp.status_code, attempt + 1, max_retries, _MODEL, len(payload.get("messages", [])),
+                            body.decode("utf-8", errors="replace")[:600],
+                        )
+                        if attempt < max_retries - 1:
+                            retry_after = resp.headers.get("retry-after") or resp.headers.get("Retry-After")
+                            sleep_dur = backoff
+                            if retry_after:
+                                try:
+                                    sleep_dur = float(retry_after)
+                                except ValueError:
+                                    pass
+                            _log.info("Retrying in %.1f seconds...", sleep_dur)
+                            await asyncio.sleep(sleep_dur)
+                            backoff *= 2.0
+                            continue
+
+                    if resp.status_code >= 400:
+                        body = await resp.aread()
+                        _log.error(
+                            "NVIDIA API %d: model=%s msgs=%d body=%s",
+                            resp.status_code, _MODEL, len(payload.get("messages", [])),
+                            body.decode("utf-8", errors="replace")[:600],
+                        )
+                        if resp.status_code == 400:
+                            raise httpx.HTTPStatusError(
+                                f"Client error '400 Bad Request' — model '{_MODEL}' may be unavailable or the request payload was rejected. See server logs for details.",
+                                request=resp.request, response=resp,
+                            )
+                        resp.raise_for_status()
+
+                    async for raw in resp.aiter_lines():
+                        if not raw.startswith("data: "):
+                            continue
+                        payload_str = raw[6:].strip()
+                        if payload_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload_str)
+                        except json.JSONDecodeError:
+                            continue
+
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+
+                        # Detect tool call as early as possible
+                        if delta.get("tool_calls"):
+                            is_tool_response = True
+
+                        # Accumulate and optionally stream text
+                        if delta.get("content"):
+                            full_content += delta["content"]
+                            if emit and not is_tool_response:
+                                await emit({"type": "stream_token", "token": delta["content"]})
+
+                        # Accumulate tool call fragments (streamed in pieces)
+                        for tc in delta.get("tool_calls", []):
+                            idx = tc.get("index", 0)
+                            if idx not in tool_calls_acc:
+                                tool_calls_acc[idx] = {
+                                    "id": "",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""},
+                                }
+                            if tc.get("id"):
+                                tool_calls_acc[idx]["id"] = tc["id"]
+                            fn = tc.get("function", {})
+                            if fn.get("name"):
+                                tool_calls_acc[idx]["function"]["name"] += fn["name"]
+                            if fn.get("arguments"):
+                                tool_calls_acc[idx]["function"]["arguments"] += fn["arguments"]
+            # Succeeded without error/retry
+            break
+        except (httpx.HTTPError, asyncio.TimeoutError) as exc:
+            if attempt < max_retries - 1:
+                _log.warning(
+                    "NVIDIA API connection error (Attempt %d/%d): %s. Retrying in %.1f seconds...",
+                    attempt + 1, max_retries, str(exc), backoff
                 )
-                if resp.status_code == 400:
-                    raise httpx.HTTPStatusError(
-                        f"Client error '400 Bad Request' — model '{_MODEL}' may be unavailable or the request payload was rejected. See server logs for details.",
-                        request=resp.request, response=resp,
-                    )
-                resp.raise_for_status()
-            async for raw in resp.aiter_lines():
-                if not raw.startswith("data: "):
-                    continue
-                payload_str = raw[6:].strip()
-                if payload_str == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(payload_str)
-                except json.JSONDecodeError:
-                    continue
-
-                choices = chunk.get("choices") or []
-                if not choices:
-                    continue
-                delta = choices[0].get("delta", {})
-
-                # Detect tool call as early as possible
-                if delta.get("tool_calls"):
-                    is_tool_response = True
-
-                # Accumulate and optionally stream text
-                if delta.get("content"):
-                    full_content += delta["content"]
-                    if emit and not is_tool_response:
-                        await emit({"type": "stream_token", "token": delta["content"]})
-
-                # Accumulate tool call fragments (streamed in pieces)
-                for tc in delta.get("tool_calls", []):
-                    idx = tc.get("index", 0)
-                    if idx not in tool_calls_acc:
-                        tool_calls_acc[idx] = {
-                            "id": "",
-                            "type": "function",
-                            "function": {"name": "", "arguments": ""},
-                        }
-                    if tc.get("id"):
-                        tool_calls_acc[idx]["id"] = tc["id"]
-                    fn = tc.get("function", {})
-                    if fn.get("name"):
-                        tool_calls_acc[idx]["function"]["name"] += fn["name"]
-                    if fn.get("arguments"):
-                        tool_calls_acc[idx]["function"]["arguments"] += fn["arguments"]
+                await asyncio.sleep(backoff)
+                backoff *= 2.0
+                continue
+            else:
+                raise
 
     result: dict = {"content": full_content or None}
     if tool_calls_acc:
