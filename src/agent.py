@@ -548,6 +548,36 @@ async def _handle_local_tool(name: str, args: dict) -> str | None:
     return None
 
 
+def _parse_inline_tool_calls(content: str) -> list[dict]:
+    """Fallback: some model variants output tool calls as JSON code blocks in content.
+    Handles ``{"name": "...", "parameters": {...}}`` and similar shapes.
+    """
+    import hashlib as _hashlib
+    matches = re.findall(r"```(?:json)?\s*(\{[\s\S]+?\})\s*```", content)
+    tool_calls = []
+    for raw in matches:
+        try:
+            obj = json.loads(raw.strip())
+        except json.JSONDecodeError:
+            continue
+        name = obj.get("name") or (obj.get("function") or {}).get("name")
+        if not name:
+            continue
+        params = obj.get("parameters") or obj.get("arguments") or obj.get("args") or {}
+        if isinstance(params, str):
+            try:
+                params = json.loads(params)
+            except Exception:
+                params = {}
+        uid = _hashlib.md5(raw.encode()).hexdigest()[:10]
+        tool_calls.append({
+            "id": f"inline-{uid}",
+            "type": "function",
+            "function": {"name": name, "arguments": json.dumps(params)},
+        })
+    return tool_calls
+
+
 async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dict:
     """Stream a completion from the NVIDIA API.
 
@@ -854,6 +884,18 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
             return
 
         tool_calls = response_msg.get("tool_calls") or []
+
+        # Fallback: some model variants (e.g. llama-3.3-70b) output tool calls as
+        # JSON code blocks in content instead of using the tool_calls field.
+        if not tool_calls and response_msg.get("content"):
+            inline = _parse_inline_tool_calls(response_msg["content"])
+            if inline:
+                _log.info(
+                    "LLM round %d: detected %d inline tool call(s) in content — executing via fallback parser",
+                    loop_idx + 1, len(inline),
+                )
+                tool_calls = inline
+                response_msg = {**response_msg, "content": None}  # suppress JSON as chat text
 
         # Drop any tool calls the LLM is repeating with identical arguments
         deduped: list[dict] = []
