@@ -863,7 +863,7 @@ function SidebarItem({ h, activeConvId, onPick, onPin, onDelete }) {
 }
 
 // ─── Topbar ────────────────────────────────────────────────────────────────
-function Topbar({ identity, connected, serverCount, onSettings, sidebarOpen, onToggleSidebar, flowOpen, onToggleFlow }) {
+function Topbar({ identity, connected, serverCount, onSettings, sidebarOpen, onToggleSidebar, flowOpen, onToggleFlow, onLogout }) {
   const initials = identity ? (identity.email || "AD").split("@")[0].slice(0,2).toUpperCase() : "??";
   return (
     <header className="topbar">
@@ -906,6 +906,13 @@ function Topbar({ identity, connected, serverCount, onSettings, sidebarOpen, onT
         <span className="em">{identity ? identity.email : "…"}</span>
         <span className="role">admin</span>
       </div>
+      <button className="icon-btn topbar-logout" title="Uitloggen" onClick={onLogout}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
     </header>
   );
 }
@@ -1350,6 +1357,18 @@ function App() {
     loadConversations();
   }, [loadConversations]);
 
+  const handleLogout = useCallback(async () => {
+    if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null; }
+    try { await fetch("/api/admin/logout", { method: "POST" }); } catch { /* ignore */ }
+    sessionStorage.removeItem("admin_identity");
+    setIdentity(null);
+    setMessages([]);
+    setHistory([]);
+    setActiveConvId(null);
+    setBusy(false);
+    streamRef.current = { text: "", cards: [], msgId: null, awaitingResponse: false };
+  }, []);
+
   const handleSend = (text) => {
     if (!connected || busy) return;
     setBusy(true);
@@ -1515,6 +1534,7 @@ function App() {
         onToggleSidebar={() => setSidebarOpen(v => !v)}
         flowOpen={flowOpen}
         onToggleFlow={() => setFlowOpen(v => !v)}
+        onLogout={handleLogout}
       />
 
       {sidebarOpen && <Sidebar
