@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 import re
 import threading
 import time
 from datetime import date as _date
+
+_log = logging.getLogger(__name__)
 
 import psycopg2
 import psycopg2.pool
@@ -300,8 +303,8 @@ def _persist(session_id: str, identity_uuid: str, messages: list, last_active: f
             conn.commit()
         finally:
             pool.putconn(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("_persist failed for session %s: %s", session_id, e)
 
 
 def _load_from_db(session_id: str) -> dict | None:
@@ -327,8 +330,8 @@ def _load_from_db(session_id: str) -> dict | None:
                     }
         finally:
             pool.putconn(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("_load_from_db failed for session %s: %s", session_id, e)
     return None
 
 # ── Public API ──────────────────────────────────────────────────────────────
@@ -449,8 +452,8 @@ def cleanup_expired() -> None:
             conn.commit()
         finally:
             pool.putconn(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("cleanup_old_sessions failed: %s", e)
 
 
 # ── Conversation metadata (per-admin, cross-device) ─────────────────────────
@@ -475,8 +478,8 @@ def upsert_conversation(session_id: str, identity_uuid: str, label: str) -> None
             conn.commit()
         finally:
             pool.putconn(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("upsert_conversation failed for session %s: %s", session_id, e)
 
 
 def get_conversations(identity_uuid: str) -> list[dict]:
@@ -498,7 +501,8 @@ def get_conversations(identity_uuid: str) -> list[dict]:
                 return [dict(zip(cols, row)) for row in cur.fetchall()]
         finally:
             pool.putconn(conn)
-    except Exception:
+    except Exception as e:
+        _log.warning("get_conversations failed for uuid %s: %s", identity_uuid, e)
         return []
 
 
@@ -520,7 +524,8 @@ def set_pinned(session_id: str, identity_uuid: str, pinned: bool) -> bool:
             return updated
         finally:
             pool.putconn(conn)
-    except Exception:
+    except Exception as e:
+        _log.warning("set_pinned failed for session %s: %s", session_id, e)
         return False
 
 
@@ -545,5 +550,6 @@ def delete_conversation(session_id: str, identity_uuid: str) -> bool:
             return deleted
         finally:
             pool.putconn(conn)
-    except Exception:
+    except Exception as e:
+        _log.warning("delete_conversation failed for session %s: %s", session_id, e)
         return False
