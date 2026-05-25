@@ -204,6 +204,7 @@ async def _call_mcp(tool: str, args: dict = {}) -> dict:
         raw = await mcp_client.get().call_tool(tool, args)
         return json.loads(raw)
     except Exception as exc:
+        _log.warning("MCP call failed: tool=%s error=%s", tool, exc)
         return {"error": str(exc)}
 
 
@@ -295,12 +296,13 @@ def _normalize_log_entry(entry: dict) -> dict:
     }
 
 
-async def _get_monitoring_logs(limit: int = 100) -> dict:
+async def _get_monitoring_logs(limit: int = 100, hours: float = 24.0) -> dict:
     """Fetch recent logs from either the current or legacy Monitoring MCP shape.
     Also stores logs to local database for persistence during downtime.
+    hours controls how far back the DB fallback looks when MCP is unavailable.
     """
     import log_store
-    
+
     limit = min(max(int(limit or 100), 1), 1000)
     result = await _call_mcp("monitoring__get_recent_logs", {"limit": limit})
     raw_entries = []
@@ -326,17 +328,16 @@ async def _get_monitoring_logs(limit: int = 100) -> dict:
 
     # Fall back to cached DB logs whenever live MCP returns nothing (empty or error)
     if not entries:
-        cached = log_store.get_recent_logs(limit=limit, hours=24)
+        cached = log_store.get_recent_logs(limit=limit, hours=hours)
         if cached:
-            # Ensure @timestamp is present so message-flow endpoint can use it
             for c in cached:
                 if not c.get("@timestamp") and c.get("timestamp"):
                     c["@timestamp"] = c["timestamp"]
             entries = cached
-            if error:
-                _log.warning("Using cached logs due to monitoring error: %s", error)
-            error = "Showing cached logs (no live connection)" if error else None
-    
+            _log.warning("MCP monitoring unavailable, serving %d cached entries (hours=%.2f): %s",
+                         len(entries), hours, error or "no data")
+            error = "Showing cached logs (no live connection)"
+
     return {"logs": entries, "count": len(entries), "error": error}
 
 
@@ -529,6 +530,7 @@ async def logs_query(
         _normalize_log_entry(e) for e in raw
         if isinstance(e, dict) and not _is_http_transport_success(e)
     ]
+    from_live = bool(entries)
     if entries:
         log_store.store_logs_batch(entries)
 
@@ -543,10 +545,10 @@ async def logs_query(
                 c["@timestamp"] = c["timestamp"]
         entries = cached
         if entries:
+            _log.info("logs_query: MCP returned no entries, serving %d cached rows (since=%s)", len(entries), since)
             error = "Showing cached logs (live MCP unavailable)"
 
     # Apply action filter post-fetch when MCP doesn't support it natively
-    # (get_logs_in_timerange has no action param, so filter here for consistency)
     if action and entries:
         entries = [e for e in entries if (e.get("action") or "").lower() == action.lower()]
 
@@ -555,7 +557,7 @@ async def logs_query(
     return {
         "logs": entries,
         "count": len(entries),
-        "source": "live" if raw else "cache",
+        "source": "live" if from_live else "cache",
         "error": error,
     }
 
@@ -752,7 +754,7 @@ async def monitoring_message_flow(hours: float = 1.0, limit: int = 500):
     limit = min(limit, 1000)
 
     logs_result, status_result = await asyncio.gather(
-        _get_monitoring_logs(limit),
+        _get_monitoring_logs(limit, hours=hours),
         _call_mcp("monitoring__get_service_status"),
     )
 
