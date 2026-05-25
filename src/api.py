@@ -192,7 +192,7 @@ async def identify_by_uuid(identity_uuid: str):
 
 
 @app.get("/health")
-async def health():
+async def health_simple():
     return {"status": "ok"}
 
 
@@ -202,8 +202,7 @@ async def health():
 async def _call_mcp(tool: str, args: dict = {}) -> dict:
     try:
         raw = await mcp_client.get().call_tool(tool, args)
-        import json as _json
-        return _json.loads(raw)
+        return json.loads(raw)
     except Exception as exc:
         return {"error": str(exc)}
 
