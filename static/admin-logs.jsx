@@ -188,8 +188,13 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
     const p = new URLSearchParams();
     p.set("limit", LIVE_LIMIT);
     const mode = TIME_MODES.find(m => m.id === timeMode);
-    if (mode && mode.hours !== null) p.set("hours", mode.hours);
-    if (svcFilter !== "all") p.set("service", svcFilter);
+    const isHistorical = mode && mode.hours !== null;
+    if (isHistorical) {
+      p.set("hours", mode.hours);
+      // Only push service filter to API for historical queries — live always fetches
+      // all services and filters client-side to avoid count mismatches.
+      if (svcFilter !== "all") p.set("service", svcFilter);
+    }
     if (levelFilter !== "any") p.set("level", levelFilter);
     return `/api/logs/query?${p}`;
   }, [timeMode, svcFilter, levelFilter]);
@@ -238,8 +243,9 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
 
   const totals = React.useMemo(() => {
     let info = 0, warn = 0, err = 0, total = 0;
-    Object.values(logsBySvc).forEach(list => {
-      list.forEach(e => {
+    const svcIds = svcFilter === "all" ? Object.keys(logsBySvc) : [svcFilter];
+    svcIds.forEach(svcId => {
+      (logsBySvc[svcId] || []).forEach(e => {
         total++;
         if (e.level === "info") info++;
         else if (e.level === "warning" || e.level === "warn") warn++;
@@ -247,7 +253,7 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
       });
     });
     return { info, warn, err, total };
-  }, [logsBySvc]);
+  }, [logsBySvc, svcFilter]);
 
   const visibleServices = svcFilter === "all"
     ? LOG_SERVICES

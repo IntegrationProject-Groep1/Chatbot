@@ -394,7 +394,7 @@ function InfraHeartbeatRow({ sys, statusMap, mcpMap, onOpen }) {
       .then(r => r.json())
       .then(d => setCells((d.cells || []).slice(-15)))
       .catch(() => {});
-  }, [sys.id, sys.group, JSON.stringify(mcpMap)]);
+  }, [sys.id, sys.group, mcpMap[sys.id.replace("-mcp", "")]?.connected]);
 
   const svc = statusMap[sys.id] || {};
   const mcpStatus = sys.group === "mcp" ? (mcpMap[sys.id.replace("-mcp", "")] || {}) : null;
@@ -412,7 +412,7 @@ function InfraHeartbeatRow({ sys, statusMap, mcpMap, onOpen }) {
     uptime,
     lastSeen: typeof lastSeen === "number" ? lastSeen : null,
     note: sys.group === "mcp"
-      ? `${mcpStatus?.connected ? "MCP connected" : "MCP disconnected"}${mcpStatus?.tool_count != null ? ` · ${mcpStatus.tool_count} tools` : ""}`
+      ? `${mcpStatus?.connected ? "MCP connected" : "MCP disconnected"}${mcpStatus?.count != null ? ` · ${mcpStatus.count} tools` : ""}`
       : undefined,
   };
 
@@ -582,7 +582,7 @@ function MCPServersSection() {
             <div className="mcp-svc-dot"></div>
             <div className="mcp-svc-info">
               <b>{_MCP_LABELS[s.id] || s.id}</b>
-              <span className="mono">{s.connected ? `${s.tool_count ?? "?"} tools` : "disconnected"}</span>
+              <span className="mono">{s.connected ? `${s.count ?? "?"} tools` : "disconnected"}</span>
             </div>
             <span className={`mon-pill ${s.connected ? "online" : "quarantine"}`}>
               {s.connected ? "connected" : "offline"}
