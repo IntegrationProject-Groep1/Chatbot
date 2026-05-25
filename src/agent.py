@@ -585,7 +585,19 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         async with client.stream("POST", _API_URL, json=payload, headers=_HEADERS) as resp:
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                _log.error(
+                    "NVIDIA API %d: model=%s msgs=%d body=%s",
+                    resp.status_code, _MODEL, len(payload.get("messages", [])),
+                    body.decode("utf-8", errors="replace")[:600],
+                )
+                if resp.status_code == 400:
+                    raise httpx.HTTPStatusError(
+                        f"Client error '400 Bad Request' — model '{_MODEL}' may be unavailable or the request payload was rejected. See server logs for details.",
+                        request=resp.request, response=resp,
+                    )
+                resp.raise_for_status()
             async for raw in resp.aiter_lines():
                 if not raw.startswith("data: "):
                     continue
