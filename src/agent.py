@@ -457,17 +457,23 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     session_store.append(session_id, {"role": "user", "content": user_message})
 
     # ── Re-execute a pending write if admin just confirmed ───────────────────
-    if _has_confirmation(session_id) and session_id in _PENDING_WRITE:
-        tc = _PENDING_WRITE.pop(session_id)
+    pending_tc = session_store.get_pending_write(session_id)
+    if _has_confirmation(session_id) and pending_tc:
+        # Clear pending write from DB (stateless)
+        session_store.set_pending_write(session_id, None)
+        
+        tc = pending_tc
         name = tc["function"]["name"]
         await emit({"type": "status", "status": "executing_tools", "count": 1})
         session_store.append(session_id, {"role": "assistant", "content": None, "tool_calls": [tc]})
         call_id, result = await _execute_tool(tc, session_id, emit)
-        session_store.append(session_id, {"role": "tool", "tool_call_id": call_id, "name": name, "content": result})
+        session_store.append(session_id, {
+            "role": "tool", "tool_call_id": call_id, "name": name, "content": result
+        })
         # Fall through — LLM summarises the result in the main loop
     elif not _has_confirmation(session_id):
         # Clear any stale pending write (user changed topic or typed "nee")
-        _PENDING_WRITE.pop(session_id, None)
+        session_store.set_pending_write(session_id, None)
 
     # Track (tool_name|normalised_args) to prevent identical retries within one turn
     called_tools: set[str] = set()
@@ -541,7 +547,8 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 call_id = tc["id"]
                 args = json.loads(tc["function"].get("arguments", "{}"))
                 
-                _PENDING_WRITE[session_id] = tc
+                # Persist pending write to DB (stateless)
+                session_store.set_pending_write(session_id, tc)
                 _log.info("WRITE BLOCKED pending confirmation: tool=%s session=%s", name, session_id)
                 
                 await emit({

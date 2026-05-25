@@ -248,6 +248,7 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
                             session_id    TEXT PRIMARY KEY,
                             identity_uuid TEXT NOT NULL,
                             messages      TEXT NOT NULL,
+                            pending_write TEXT,
                             last_active   DOUBLE PRECISION NOT NULL
                         )
                     """)
@@ -278,7 +279,7 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
     return _pool
 
 
-def _persist(session_id: str, identity_uuid: str, messages: list, last_active: float) -> None:
+def _persist(session_id: str, identity_uuid: str, messages: list, last_active: float, pending_write: dict | None = None) -> None:
     pool = _get_pool()
     if pool is None:
         return
@@ -287,13 +288,15 @@ def _persist(session_id: str, identity_uuid: str, messages: list, last_active: f
         try:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO chatbot_sessions (session_id, identity_uuid, messages, last_active)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO chatbot_sessions (session_id, identity_uuid, messages, pending_write, last_active)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (session_id) DO UPDATE SET
                         identity_uuid = EXCLUDED.identity_uuid,
                         messages      = EXCLUDED.messages,
+                        pending_write = EXCLUDED.pending_write,
                         last_active   = EXCLUDED.last_active
-                """, (session_id, identity_uuid, json.dumps(messages), last_active))
+                """, (session_id, identity_uuid, json.dumps(messages), 
+                      json.dumps(pending_write) if pending_write else None, last_active))
             conn.commit()
         finally:
             pool.putconn(conn)
@@ -311,7 +314,7 @@ def _load_from_db(session_id: str) -> dict | None:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT identity_uuid, messages, last_active FROM chatbot_sessions WHERE session_id = %s AND last_active > %s",
+                    "SELECT identity_uuid, messages, last_active, pending_write FROM chatbot_sessions WHERE session_id = %s AND last_active > %s",
                     (session_id, time.time() - _TTL),
                 )
                 row = cur.fetchone()
@@ -320,6 +323,7 @@ def _load_from_db(session_id: str) -> dict | None:
                         "identity_uuid": row[0],
                         "messages": json.loads(row[1]),
                         "last_active": row[2],
+                        "pending_write": json.loads(row[3]) if row[3] else None,
                     }
         finally:
             pool.putconn(conn)
@@ -349,7 +353,7 @@ def init_session(session_id: str, identity_uuid: str) -> None:
     if session:
         msgs = session["messages"]
         _refresh_date(msgs)
-        _persist(session_id, identity_uuid, msgs, time.time())
+        _persist(session_id, identity_uuid, msgs, time.time(), session.get("pending_write"))
         return
 
     # Brand new session
@@ -371,12 +375,26 @@ def append(session_id: str, message: dict) -> None:
         return
     msgs = session["messages"]
     msgs.append(message)
-    _persist(session_id, session["identity_uuid"], msgs, time.time())
+    _persist(session_id, session["identity_uuid"], msgs, time.time(), session.get("pending_write"))
 
 
 def get(session_id: str) -> list[dict]:
     session = _load_from_db(session_id)
     return list(session.get("messages", [])) if session else []
+
+
+def set_pending_write(session_id: str, tool_call: dict | None) -> None:
+    """Persist a tool call blocked by the write-gate."""
+    session = _load_from_db(session_id)
+    if not session:
+        return
+    _persist(session_id, session["identity_uuid"], session["messages"], time.time(), tool_call)
+
+
+def get_pending_write(session_id: str) -> dict | None:
+    """Retrieve the pending tool call for a session."""
+    session = _load_from_db(session_id)
+    return session.get("pending_write") if session else None
 
 
 def get_messages_for_api(session_id: str) -> list[dict]:
