@@ -988,6 +988,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 message = str(data.get("message", "")).strip()
                 if not message:
                     continue
+
+                # Auto-upsert conversation metadata so it appears in "recent chats"
+                # Label is either provided or derived from first message
+                try:
+                    # Check if this is the first message (to avoid constant re-labeling unless needed)
+                    # Actually upsert_conversation is idempotent and updates last_active
+                    label = data.get("label") or message[:40] + ("..." if len(message) > 40 else "")
+                    session_store.upsert_conversation(session_id, identity_uuid, label)
+                except Exception as e:
+                    _log.error("Failed to auto-upsert conversation: %s", e)
+
                 _log.info("CHAT: session=%s len=%d preview=%r", session_id, len(message), message[:80])
                 try:
                     await agent.run_agent(session_id, message, emit)
