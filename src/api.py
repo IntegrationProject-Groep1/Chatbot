@@ -223,6 +223,16 @@ def _is_connection_noise(entry: dict) -> bool:
     return any(p in msg for p in _CONNECTION_NOISE_PATTERNS)
 
 
+def _is_http_transport_success(entry: dict) -> bool:
+    """Detect internal HTTP transport logs for successful requests (status 2xx).
+    These are emitted by the elasticsearch-py/urllib3 client on every poll and
+    carry zero actionable information — they should never reach the dashboard.
+    Pattern: 'METHOD http://*-service:PORT/... [status:2XX duration:Xs]'
+    """
+    msg = (entry.get("message") or entry.get("log_message") or "").lower()
+    return "http://" in msg and "-service" in msg and "[status:2" in msg
+
+
 def _deduplicate_connection_noise(entries: list) -> list:
     """Collapse runs of identical connection-error noise into a single entry with a repeat count."""
     result = []
@@ -306,7 +316,10 @@ async def _get_monitoring_logs(limit: int = 100) -> dict:
         elif isinstance(fallback, dict) and fallback.get("error") and not error:
             error = fallback.get("error")
 
-    entries = [_normalize_log_entry(e) for e in raw_entries if isinstance(e, dict)]
+    entries = [
+        _normalize_log_entry(e) for e in raw_entries
+        if isinstance(e, dict) and not _is_http_transport_success(e)
+    ]
 
     if entries:
         log_store.store_logs_batch(entries)
@@ -512,7 +525,10 @@ async def logs_query(
         raw = mcp_result.get("logs") or []
         error = mcp_result.get("error")
 
-    entries = [_normalize_log_entry(e) for e in raw if isinstance(e, dict)]
+    entries = [
+        _normalize_log_entry(e) for e in raw
+        if isinstance(e, dict) and not _is_http_transport_success(e)
+    ]
     if entries:
         log_store.store_logs_batch(entries)
 
