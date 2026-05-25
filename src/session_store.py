@@ -412,13 +412,15 @@ def get(session_id: str) -> list[dict]:
 
 
 def get_messages_for_api(session_id: str) -> list[dict]:
-    """Return user/assistant messages (no system, no tool) for restoring the chat UI."""
+    """Return user/assistant/tool messages for restoring the chat UI."""
     msgs = get(session_id)
     result = []
     for m in msgs:
         role = m.get("role")
-        if role not in ("user", "assistant"):
+        if role not in ("user", "assistant", "tool"):
             continue
+        
+        # User/Assistant/Tool content
         content = m.get("content", "")
         if isinstance(content, list):
             text = " ".join(
@@ -426,9 +428,20 @@ def get_messages_for_api(session_id: str) -> list[dict]:
                 if isinstance(block, dict) and block.get("type") == "text"
             )
         else:
-            text = str(content)
-        if text.strip():
-            result.append({"role": role, "text": text.strip()})
+            text = str(content) if content is not None else ""
+        
+        entry = {"role": role, "text": text.strip()}
+        
+        # Include tool_calls for assistant messages
+        if role == "assistant" and "tool_calls" in m:
+            entry["tool_calls"] = m["tool_calls"]
+            
+        # Include tool details for tool messages
+        if role == "tool":
+            entry["tool_call_id"] = m.get("tool_call_id")
+            entry["name"] = m.get("name")
+            
+        result.append(entry)
     return result
 
 

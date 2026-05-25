@@ -28,6 +28,9 @@ _log = logging.getLogger(__name__)
 
 MAX_LOOPS = 6
 
+import re
+import hashlib
+
 # ── Write-tool gate ──────────────────────────────────────────────────────────
 _WRITE_PREFIXES = (
     "update_", "delete_", "cancel_", "create_",
@@ -392,32 +395,33 @@ def _extract_cards(session_id: str) -> list[dict]:
         if not isinstance(data, dict):
             continue
 
-        if "sessions" in data and data["sessions"] and "session" not in seen:
-            events.append({"type": "cards", "card_type": "session", "data": data["sessions"]})
-            seen.add("session")
-        if "invoices" in data and data["invoices"] and "invoice" not in seen:
-            events.append({"type": "cards", "card_type": "invoice", "data": data["invoices"]})
-            seen.add("invoice")
-        if "total_amount" in data and "total" not in seen:
-            events.append({"type": "cards", "card_type": "invoice_total", "data": data})
-            seen.add("total")
-        if "services" in data and data["services"] and "services" not in seen:
-            events.append({"type": "cards", "card_type": "service_status", "data": data["services"]})
-            seen.add("services")
-        if "errors" in data and data["errors"] and "errors" not in seen:
-            events.append({"type": "cards", "card_type": "error_log", "data": data["errors"]})
-            seen.add("errors")
-        if "members" in data and data["members"] and "members" not in seen:
-            events.append({"type": "cards", "card_type": "member", "data": data["members"]})
-            seen.add("members")
-        if "orders" in data and data["orders"] and "orders" not in seen:
-            events.append({"type": "cards", "card_type": "order", "data": data["orders"]})
-            seen.add("orders")
+        # Helper to hash content for deduplication (prevent identical cards in one turn)
+        def add_card(card_type, card_data):
+            content_hash = hashlib.md5(json.dumps(card_data, sort_keys=True).encode()).hexdigest()
+            key = f"{card_type}:{content_hash}"
+            if key not in seen:
+                events.append({"type": "cards", "card_type": card_type, "data": card_data})
+                seen.add(key)
+
+        if "sessions" in data and data["sessions"]:
+            add_card("session", data["sessions"])
+        if "invoices" in data and data["invoices"]:
+            add_card("invoice", data["invoices"])
+        if "total_amount" in data:
+            add_card("invoice_total", data)
+        if "services" in data and data["services"]:
+            add_card("service_status", data["services"])
+        if "errors" in data and data["errors"]:
+            add_card("error_log", data["errors"])
+        if "members" in data and data["members"]:
+            add_card("member", data["members"])
+        if "orders" in data and data["orders"]:
+            add_card("order", data["orders"])
         
         data_keys_lower = {k.lower() for k in data.keys()}
-        if any("wallet" in k for k in data_keys_lower) and "wallet" not in seen:
-            events.append({"type": "cards", "card_type": "wallet", "data": data})
-            seen.add("wallet")
+        if any("wallet" in k for k in data_keys_lower):
+            add_card("wallet", data)
+            
     return events
 
 

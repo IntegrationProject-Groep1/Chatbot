@@ -83,12 +83,18 @@ class MCPClient:
         _log.error("MCP [%s] could not reconnect after all retries — will retry at next health check", label)
 
     async def _ping(self, label: str, url: str) -> bool:
-        """Lightweight HTTP GET to the MCP base URL — faster than list_tools()."""
+        """Lightweight HTTP check to the MCP base URL."""
         try:
             import httpx
             async with httpx.AsyncClient(timeout=4.0) as http:
-                r = await http.get(url.rstrip("/").rsplit("/mcp", 1)[0] + "/health"
-                                   if "/mcp" in url else url)
+                # 1. Try HEAD request to base URL (fastest, most generic)
+                r = await http.head(url)
+                if r.status_code < 500:
+                    return True
+                
+                # 2. Try GET to /health as fallback
+                health_url = url.rstrip("/").rsplit("/mcp", 1)[0] + "/health" if "/mcp" in url else url
+                r = await http.get(health_url)
                 return r.status_code < 500
         except Exception:
             return False
@@ -164,11 +170,20 @@ class MCPClient:
         n = name.lower()
         return _CACHE_TTL > 0 and not any(p in n for p in _NO_CACHE)
 
+    def _cleanup_cache(self) -> None:
+        """Remove expired entries from the cache to prevent memory leaks."""
+        now = time.time()
+        expired = [k for k, (ts, _) in self._cache.items() if now - ts > _CACHE_TTL]
+        for k in expired:
+            del self._cache[k]
+
     async def call_tool(self, name: str, args: dict, timeout: float = 30.0) -> str:
         """Call a tool by name (namespaced as label__tool_name). Always returns a JSON string.
         On session/connection errors, reconnects once and retries immediately."""
         if name not in self._registry:
             return json.dumps({"error": f"Tool '{name}' not found in any MCP server"})
+
+        self._cleanup_cache()
 
         # Short-circuit with cached result for read-only tools
         if self._is_cacheable(name):
