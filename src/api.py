@@ -254,10 +254,16 @@ def _deduplicate_connection_noise(entries: list) -> list:
     return result
 
 
+_SOURCE_ALIAS = {
+    "user":         "planning",
+    "registration": "identity-service",
+}
+
 def _normalize_log_entry(entry: dict) -> dict:
     header = entry.get("header") if isinstance(entry.get("header"), dict) else {}
     body = entry.get("body") if isinstance(entry.get("body"), dict) else {}
-    source = entry.get("system") or entry.get("source") or header.get("source") or ""
+    raw_source = entry.get("system") or entry.get("source") or header.get("source") or ""
+    source = _SOURCE_ALIAS.get(str(raw_source).lower().strip(), str(raw_source).lower().strip())
     level = entry.get("level") or body.get("level") or "info"
     action = entry.get("action") or body.get("action") or ""
     message = (
@@ -268,8 +274,8 @@ def _normalize_log_entry(entry: dict) -> dict:
         or ""
     )
     return {
-        "source": str(source).lower().strip(),
-        "system": str(source).lower().strip(),
+        "source": source,
+        "system": source,
         "level": str(level).lower().strip(),
         "message": message,
         "log_message": message,

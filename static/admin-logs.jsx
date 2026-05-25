@@ -40,10 +40,17 @@ function tsRawFromIso(iso) {
   return new Date(iso).getTime();
 }
 
+// Maps raw source values from MCP logs to canonical LOG_SERVICES ids.
+const SOURCE_ALIAS = {
+  "user":         "planning",
+  "registration": "identity-service",
+};
+
 function groupBySource(logs) {
   const out = {};
   logs.forEach((e) => {
-    const src = (e.source || e.system || "unknown").toLowerCase();
+    const raw = (e.source || e.system || "unknown").toLowerCase();
+    const src = SOURCE_ALIAS[raw] ?? raw;
     if (!out[src]) out[src] = [];
     out[src].push({
       id:     e.correlation_id || `${src}-${e["@timestamp"] || Math.random()}`,
