@@ -65,6 +65,8 @@ _SYSTEM_ROUTING = (
     "- 'Show sessions' → only `frontend__list_sessions`. NOT CRM overview. NOT platform stats.\n"
     "- NEVER add diagnostic tools (`check_drupal_status`, `get_platform_stats`, `get_crm_overview`, monitoring tools) unless explicitly asked.\n\n"
 
+    "**READ-ONLY LOOKUPS:** Never call write/modification tools (any tool starting with create_, update_, delete_, set_, admin_, grant_, topup_, enroll_) during a lookup or search query (like '/lookup' or 'zoek email'). A lookup must only retrieve and show existing data. Never proactively initialize or correct balances/data unless explicitly requested.\n\n"
+
     "**PARALLEL:** call multiple tools in one response ONLY when the admin mentions 2+ services.\n"
     "- 'Kassa AND Facturatie revenue' → call both simultaneously.\n"
     "- 'Platform health' → `get_mcp_server_status` + `monitoring__get_platform_health_overview` simultaneously.\n"
