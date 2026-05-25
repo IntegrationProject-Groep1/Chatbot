@@ -436,6 +436,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .icon-btn:hover { color: var(--ink); background: var(--surface-2); border-color: var(--line-2); }
 .icon-btn.is-active { background: var(--primary-soft); color: var(--primary); border-color: var(--primary-line); }
+.topbar-logout:hover { color: var(--hot) !important; border-color: var(--hot-soft) !important; background: var(--hot-soft) !important; }
 
 /* ============================================================
    SIDEBAR
@@ -2781,6 +2782,23 @@ button.mon-row:focus-visible {
   font-weight: 600;
 }
 
+/* Unknown sources debug strip */
+.logs-unknown-sources {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin: 4px 0 0; padding: 6px 10px;
+  background: var(--warn-soft); border-radius: 6px;
+  font-size: 10.5px; color: var(--warn);
+}
+.logs-unknown-label { font-weight: 700; flex-shrink: 0; }
+.logs-unknown-chip {
+  display: inline-flex; gap: 4px; align-items: center;
+  padding: 2px 7px; border-radius: 4px;
+  background: var(--surface); border: 1px solid var(--warn);
+  font-family: var(--font-mono); color: var(--ink); font-size: 10px;
+}
+.logs-unknown-chip b { color: var(--warn); }
+.logs-unknown-hint { margin-left: auto; font-size: 9.5px; color: var(--muted-2); font-style: italic; }
+
 /* Error banner */
 .logs-error-banner {
   flex-shrink: 0;
@@ -3546,6 +3564,17 @@ button.mon-row:focus-visible {
 .mf-overlay-close:hover { background: var(--surface-2); color: var(--ink); }
 .mf-overlay-body {
   flex: 1; overflow-y: auto; padding: 8px 0;
+}
+.mf-overlay-meta {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin: 4px 12px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-2);
+}
+.mf-overlay-meta .mf-detail-kv {
+  flex: 1; min-width: 90px;
+  background: var(--surface-2); border-radius: 6px;
+  padding: 6px 10px;
 }
 .mf-detail-tag {
   background: var(--primary-soft); color: var(--primary);
