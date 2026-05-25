@@ -42,28 +42,55 @@ function tsRawFromIso(iso) {
 
 // Maps raw source values from MCP logs to canonical LOG_SERVICES ids.
 const SOURCE_ALIAS = {
-  "user":         "planning",
-  "registration": "identity-service",
+  // Planning
+  "user":              "planning",
+  "planning-service":  "planning",
+  "planning_service":  "planning",
+  // Identity
+  "registration":       "identity-service",
+  "identity":           "identity-service",
+  "identity service":   "identity-service",
+  "identity_service":   "identity-service",
+  "identityservice":    "identity-service",
+  // Mailing
+  "mail":              "mailing",
+  "mailer":            "mailing",
+  "email":             "mailing",
+  "email-service":     "mailing",
+  "email_service":     "mailing",
+  "notification":      "mailing",
+  "notifications":     "mailing",
+  "mailing-service":   "mailing",
+  "mailing_service":   "mailing",
 };
+
+const KNOWN_SERVICE_IDS = new Set(["kassa","facturatie","crm","frontend","planning","mailing","identity-service","monitoring"]);
 
 function groupBySource(logs) {
   const out = {};
   const counters = {};
   logs.forEach((e) => {
-    const raw = (e.source || e.system || "unknown").toLowerCase();
+    const raw = (e.source || e.system || "unknown").toLowerCase().trim();
     const src = SOURCE_ALIAS[raw] ?? raw;
     if (!out[src]) { out[src] = []; counters[src] = 0; }
     counters[src]++;
     out[src].push({
-      id:     e.correlation_id || `${src}-${e["@timestamp"] || Math.random()}-${counters[src]}`,
-      ts:     tsFromIso(e["@timestamp"]),
-      tsRaw:  tsRawFromIso(e["@timestamp"]),
-      level:  (e.level  || "info").toLowerCase(),
-      action: e.action  || "—",
-      msg:    e.message || e.log_message || "",
+      id:       e.correlation_id || `${src}-${e["@timestamp"] || Math.random()}-${counters[src]}`,
+      ts:       tsFromIso(e["@timestamp"]),
+      tsRaw:    tsRawFromIso(e["@timestamp"]),
+      level:    (e.level  || "info").toLowerCase(),
+      action:   e.action  || "—",
+      msg:      e.message || e.log_message || "",
+      rawSrc:   raw,
     });
   });
   return out;
+}
+
+function getUnknownSources(logsBySvc) {
+  return Object.entries(logsBySvc)
+    .filter(([id]) => !KNOWN_SERVICE_IDS.has(id) && id !== "unknown")
+    .map(([id, entries]) => ({ id, entries }));
 }
 
 function computeStats(entries) {
@@ -85,7 +112,7 @@ const ACTION_NL = {
 };
 
 // ── Dashboard strip ────────────────────────────────────────────────────────────
-function LogsDashboard({ logsBySvc, totals, timeMode, onSvcClick, svcFilter }) {
+function LogsDashboard({ logsBySvc, totals, timeMode, onSvcClick, svcFilter, unknownSources }) {
   // Per-service breakdown
   const svcStats = React.useMemo(() => {
     return LOG_SERVICES.map(s => {
@@ -176,6 +203,17 @@ function LogsDashboard({ logsBySvc, totals, timeMode, onSvcClick, svcFilter }) {
               </button>
             );
           })}
+        </div>
+      )}
+      {unknownSources?.length > 0 && (
+        <div className="logs-unknown-sources">
+          <span className="logs-unknown-label">Onbekende bronnen in ES:</span>
+          {unknownSources.map(({ id, entries }) => (
+            <span key={id} className="logs-unknown-chip" title={`${entries.length} entries met source="${id}"`}>
+              {id} <b>{entries.length}</b>
+            </span>
+          ))}
+          <span className="logs-unknown-hint">Voeg deze toe aan SOURCE_ALIAS in admin-logs.jsx</span>
         </div>
       )}
     </div>
@@ -321,9 +359,12 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
               {paused ? "▶ Hervatten" : "❚❚ Pauzeren"}
             </button>
           )}
-          <button className="logs-clear-btn" onClick={handleClearLogs} disabled={clearing} title="Verwijder alle gecachte logs uit de database">
-            {clearing ? "Bezig…" : "Cache wissen"}
-          </button>
+          {dataSource === "cache" && (
+            <button className="logs-clear-btn" onClick={handleClearLogs} disabled={clearing}
+              title="Verwijder alle gecachte logs uit de lokale database (alleen zichtbaar als MCP niet beschikbaar is)">
+              {clearing ? "Bezig…" : "Cache wissen"}
+            </button>
+          )}
           <span className="logs-refresh mono">
             <span className="dot"></span>
             {!isLive ? "historisch" : paused ? "gepauzeerd" : `${countdown}s`}
@@ -368,6 +409,7 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
           timeMode={timeMode}
           svcFilter={svcFilter}
           onSvcClick={(id) => setSvcFilter(svcFilter === id ? "all" : id)}
+          unknownSources={getUnknownSources(logsBySvc)}
         />
       )}
 

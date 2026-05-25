@@ -647,14 +647,16 @@ function SettingsModal({ settings, onChange, onClose }) {
 }
 
 // ─── Login screen ──────────────────────────────────────────────────────────
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, skipAutoLogin = false }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // On mount: check if a valid session cookie exists → skip login entirely
+  // On mount: check if a valid session cookie exists → skip login entirely.
+  // Skipped when skipAutoLogin is set (e.g. right after logout).
   useEffect(() => {
+    if (skipAutoLogin) { setLoading(false); return; }
     fetch("/api/me")
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -666,7 +668,7 @@ function LoginScreen({ onLogin }) {
         }
       })
       .catch(() => setLoading(false));
-  }, [onLogin]);
+  }, [onLogin, skipAutoLogin]);
 
   const doLogin = async () => {
     const em = email.trim().toLowerCase();
@@ -863,7 +865,7 @@ function SidebarItem({ h, activeConvId, onPick, onPin, onDelete }) {
 }
 
 // ─── Topbar ────────────────────────────────────────────────────────────────
-function Topbar({ identity, connected, serverCount, onSettings, sidebarOpen, onToggleSidebar, flowOpen, onToggleFlow }) {
+function Topbar({ identity, connected, serverCount, onSettings, sidebarOpen, onToggleSidebar, flowOpen, onToggleFlow, onLogout }) {
   const initials = identity ? (identity.email || "AD").split("@")[0].slice(0,2).toUpperCase() : "??";
   return (
     <header className="topbar">
@@ -906,6 +908,13 @@ function Topbar({ identity, connected, serverCount, onSettings, sidebarOpen, onT
         <span className="em">{identity ? identity.email : "…"}</span>
         <span className="role">admin</span>
       </div>
+      <button className="icon-btn topbar-logout" title="Uitloggen" onClick={onLogout}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
     </header>
   );
 }
@@ -1011,6 +1020,7 @@ function App() {
   const [identity, setIdentity] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("admin_identity") || "null"); } catch { return null; }
   });
+  const [justLoggedOut, setJustLoggedOut] = useState(false);
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -1344,11 +1354,25 @@ function App() {
   }, [identity?.identity_uuid, loadConversations]);
 
   const handleLogin = useCallback((id) => {
+    setJustLoggedOut(false);
     setIdentity(id);
     setMessages([]);
     streamRef.current = { text: "", cards: [], msgId: null, awaitingResponse: false };
     loadConversations();
   }, [loadConversations]);
+
+  const handleLogout = useCallback(async () => {
+    if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null; }
+    try { await fetch("/api/admin/logout", { method: "POST" }); } catch { /* ignore */ }
+    sessionStorage.removeItem("admin_identity");
+    setJustLoggedOut(true);
+    setIdentity(null);
+    setMessages([]);
+    setHistory([]);
+    setActiveConvId(null);
+    setBusy(false);
+    streamRef.current = { text: "", cards: [], msgId: null, awaitingResponse: false };
+  }, []);
 
   const handleSend = (text) => {
     if (!connected || busy) return;
@@ -1412,21 +1436,29 @@ function App() {
     // Fetch stored messages from backend
     try {
       const res = await fetch(`/api/session/${entry.sessionId}/messages`);
-      const data = await res.json();
-      if (Array.isArray(data.messages) && data.messages.length > 0) {
-        setMessages(data.messages.map((m, i) => ({
-          id: `hist-${i}-${entry.sessionId}`,
-          kind: m.role === "user" ? "user" : "assistant",
-          text: m.text,
-          streaming: false,
-          cardEvents: [],
-          suggestions: [],
-        })));
+      if (!res.ok) {
+        addToast(`Kon sessie niet laden (HTTP ${res.status}). Je kan wel verder chatten.`, "error");
+      } else {
+        const data = await res.json();
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(data.messages.map((m, i) => ({
+            id: `hist-${i}-${entry.sessionId}`,
+            kind: m.role === "user" ? "user" : "assistant",
+            text: m.text,
+            streaming: false,
+            cardEvents: [],
+            suggestions: [],
+          })));
+        } else {
+          addToast("Geen berichtengeschiedenis gevonden voor dit gesprek.", "info");
+        }
       }
-    } catch {}
+    } catch (err) {
+      addToast("Sessie laden mislukt. Je kan wel verder chatten.", "error");
+    }
     // Reconnect with the old session_id (backend will restore context)
     if (identity?.identity_uuid) initWS(identity.identity_uuid);
-  }, [history, identity, initWS]);
+  }, [history, identity, initWS, addToast]);
 
   const onPin = useCallback((id) => {
     const entry = history.find(h => h.id === id);
@@ -1493,7 +1525,7 @@ function App() {
   }, [handleNew, showSettings]);
 
   if (!identity) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return <LoginScreen onLogin={handleLogin} skipAutoLogin={justLoggedOut} />;
   }
 
   return (
@@ -1507,6 +1539,7 @@ function App() {
         onToggleSidebar={() => setSidebarOpen(v => !v)}
         flowOpen={flowOpen}
         onToggleFlow={() => setFlowOpen(v => !v)}
+        onLogout={handleLogout}
       />
 
       {sidebarOpen && <Sidebar

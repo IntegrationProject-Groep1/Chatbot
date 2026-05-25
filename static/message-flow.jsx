@@ -626,6 +626,13 @@ function MsgOverlay({ overlay, onClose }) {
           </button>
         </div>
         <div className="mf-overlay-body">
+          {overlay.meta?.length > 0 && (
+            <div className="mf-overlay-meta">
+              {overlay.meta.map(({ label, value }) => (
+                <div key={label} className="mf-detail-kv"><span>{label}</span><b>{value}</b></div>
+              ))}
+            </div>
+          )}
           {overlay.messages.length === 0
             ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted-2)", fontSize: 12 }}>
                 Geen berichten
@@ -763,7 +770,7 @@ function DetailPanel({ selected, edgeIdx, onOpenOverlay }) {
 }
 
 // ─── Left rail ────────────────────────────────────────────────────────────────
-function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, hours, onOpenOverlay }) {
+function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, hours }) {
   const nodeMap = useMemo(() => Object.fromEntries((nodes || []).map(n => [n.id, n])), [nodes]);
 
   const svcCounts = useMemo(() => {
@@ -825,28 +832,34 @@ function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, ho
         </div>
       </div>
 
-      <div className="mf-rail-section" style={{ flex: 1, minHeight: 0 }}>
-        <h3 className="mf-rail-title">Detail</h3>
-        <DetailPanel selected={selected} edgeIdx={edgeIdx} onOpenOverlay={onOpenOverlay} />
-      </div>
     </div>
   );
 }
 
 // ─── Feed item ────────────────────────────────────────────────────────────────
-function FeedItem({ ev, onSelect, edgeIdx }) {
+function FeedItem({ ev, onSelect, edgeIdx, onOpenOverlay }) {
   const sN = NODES[ev.source];
   const dst = ev.destinations?.[0];
   const tN = dst ? NODES[dst] : null;
   const isNew = !ev.isCached && (Date.now() - new Date(ev.timestamp).getTime()) < 2500;
 
   const handleClick = () => {
-    if (!onSelect) return;
-    if (ev.source && dst) {
-      const key = `${ev.source}->${dst}`;
-      onSelect({ type: "edge", key, from: ev.source, to: dst, data: (edgeIdx || {})[key] || {} });
-    } else if (ev.source && NODES[ev.source]) {
-      onSelect({ type: "node", id: ev.source, node: NODES[ev.source] });
+    if (onSelect) {
+      if (ev.source && dst) {
+        const key = `${ev.source}->${dst}`;
+        onSelect({ type: "edge", key, from: ev.source, to: dst, data: (edgeIdx || {})[key] || {} });
+      } else if (ev.source && NODES[ev.source]) {
+        onSelect({ type: "node", id: ev.source, node: NODES[ev.source] });
+      }
+    }
+    if (onOpenOverlay && ev.message) {
+      const titleParts = [sN?.label || ev.source];
+      if (tN) titleParts.push(` → ${tN.label}`);
+      if (ev.action) titleParts.push(` · ${ACTION_NL[ev.action] || ev.action}`);
+      onOpenOverlay({
+        title: titleParts.join(""),
+        messages: [{ level: ev.level, timestamp: ev.timestamp, action: ev.action, message: ev.message }],
+      });
     }
   };
 
@@ -914,7 +927,7 @@ function FilterChips({ events, actionFilter, setActionFilter, levelFilter, setLe
 }
 
 // ─── Live feed panel ──────────────────────────────────────────────────────────
-function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeIdx, isLive, open, onToggleOpen, selected }) {
+function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeIdx, isLive, open, onToggleOpen, selected, onOpenOverlay }) {
   const [actionFilter, setActionFilter] = useState(null);
   const [levelFilter,  setLevelFilter]  = useState(null);
   const [search,       setSearch]       = useState("");
@@ -1052,7 +1065,7 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
           )}
           {visible.slice(0, 200).map((ev, i) => (
             <FeedItem key={eventKey(ev) || i} ev={ev}
-              onSelect={onSelect} edgeIdx={edgeIdx} />
+              onSelect={onSelect} edgeIdx={edgeIdx} onOpenOverlay={onOpenOverlay} />
           ))}
         </div>
       )}
@@ -1225,6 +1238,47 @@ function MessageFlowScreen() {
     });
   }, []);
 
+  const handleFlowSelect = useCallback(item => {
+    if (!item) { setSelected(null); setOverlay(null); return; }
+    setSelected(prev => {
+      if (!prev) return item;
+      const same = (item.type === "node" && prev.type === "node" && prev.id === item.id)
+                || (item.type === "edge" && prev.type === "edge" && prev.key === item.key);
+      return same ? null : item;
+    });
+    if (item.type === "node") {
+      const { id, node } = item;
+      const out = TOPO.filter(t => t.from === id);
+      const inn = TOPO.filter(t => t.to === id);
+      const msgs = [...out, ...inn]
+        .flatMap(e => (edgeIdx[`${e.from}->${e.to}`]?.recent || []))
+        .sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""))
+        .slice(0, 20);
+      const totalOut = out.reduce((s, e) => s + (edgeIdx[`${e.from}->${e.to}`]?.count || 0), 0);
+      const totalIn  = inn.reduce((s, e) => s + (edgeIdx[`${e.from}->${e.to}`]?.count || 0), 0);
+      const totalErr = [...out, ...inn].reduce((s, e) => s + (edgeIdx[`${e.from}->${e.to}`]?.errors || 0), 0);
+      const meta = [
+        { label: "Inkomend",  value: totalIn  },
+        { label: "Uitgaand",  value: totalOut },
+        ...(totalErr > 0 ? [{ label: "Fouten", value: totalErr }] : []),
+      ];
+      setOverlay({ title: node.label, messages: msgs, meta });
+    } else if (item.type === "edge") {
+      const e = edgeIdx[item.key] || {};
+      const fN = NODES[item.from]; const tN = NODES[item.to];
+      const meta = [];
+      if (e.count)          meta.push({ label: "Berichten", value: e.count });
+      if (e.errors)         meta.push({ label: "Fouten",    value: `${e.errors} (${Math.round(e.errors / e.count * 100)}%)` });
+      if (fmtRate(e.rate))  meta.push({ label: "Tempo",     value: fmtRate(e.rate) });
+      if (e.lastMsg)        meta.push({ label: "Laatste",   value: timeSince(e.lastMsg) });
+      setOverlay({
+        title: `${fN?.label || item.from} → ${tN?.label || item.to}`,
+        messages: e.recent || [],
+        meta,
+      });
+    }
+  }, [edgeIdx]);
+
   const handleMouseMove = useCallback(e => {
     const { clientX, clientY } = e;
     setTooltipPos({ x: clientX, y: clientY });
@@ -1319,9 +1373,8 @@ function MessageFlowScreen() {
           liveEvents={liveEvents}
           errCount={errCount}
           selected={selected}
-          onSelect={handleSelect}
+          onSelect={handleFlowSelect}
           hours={hours}
-          onOpenOverlay={setOverlay}
         />
 
         <main className="mf-canvas">
@@ -1341,7 +1394,7 @@ function MessageFlowScreen() {
               edgeIdx={edgeIdx}
               selected={selected}
               hovered={hovered}
-              onSelect={handleSelect}
+              onSelect={handleFlowSelect}
               onHover={setHovered}
               packets={packets}
               onPacketDone={id => setPackets(prev => prev.filter(p => p.id !== id))}
@@ -1385,6 +1438,7 @@ function MessageFlowScreen() {
           open={feedOpen}
           onToggleOpen={() => setFeedOpen(p => !p)}
           selected={selected}
+          onOpenOverlay={setOverlay}
         />
       </div>
 

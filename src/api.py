@@ -284,8 +284,26 @@ def _deduplicate_connection_noise(entries: list) -> list:
 
 
 _SOURCE_ALIAS = {
-    "user":         "planning",
-    "registration": "identity-service",
+    # Planning
+    "user":              "planning",
+    "planning-service":  "planning",
+    "planning_service":  "planning",
+    # Identity
+    "registration":       "identity-service",
+    "identity":           "identity-service",
+    "identity service":   "identity-service",
+    "identity_service":   "identity-service",
+    "identityservice":    "identity-service",
+    # Mailing
+    "mail":              "mailing",
+    "mailer":            "mailing",
+    "email":             "mailing",
+    "email-service":     "mailing",
+    "email_service":     "mailing",
+    "notification":      "mailing",
+    "notifications":     "mailing",
+    "mailing-service":   "mailing",
+    "mailing_service":   "mailing",
 }
 
 def _normalize_log_entry(entry: dict) -> dict:
@@ -1079,6 +1097,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     session_store.upsert_conversation(session_id, identity_uuid, label)
                 except Exception as e:
                     _log.error("Failed to auto-upsert conversation: %s", e)
+
+                # Re-init session here to recover from a DB pool failure that may
+                # have silently prevented init_session from persisting at WS connect time.
+                # init_session is idempotent: it loads the existing session if present,
+                # or creates a new one — so calling it again is always safe.
+                try:
+                    session_store.init_session(session_id, identity_uuid)
+                except ValueError:
+                    pass  # session already belongs to this user, nothing to do
 
                 _log.info("CHAT: session=%s len=%d preview=%r", session_id, len(message), message[:80])
                 try:
