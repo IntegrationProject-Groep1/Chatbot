@@ -446,36 +446,33 @@ def get_pending_write(session_id: str) -> dict | None:
 
 
 def get_messages_for_api(session_id: str) -> list[dict]:
-    """Return user/assistant/tool messages for restoring the chat UI."""
+    """Return only user/assistant text exchanges for restoring the chat UI.
+
+    Tool call messages and tool result messages are internal plumbing and are
+    intentionally excluded — they show as blank or raw JSON in the chat and
+    don't help the admin read back the conversation.
+    """
     msgs = get(session_id)
     result = []
     for m in msgs:
         role = m.get("role")
-        if role not in ("user", "assistant", "tool"):
-            continue
-        
-        # User/Assistant/Tool content
-        content = m.get("content", "")
+        if role not in ("user", "assistant"):
+            continue  # skip system, tool, and any unknown roles
+
+        content = m.get("content")
         if isinstance(content, list):
             text = " ".join(
                 block.get("text", "") for block in content
                 if isinstance(block, dict) and block.get("type") == "text"
             )
         else:
-            text = str(content) if content is not None else ""
-        
-        entry = {"role": role, "text": text.strip()}
-        
-        # Include tool_calls for assistant messages
-        if role == "assistant" and "tool_calls" in m:
-            entry["tool_calls"] = m["tool_calls"]
-            
-        # Include tool details for tool messages
-        if role == "tool":
-            entry["tool_call_id"] = m.get("tool_call_id")
-            entry["name"] = m.get("name")
-            
-        result.append(entry)
+            text = str(content) if content else ""
+
+        text = text.strip()
+        if not text:
+            continue  # skip tool-call-only assistant messages (no visible text)
+
+        result.append({"role": role, "text": text})
     return result
 
 

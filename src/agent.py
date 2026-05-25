@@ -557,13 +557,14 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
     """
     tools = _LOCAL_TOOLS + mcp_client.get().get_tool_definitions()
 
-    # The NVIDIA LLaMA endpoint rejects assistant messages where content is null
-    # alongside tool_calls. Strip null content fields before sending.
+    # The NVIDIA LLaMA endpoint rejects assistant messages where content is
+    # null, empty, or whitespace-only alongside tool_calls.
     def _sanitize(msgs: list[dict]) -> list[dict]:
         result = []
         for m in msgs:
-            if m.get("role") == "assistant" and m.get("tool_calls") and m.get("content") is None:
-                m = {k: v for k, v in m.items() if k != "content"}
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                if not (m.get("content") or "").strip():
+                    m = {k: v for k, v in m.items() if k != "content"}
             result.append(m)
         return result
 
