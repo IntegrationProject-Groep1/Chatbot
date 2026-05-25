@@ -39,7 +39,6 @@ class MCPClient:
         # namespaced_name → (label, tool, original_tool_name)
         self._registry: dict[str, tuple[str, Any, str]] = {}
         self._health_task: asyncio.Task | None = None
-        self._cache: dict[str, tuple[float, str]] = {}   # key → (ts, result)
         self._server_health: dict[str, bool] = {}        # label → confirmed-alive
 
     async def _connect_server(self, label: str, url: str) -> None:
@@ -166,31 +165,11 @@ class MCPClient:
             for namespaced, (_, tool, _orig) in self._registry.items()
         ]
 
-    def _is_cacheable(self, name: str) -> bool:
-        n = name.lower()
-        return _CACHE_TTL > 0 and not any(p in n for p in _NO_CACHE)
-
-    def _cleanup_cache(self) -> None:
-        """Remove expired entries from the cache to prevent memory leaks."""
-        now = time.time()
-        expired = [k for k, (ts, _) in self._cache.items() if now - ts > _CACHE_TTL]
-        for k in expired:
-            del self._cache[k]
-
     async def call_tool(self, name: str, args: dict, timeout: float = 30.0) -> str:
         """Call a tool by name (namespaced as label__tool_name). Always returns a JSON string.
         On session/connection errors, reconnects once and retries immediately."""
         if name not in self._registry:
             return json.dumps({"error": f"Tool '{name}' not found in any MCP server"})
-
-        self._cleanup_cache()
-
-        # Short-circuit with cached result for read-only tools
-        if self._is_cacheable(name):
-            cache_key = f"{name}:{json.dumps(args, sort_keys=True)}"
-            cached = self._cache.get(cache_key)
-            if cached and time.time() - cached[0] < _CACHE_TTL:
-                return cached[1]
 
         for attempt in range(2):
             label, _, original_name = self._registry[name]
@@ -219,8 +198,6 @@ class MCPClient:
                     result_str = text
                 except (json.JSONDecodeError, TypeError):
                     result_str = json.dumps({"result": text})
-                if self._is_cacheable(name):
-                    self._cache[cache_key] = (time.time(), result_str)
                 return result_str
             except asyncio.TimeoutError:
                 return json.dumps({"error": f"Tool '{name}' timed out after {timeout}s", "status": "timeout"})
