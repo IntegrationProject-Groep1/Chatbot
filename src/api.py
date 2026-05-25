@@ -284,8 +284,26 @@ def _deduplicate_connection_noise(entries: list) -> list:
 
 
 _SOURCE_ALIAS = {
-    "user":         "planning",
-    "registration": "identity-service",
+    # Planning
+    "user":              "planning",
+    "planning-service":  "planning",
+    "planning_service":  "planning",
+    # Identity
+    "registration":       "identity-service",
+    "identity":           "identity-service",
+    "identity service":   "identity-service",
+    "identity_service":   "identity-service",
+    "identityservice":    "identity-service",
+    # Mailing
+    "mail":              "mailing",
+    "mailer":            "mailing",
+    "email":             "mailing",
+    "email-service":     "mailing",
+    "email_service":     "mailing",
+    "notification":      "mailing",
+    "notifications":     "mailing",
+    "mailing-service":   "mailing",
+    "mailing_service":   "mailing",
 }
 
 def _normalize_log_entry(entry: dict) -> dict:
