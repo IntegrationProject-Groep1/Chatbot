@@ -837,11 +837,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   --svc: var(--svc-llama);
   --svc-soft: var(--svc-llama-soft);
 }
-.tool-call[data-svc="frontend"]    { --svc: var(--svc-frontend);    --svc-soft: var(--svc-frontend-soft); }
-.tool-call[data-svc="facturatie"]  { --svc: var(--svc-facturatie);  --svc-soft: var(--svc-facturatie-soft); }
-.tool-call[data-svc="crm"]         { --svc: var(--svc-crm);         --svc-soft: var(--svc-crm-soft); }
-.tool-call[data-svc="kassa"]       { --svc: var(--svc-kassa);       --svc-soft: var(--svc-kassa-soft); }
-.tool-call[data-svc="monitoring"]  { --svc: var(--svc-monitoring);  --svc-soft: var(--svc-monitoring-soft); }
+.tool-call[data-svc="frontend"]        { --svc: var(--svc-frontend);    --svc-soft: var(--svc-frontend-soft); }
+.tool-call[data-svc="facturatie"]      { --svc: var(--svc-facturatie);  --svc-soft: var(--svc-facturatie-soft); }
+.tool-call[data-svc="crm"]             { --svc: var(--svc-crm);         --svc-soft: var(--svc-crm-soft); }
+.tool-call[data-svc="kassa"]           { --svc: var(--svc-kassa);       --svc-soft: var(--svc-kassa-soft); }
+.tool-call[data-svc="monitoring"]      { --svc: var(--svc-monitoring);  --svc-soft: var(--svc-monitoring-soft); }
+.tool-call[data-svc="planning"]        { --svc: var(--svc-planning);    --svc-soft: var(--svc-planning-soft); }
+.tool-call[data-svc="mailing"]         { --svc: var(--svc-mailing);     --svc-soft: var(--svc-mailing-soft); }
+.tool-call[data-svc="identity-service"]{ --svc: var(--svc-identity);    --svc-soft: var(--svc-identity-soft); }
 
 .tc-head {
   display: grid;
@@ -1396,11 +1399,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   --svc: var(--muted-2);
   --svc-soft: var(--surface-3);
 }
-.srv-card[data-svc="frontend"]   { --svc: var(--svc-frontend);   --svc-soft: var(--svc-frontend-soft); }
-.srv-card[data-svc="facturatie"] { --svc: var(--svc-facturatie); --svc-soft: var(--svc-facturatie-soft); }
-.srv-card[data-svc="crm"]        { --svc: var(--svc-crm);        --svc-soft: var(--svc-crm-soft); }
-.srv-card[data-svc="kassa"]      { --svc: var(--svc-kassa);      --svc-soft: var(--svc-kassa-soft); }
-.srv-card[data-svc="monitoring"] { --svc: var(--svc-monitoring); --svc-soft: var(--svc-monitoring-soft); }
+.srv-card[data-svc="frontend"]        { --svc: var(--svc-frontend);   --svc-soft: var(--svc-frontend-soft); }
+.srv-card[data-svc="facturatie"]      { --svc: var(--svc-facturatie); --svc-soft: var(--svc-facturatie-soft); }
+.srv-card[data-svc="crm"]             { --svc: var(--svc-crm);        --svc-soft: var(--svc-crm-soft); }
+.srv-card[data-svc="kassa"]           { --svc: var(--svc-kassa);      --svc-soft: var(--svc-kassa-soft); }
+.srv-card[data-svc="monitoring"]      { --svc: var(--svc-monitoring); --svc-soft: var(--svc-monitoring-soft); }
+.srv-card[data-svc="planning"]        { --svc: var(--svc-planning);   --svc-soft: var(--svc-planning-soft); }
+.srv-card[data-svc="mailing"]         { --svc: var(--svc-mailing);    --svc-soft: var(--svc-mailing-soft); }
+.srv-card[data-svc="identity-service"]{ --svc: var(--svc-identity);   --svc-soft: var(--svc-identity-soft); }
 
 .srv-card-head {
   width: 100%;
@@ -1494,13 +1500,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
   --svc: var(--muted-2);
   --svc-soft: var(--surface-3);
 }
-.fnode-html[data-svc="frontend"]    { --svc: var(--svc-frontend);    --svc-soft: var(--svc-frontend-soft); }
-.fnode-html[data-svc="facturatie"]  { --svc: var(--svc-facturatie);  --svc-soft: var(--svc-facturatie-soft); }
-.fnode-html[data-svc="crm"]         { --svc: var(--svc-crm);         --svc-soft: var(--svc-crm-soft); }
-.fnode-html[data-svc="kassa"]       { --svc: var(--svc-kassa);       --svc-soft: var(--svc-kassa-soft); }
-.fnode-html[data-svc="monitoring"]  { --svc: var(--svc-monitoring);  --svc-soft: var(--svc-monitoring-soft); }
-.fnode-html[data-svc="llama"]       { --svc: var(--svc-llama);       --svc-soft: var(--svc-llama-soft); }
-.fnode-html[data-svc="user"]        { --svc: var(--ink-2);           --svc-soft: var(--surface-3); }
+.fnode-html[data-svc="frontend"]        { --svc: var(--svc-frontend);    --svc-soft: var(--svc-frontend-soft); }
+.fnode-html[data-svc="facturatie"]      { --svc: var(--svc-facturatie);  --svc-soft: var(--svc-facturatie-soft); }
+.fnode-html[data-svc="crm"]             { --svc: var(--svc-crm);         --svc-soft: var(--svc-crm-soft); }
+.fnode-html[data-svc="kassa"]           { --svc: var(--svc-kassa);       --svc-soft: var(--svc-kassa-soft); }
+.fnode-html[data-svc="monitoring"]      { --svc: var(--svc-monitoring);  --svc-soft: var(--svc-monitoring-soft); }
+.fnode-html[data-svc="planning"]        { --svc: var(--svc-planning);    --svc-soft: var(--svc-planning-soft); }
+.fnode-html[data-svc="mailing"]         { --svc: var(--svc-mailing);     --svc-soft: var(--svc-mailing-soft); }
+.fnode-html[data-svc="identity-service"]{ --svc: var(--svc-identity);    --svc-soft: var(--svc-identity-soft); }
+.fnode-html[data-svc="llama"]           { --svc: var(--svc-llama);       --svc-soft: var(--svc-llama-soft); }
+.fnode-html[data-svc="user"]            { --svc: var(--ink-2);           --svc-soft: var(--surface-3); }
 
 .fnode-html.is-active {
   border-color: var(--svc);
@@ -1648,14 +1657,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-align: center;
   border: 1px solid var(--svc, var(--line));
 }
-.log-row[data-svc="frontend"]    .src { --svc: var(--svc-frontend);   --svc-soft: var(--svc-frontend-soft); }
-.log-row[data-svc="facturatie"]  .src { --svc: var(--svc-facturatie); --svc-soft: var(--svc-facturatie-soft); }
-.log-row[data-svc="crm"]         .src { --svc: var(--svc-crm);        --svc-soft: var(--svc-crm-soft); }
-.log-row[data-svc="kassa"]       .src { --svc: var(--svc-kassa);      --svc-soft: var(--svc-kassa-soft); }
-.log-row[data-svc="monitoring"]  .src { --svc: var(--svc-monitoring); --svc-soft: var(--svc-monitoring-soft); }
-.log-row[data-svc="llama"]       .src { --svc: var(--svc-llama);      --svc-soft: var(--svc-llama-soft); }
-.log-row[data-svc="user"]        .src { --svc: var(--ink-2);          --svc-soft: var(--surface-3); }
-.log-row[data-svc="audit"]       .src { --svc: var(--muted);          --svc-soft: var(--surface-3); }
+.log-row[data-svc="frontend"]        .src { --svc: var(--svc-frontend);   --svc-soft: var(--svc-frontend-soft); }
+.log-row[data-svc="facturatie"]      .src { --svc: var(--svc-facturatie); --svc-soft: var(--svc-facturatie-soft); }
+.log-row[data-svc="crm"]             .src { --svc: var(--svc-crm);        --svc-soft: var(--svc-crm-soft); }
+.log-row[data-svc="kassa"]           .src { --svc: var(--svc-kassa);      --svc-soft: var(--svc-kassa-soft); }
+.log-row[data-svc="monitoring"]      .src { --svc: var(--svc-monitoring); --svc-soft: var(--svc-monitoring-soft); }
+.log-row[data-svc="planning"]        .src { --svc: var(--svc-planning);   --svc-soft: var(--svc-planning-soft); }
+.log-row[data-svc="mailing"]         .src { --svc: var(--svc-mailing);    --svc-soft: var(--svc-mailing-soft); }
+.log-row[data-svc="identity-service"].src { --svc: var(--svc-identity);   --svc-soft: var(--svc-identity-soft); }
+.log-row[data-svc="llama"]           .src { --svc: var(--svc-llama);      --svc-soft: var(--svc-llama-soft); }
+.log-row[data-svc="user"]            .src { --svc: var(--ink-2);          --svc-soft: var(--surface-3); }
+.log-row[data-svc="audit"]           .src { --svc: var(--muted);          --svc-soft: var(--surface-3); }
 
 .log-row .txt {
   color: var(--ink-2);
@@ -2835,12 +2847,15 @@ button.mon-row:focus-visible {
   --svc: var(--muted-2);
   --svc-soft: var(--surface-3);
 }
-.log-panel[data-svc="frontend"]    { --svc: var(--svc-frontend);    --svc-soft: var(--svc-frontend-soft); }
-.log-panel[data-svc="facturatie"]  { --svc: var(--svc-facturatie);  --svc-soft: var(--svc-facturatie-soft); }
-.log-panel[data-svc="crm"]         { --svc: var(--svc-crm);         --svc-soft: var(--svc-crm-soft); }
-.log-panel[data-svc="kassa"]       { --svc: var(--svc-kassa);       --svc-soft: var(--svc-kassa-soft); }
-.log-panel[data-svc="monitoring"]  { --svc: var(--svc-monitoring);  --svc-soft: var(--svc-monitoring-soft); }
-.log-panel[data-svc="llama"]       { --svc: var(--svc-llama);       --svc-soft: var(--svc-llama-soft); }
+.log-panel[data-svc="frontend"]        { --svc: var(--svc-frontend);    --svc-soft: var(--svc-frontend-soft); }
+.log-panel[data-svc="facturatie"]      { --svc: var(--svc-facturatie);  --svc-soft: var(--svc-facturatie-soft); }
+.log-panel[data-svc="crm"]             { --svc: var(--svc-crm);         --svc-soft: var(--svc-crm-soft); }
+.log-panel[data-svc="kassa"]           { --svc: var(--svc-kassa);       --svc-soft: var(--svc-kassa-soft); }
+.log-panel[data-svc="monitoring"]      { --svc: var(--svc-monitoring);  --svc-soft: var(--svc-monitoring-soft); }
+.log-panel[data-svc="planning"]        { --svc: var(--svc-planning);    --svc-soft: var(--svc-planning-soft); }
+.log-panel[data-svc="mailing"]         { --svc: var(--svc-mailing);     --svc-soft: var(--svc-mailing-soft); }
+.log-panel[data-svc="identity-service"]{ --svc: var(--svc-identity);    --svc-soft: var(--svc-identity-soft); }
+.log-panel[data-svc="llama"]           { --svc: var(--svc-llama);       --svc-soft: var(--svc-llama-soft); }
 
 .log-panel-head {
   display: flex; align-items: center;
@@ -3371,6 +3386,91 @@ button.mon-row:focus-visible {
 }
 .mf-svc.idle .mf-svc-count { opacity: .5; }
 .mf-svc.on   .mf-svc-count { background: var(--primary-soft); color: var(--primary); }
+
+/* Connection list (left rail third section) */
+.mf-rail-section--grow {
+  flex: 1 !important;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.mf-rail-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+.mf-rail-hint {
+  font-size: 10px;
+  color: var(--muted-3);
+  line-height: 1.4;
+}
+.mf-conn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mf-conn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font);
+  color: var(--ink);
+  text-align: left;
+  transition: background .1s;
+  width: 100%;
+}
+.mf-conn:hover { background: var(--surface-3); }
+.mf-conn.on    { background: var(--primary-soft); }
+.mf-conn.has-err { border-left: 2px solid var(--hot); padding-left: 4px; }
+.mf-conn-route {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.mf-conn-svc {
+  font: 500 10.5px/1 var(--font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 56px;
+}
+.mf-conn-arrow {
+  font-size: 10px;
+  color: var(--muted-3);
+  flex-shrink: 0;
+}
+.mf-conn-stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.mf-conn-count {
+  font: 600 10.5px/1 var(--font-mono);
+  color: var(--muted-2);
+  padding: 2px 5px;
+  background: var(--surface-3);
+  border-radius: var(--r-xs);
+  min-width: 22px;
+  text-align: center;
+}
+.mf-conn.on .mf-conn-count { background: var(--primary-soft); color: var(--primary); }
+.mf-conn-err {
+  font: 700 9.5px/1 var(--font-mono);
+  color: var(--hot);
+}
 
 /* ── Center canvas ── */
 .mf-canvas {
