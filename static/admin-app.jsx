@@ -647,14 +647,16 @@ function SettingsModal({ settings, onChange, onClose }) {
 }
 
 // ─── Login screen ──────────────────────────────────────────────────────────
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, skipAutoLogin = false }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // On mount: check if a valid session cookie exists → skip login entirely
+  // On mount: check if a valid session cookie exists → skip login entirely.
+  // Skipped when skipAutoLogin is set (e.g. right after logout).
   useEffect(() => {
+    if (skipAutoLogin) { setLoading(false); return; }
     fetch("/api/me")
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -666,7 +668,7 @@ function LoginScreen({ onLogin }) {
         }
       })
       .catch(() => setLoading(false));
-  }, [onLogin]);
+  }, [onLogin, skipAutoLogin]);
 
   const doLogin = async () => {
     const em = email.trim().toLowerCase();
@@ -1018,6 +1020,7 @@ function App() {
   const [identity, setIdentity] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("admin_identity") || "null"); } catch { return null; }
   });
+  const [justLoggedOut, setJustLoggedOut] = useState(false);
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -1351,6 +1354,7 @@ function App() {
   }, [identity?.identity_uuid, loadConversations]);
 
   const handleLogin = useCallback((id) => {
+    setJustLoggedOut(false);
     setIdentity(id);
     setMessages([]);
     streamRef.current = { text: "", cards: [], msgId: null, awaitingResponse: false };
@@ -1361,6 +1365,7 @@ function App() {
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null; }
     try { await fetch("/api/admin/logout", { method: "POST" }); } catch { /* ignore */ }
     sessionStorage.removeItem("admin_identity");
+    setJustLoggedOut(true);
     setIdentity(null);
     setMessages([]);
     setHistory([]);
@@ -1520,7 +1525,7 @@ function App() {
   }, [handleNew, showSettings]);
 
   if (!identity) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return <LoginScreen onLogin={handleLogin} skipAutoLogin={justLoggedOut} />;
   }
 
   return (
