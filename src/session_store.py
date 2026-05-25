@@ -266,6 +266,7 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
                             session_id    TEXT PRIMARY KEY,
                             identity_uuid TEXT NOT NULL,
                             messages      TEXT NOT NULL,
+                            pending_write TEXT,
                             last_active   DOUBLE PRECISION NOT NULL
                         )
                     """)
@@ -296,10 +297,7 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
     return _pool
 
 
-def _persist(session_id: str) -> None:
-    data = _sessions.get(session_id)
-    if not data:
-        return
+def _persist(session_id: str, identity_uuid: str, messages: list, last_active: float, pending_write: dict | None = None) -> None:
     pool = _get_pool()
     if pool is None:
         return
@@ -308,13 +306,15 @@ def _persist(session_id: str) -> None:
         try:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO chatbot_sessions (session_id, identity_uuid, messages, last_active)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO chatbot_sessions (session_id, identity_uuid, messages, pending_write, last_active)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (session_id) DO UPDATE SET
                         identity_uuid = EXCLUDED.identity_uuid,
                         messages      = EXCLUDED.messages,
+                        pending_write = EXCLUDED.pending_write,
                         last_active   = EXCLUDED.last_active
-                """, (session_id, data["identity_uuid"], json.dumps(data["messages"]), data["last_active"]))
+                """, (session_id, identity_uuid, json.dumps(messages), 
+                      json.dumps(pending_write) if pending_write else None, last_active))
             conn.commit()
         finally:
             pool.putconn(conn)
@@ -322,33 +322,32 @@ def _persist(session_id: str) -> None:
         pass
 
 
-def _load_from_db() -> None:
-    """Restore unexpired sessions into memory at startup."""
+def _load_from_db(session_id: str) -> dict | None:
+    """Load a session directly from the database."""
     pool = _get_pool()
     if pool is None:
-        return
-    now = time.time()
+        return None
     try:
         conn = pool.getconn()
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT session_id, identity_uuid, messages, last_active FROM chatbot_sessions WHERE last_active > %s",
-                    (now - _TTL,),
+                    "SELECT identity_uuid, messages, last_active, pending_write FROM chatbot_sessions WHERE session_id = %s AND last_active > %s",
+                    (session_id, time.time() - _TTL),
                 )
-                for sid, uuid, msgs_json, last_active in cur.fetchall():
-                    _sessions[sid] = {
-                        "messages": json.loads(msgs_json),
-                        "identity_uuid": uuid,
-                        "last_active": last_active,
+                row = cur.fetchone()
+                if row:
+                    return {
+                        "identity_uuid": row[0],
+                        "messages": json.loads(row[1]),
+                        "last_active": row[2],
+                        "pending_write": json.loads(row[3]) if row[3] else None,
                     }
         finally:
             pool.putconn(conn)
     except Exception:
         pass
-
-
-_load_from_db()
+    return None
 
 # ── Public API ──────────────────────────────────────────────────────────────
 
@@ -367,76 +366,65 @@ def _refresh_date(messages: list) -> None:
 
 
 def init_session(session_id: str, identity_uuid: str) -> None:
-    with _lock:
-        if session_id in _sessions:
-            _refresh_date(_sessions[session_id]["messages"])
-            _sessions[session_id]["last_active"] = time.time()
-            return
-    # Try to restore from DB (session exists from a previous connection)
-    pool = _get_pool()
-    if pool is not None:
-        try:
-            conn = pool.getconn()
-            try:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT messages FROM chatbot_sessions WHERE session_id = %s AND last_active > %s",
-                        (session_id, time.time() - _TTL),
-                    )
-                    row = cur.fetchone()
-            finally:
-                pool.putconn(conn)
-            if row:
-                messages = json.loads(row[0])
-                _refresh_date(messages)
-                with _lock:
-                    _sessions[session_id] = {
-                        "messages": messages,
-                        "identity_uuid": identity_uuid,
-                        "last_active": time.time(),
-                    }
-                return
-        except Exception:
-            pass
+    # Always try to load from DB or create new — no global memory dict
+    session = _load_from_db(session_id)
+    if session:
+        msgs = session["messages"]
+        _refresh_date(msgs)
+        _persist(session_id, identity_uuid, msgs, time.time(), session.get("pending_write"))
+        return
+
     # Brand new session
-    with _lock:
-        _sessions[session_id] = {
-            "messages": [{"role": "system", "content": _SYSTEM_TEMPLATE.format(
-                identity_uuid=identity_uuid,
-                today=_date.today().isoformat(),
-            )}],
-            "identity_uuid": identity_uuid,
-            "last_active": time.time(),
-        }
-        _persist(session_id)
+    messages = [{"role": "system", "content": _SYSTEM_TEMPLATE.format(
+        identity_uuid=identity_uuid,
+        today=_date.today().isoformat(),
+    )}]
+    _persist(session_id, identity_uuid, messages, time.time())
 
 
 def get_identity_uuid(session_id: str) -> str:
-    with _lock:
-        return _sessions.get(session_id, {}).get("identity_uuid", "")
+    session = _load_from_db(session_id)
+    return session.get("identity_uuid", "") if session else ""
 
 
 def append(session_id: str, message: dict) -> None:
-    with _lock:
-        if session_id in _sessions:
-            _sessions[session_id]["messages"].append(message)
-            _sessions[session_id]["last_active"] = time.time()
-            _persist(session_id)
+    session = _load_from_db(session_id)
+    if not session:
+        return
+    msgs = session["messages"]
+    msgs.append(message)
+    _persist(session_id, session["identity_uuid"], msgs, time.time(), session.get("pending_write"))
 
 
 def get(session_id: str) -> list[dict]:
-    with _lock:
-        return list(_sessions.get(session_id, {}).get("messages", []))
+    session = _load_from_db(session_id)
+    return list(session.get("messages", [])) if session else []
+
+
+def set_pending_write(session_id: str, tool_call: dict | None) -> None:
+    """Persist a tool call blocked by the write-gate."""
+    session = _load_from_db(session_id)
+    if not session:
+        return
+    _persist(session_id, session["identity_uuid"], session["messages"], time.time(), tool_call)
+
+
+def get_pending_write(session_id: str) -> dict | None:
+    """Retrieve the pending tool call for a session."""
+    session = _load_from_db(session_id)
+    return session.get("pending_write") if session else None
 
 
 def get_messages_for_api(session_id: str) -> list[dict]:
-    """Return user/assistant messages (no system, no tool) for restoring the chat UI."""
+    """Return user/assistant/tool messages for restoring the chat UI."""
     msgs = get(session_id)
     result = []
     for m in msgs:
         role = m.get("role")
-        if role not in ("user", "assistant"):
+        if role not in ("user", "assistant", "tool"):
             continue
+        
+        # User/Assistant/Tool content
         content = m.get("content", "")
         if isinstance(content, list):
             text = " ".join(
@@ -444,9 +432,20 @@ def get_messages_for_api(session_id: str) -> list[dict]:
                 if isinstance(block, dict) and block.get("type") == "text"
             )
         else:
-            text = str(content)
-        if text.strip():
-            result.append({"role": role, "text": text.strip()})
+            text = str(content) if content is not None else ""
+        
+        entry = {"role": role, "text": text.strip()}
+        
+        # Include tool_calls for assistant messages
+        if role == "assistant" and "tool_calls" in m:
+            entry["tool_calls"] = m["tool_calls"]
+            
+        # Include tool details for tool messages
+        if role == "tool":
+            entry["tool_call_id"] = m.get("tool_call_id")
+            entry["name"] = m.get("name")
+            
+        result.append(entry)
     return result
 
 

@@ -28,6 +28,9 @@ _log = logging.getLogger(__name__)
 
 MAX_LOOPS = 6
 
+import re
+import hashlib
+
 # ── Write-tool gate ──────────────────────────────────────────────────────────
 _WRITE_PREFIXES = (
     "update_", "delete_", "cancel_", "create_",
@@ -45,12 +48,6 @@ _CONFIRM_WORDS_SINGLE = frozenset({
 _CONFIRM_PHRASES = frozenset({
     "do it", "doe het", "go ahead", "ga door",
 })
-
-# Pending write calls blocked by the write-gate — keyed by session_id
-_PENDING_WRITE: dict[str, dict] = {}
-
-
-import re
 
 def _is_write_tool(tool_name: str) -> bool:
     bare = tool_name.split("__")[-1].lower()
@@ -704,32 +701,33 @@ def _extract_cards(session_id: str) -> list[dict]:
         if not isinstance(data, dict):
             continue
 
-        if "sessions" in data and data["sessions"] and "session" not in seen:
-            events.append({"type": "cards", "card_type": "session", "data": data["sessions"]})
-            seen.add("session")
-        if "invoices" in data and data["invoices"] and "invoice" not in seen:
-            events.append({"type": "cards", "card_type": "invoice", "data": data["invoices"]})
-            seen.add("invoice")
-        if "total_amount" in data and "total" not in seen:
-            events.append({"type": "cards", "card_type": "invoice_total", "data": data})
-            seen.add("total")
-        if "services" in data and data["services"] and "services" not in seen:
-            events.append({"type": "cards", "card_type": "service_status", "data": data["services"]})
-            seen.add("services")
-        if "errors" in data and data["errors"] and "errors" not in seen:
-            events.append({"type": "cards", "card_type": "error_log", "data": data["errors"]})
-            seen.add("errors")
-        if "members" in data and data["members"] and "members" not in seen:
-            events.append({"type": "cards", "card_type": "member", "data": data["members"]})
-            seen.add("members")
-        if "orders" in data and data["orders"] and "orders" not in seen:
-            events.append({"type": "cards", "card_type": "order", "data": data["orders"]})
-            seen.add("orders")
+        # Helper to hash content for deduplication (prevent identical cards in one turn)
+        def add_card(card_type, card_data):
+            content_hash = hashlib.md5(json.dumps(card_data, sort_keys=True).encode()).hexdigest()
+            key = f"{card_type}:{content_hash}"
+            if key not in seen:
+                events.append({"type": "cards", "card_type": card_type, "data": card_data})
+                seen.add(key)
+
+        if "sessions" in data and data["sessions"]:
+            add_card("session", data["sessions"])
+        if "invoices" in data and data["invoices"]:
+            add_card("invoice", data["invoices"])
+        if "total_amount" in data:
+            add_card("invoice_total", data)
+        if "services" in data and data["services"]:
+            add_card("service_status", data["services"])
+        if "errors" in data and data["errors"]:
+            add_card("error_log", data["errors"])
+        if "members" in data and data["members"]:
+            add_card("member", data["members"])
+        if "orders" in data and data["orders"]:
+            add_card("order", data["orders"])
         
         data_keys_lower = {k.lower() for k in data.keys()}
-        if any("wallet" in k for k in data_keys_lower) and "wallet" not in seen:
-            events.append({"type": "cards", "card_type": "wallet", "data": data})
-            seen.add("wallet")
+        if any("wallet" in k for k in data_keys_lower):
+            add_card("wallet", data)
+            
     return events
 
 
@@ -765,17 +763,23 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     session_store.append(session_id, {"role": "user", "content": user_message})
 
     # ── Re-execute a pending write if admin just confirmed ───────────────────
-    if _has_confirmation(session_id) and session_id in _PENDING_WRITE:
-        tc = _PENDING_WRITE.pop(session_id)
+    pending_tc = session_store.get_pending_write(session_id)
+    if _has_confirmation(session_id) and pending_tc:
+        # Clear pending write from DB (stateless)
+        session_store.set_pending_write(session_id, None)
+        
+        tc = pending_tc
         name = tc["function"]["name"]
         await emit({"type": "status", "status": "executing_tools", "count": 1})
         session_store.append(session_id, {"role": "assistant", "content": None, "tool_calls": [tc]})
         call_id, result = await _execute_tool(tc, session_id, emit)
-        session_store.append(session_id, {"role": "tool", "tool_call_id": call_id, "name": name, "content": result})
+        session_store.append(session_id, {
+            "role": "tool", "tool_call_id": call_id, "name": name, "content": result
+        })
         # Fall through — LLM summarises the result in the main loop
     elif not _has_confirmation(session_id):
         # Clear any stale pending write (user changed topic or typed "nee")
-        _PENDING_WRITE.pop(session_id, None)
+        session_store.set_pending_write(session_id, None)
 
     # Track (tool_name|normalised_args) to prevent identical retries within one turn
     called_tools: set[str] = set()
@@ -849,7 +853,8 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 call_id = tc["id"]
                 args = json.loads(tc["function"].get("arguments", "{}"))
                 
-                _PENDING_WRITE[session_id] = tc
+                # Persist pending write to DB (stateless)
+                session_store.set_pending_write(session_id, tc)
                 _log.info("WRITE BLOCKED pending confirmation: tool=%s session=%s", name, session_id)
                 
                 await emit({

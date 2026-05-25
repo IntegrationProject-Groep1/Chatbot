@@ -1385,7 +1385,7 @@ function App() {
           id: c.session_id,
           sessionId: c.session_id,
           label: c.label,
-          time: new Date(c.last_active * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          time: c.last_active ? new Date(c.last_active * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
           pinned: c.pinned,
           active: false,
         }));

@@ -208,7 +208,7 @@ async def identify_by_uuid(identity_uuid: str):
 
 
 @app.get("/health")
-async def health():
+async def health_simple():
     return {"status": "ok"}
 
 
@@ -218,8 +218,7 @@ async def health():
 async def _call_mcp(tool: str, args: dict = {}) -> dict:
     try:
         raw = await mcp_client.get().call_tool(tool, args)
-        import json as _json
-        return _json.loads(raw)
+        return json.loads(raw)
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -271,10 +270,16 @@ def _deduplicate_connection_noise(entries: list) -> list:
     return result
 
 
+_SOURCE_ALIAS = {
+    "user":         "planning",
+    "registration": "identity-service",
+}
+
 def _normalize_log_entry(entry: dict) -> dict:
     header = entry.get("header") if isinstance(entry.get("header"), dict) else {}
     body = entry.get("body") if isinstance(entry.get("body"), dict) else {}
-    source = entry.get("system") or entry.get("source") or header.get("source") or ""
+    raw_source = entry.get("system") or entry.get("source") or header.get("source") or ""
+    source = _SOURCE_ALIAS.get(str(raw_source).lower().strip(), str(raw_source).lower().strip())
     level = entry.get("level") or body.get("level") or "info"
     action = entry.get("action") or body.get("action") or ""
     message = (
@@ -285,8 +290,8 @@ def _normalize_log_entry(entry: dict) -> dict:
         or ""
     )
     return {
-        "source": str(source).lower().strip(),
-        "system": str(source).lower().strip(),
+        "source": source,
+        "system": source,
         "level": str(level).lower().strip(),
         "message": message,
         "log_message": message,
@@ -1004,6 +1009,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 message = str(data.get("message", "")).strip()
                 if not message:
                     continue
+
+                # Auto-upsert conversation metadata so it appears in "recent chats"
+                # Label is either provided or derived from first message
+                try:
+                    # Check if this is the first message (to avoid constant re-labeling unless needed)
+                    # Actually upsert_conversation is idempotent and updates last_active
+                    label = data.get("label") or message[:40] + ("..." if len(message) > 40 else "")
+                    session_store.upsert_conversation(session_id, identity_uuid, label)
+                except Exception as e:
+                    _log.error("Failed to auto-upsert conversation: %s", e)
+
                 _log.info("CHAT: session=%s len=%d preview=%r", session_id, len(message), message[:80])
                 try:
                     await agent.run_agent(session_id, message, emit)

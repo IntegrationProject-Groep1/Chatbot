@@ -365,7 +365,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
       </defs>
 
       {/* Drag hint */}
-      {!draggingId && (
+      {!localDraggingId && (
         <text x={SVG_W - 12} y={SVG_H - 10} textAnchor="end"
           fontSize="9" fontFamily="Inter, sans-serif"
           fill="var(--muted-3)" opacity="0.7">
@@ -461,7 +461,7 @@ function FlowGraph({ nodeHealth, edgeIdx, selected, hovered, onSelect, onHover,
         const bw       = isSel ? 2.4 : active ? 1.6 : 1;
         const pos      = nodePos[id] || node;
         const nx = pos.cx - NW/2, ny = pos.cy - NH/2;
-        const isDragging = draggingId === id;
+        const isDragging = localDraggingId === id;
 
         return (
           <g key={id} transform={`translate(${nx}, ${ny})`}
@@ -770,9 +770,7 @@ function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, ho
     const c = {};
     for (const id of Object.keys(NODES)) c[id] = 0;
     for (const ev of liveEvents) {
-      const dst = ev.destinations?.[0];
       if (c[ev.source] != null) c[ev.source]++;
-      if (dst && c[dst] != null) c[dst]++;
     }
     return c;
   }, [liveEvents]);
@@ -1148,7 +1146,12 @@ function MessageFlowScreen() {
           return true;
         });
         if (incoming.length > 0) {
-          setLiveEvents(prev => [...incoming, ...prev].slice(0, 400));
+          const cutoff15m = Date.now() - 15 * 60 * 1000;
+          setLiveEvents(prev =>
+            [...incoming, ...prev]
+              .filter(e => new Date(e.timestamp).getTime() > cutoff15m)
+              .slice(0, 400)
+          );
           // Spawn packets
           const topoSet = new Set(TOPO.map(t => `${t.from}->${t.to}`));
           const newPkts = incoming

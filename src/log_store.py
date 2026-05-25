@@ -82,29 +82,6 @@ def init_db():
     _get_pool()
 
 
-def store_log(source: str, level: str = "info", action: str = "", message: str = "",
-              timestamp: str = "", correlation_id: str = ""):
-    if not timestamp:
-        timestamp = datetime.utcnow().isoformat() + "Z"
-    pool = _get_pool()
-    if pool is None:
-        return
-    try:
-        conn = pool.getconn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO chatbot_logs
-                        (source, level, action, message, timestamp, correlation_id, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (correlation_id) DO NOTHING
-                """, (source, level, action, message, timestamp, correlation_id or None, time.time()))
-            conn.commit()
-        finally:
-            pool.putconn(conn)
-    except Exception as e:
-        _log.error("store_log failed: %s", e)
-
 
 def _ensure_correlation_id(cid: str, source: str, ts: str, action: str, message: str) -> str:
     """Generate a deterministic ID for entries that don't have one, so deduplication works."""

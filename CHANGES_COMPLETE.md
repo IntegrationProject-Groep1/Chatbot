@@ -30,6 +30,17 @@ All major issues have been **fully addressed** with working implementations, inc
 - **Regression Suite** — Added `tests/test_agent_logic.py` for permanent verification.
 - **Auto-Pipeline** — CI now triggers on the `crud-mcp` branch.
 
+### ✅ Proactive Audit Fixes (Batch 12-19)
+
+12. **Cache Memory Leak** — Implemented TTL cleanup in `MCPClient` to prevent unbounded growth.
+13. **Robust MCP Ping** — Added `HEAD` check with `/health` fallback for better connectivity detection.
+14. **Hash-Based Cards** — Agent now uses MD5 hashing to prevent identical cards while allowing multiple cards of the same type.
+15. **Cursor Responsiveness** — Optimized CSS transitions to remove lag from the custom cursor.
+16. **RPC Optimization** — Refactored imports to improve performance and code quality.
+17. **History tool_calls** — Chat history API now includes `tool_calls` for assistant messages.
+18. **History tool results** — Tool role messages are now included in the API, enabling card restoration.
+19. **Import Resilience** — Fixed missing `hashlib` and redundant `re` imports in the agent.
+
 ---
 
 ## Technical Details

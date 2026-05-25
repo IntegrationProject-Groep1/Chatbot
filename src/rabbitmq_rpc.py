@@ -2,6 +2,7 @@ import os
 import threading
 import time
 import uuid
+import json
 from dataclasses import dataclass
 
 import pika
@@ -124,7 +125,6 @@ class PersistentRabbitMQClient:
         content_type: str = "application/json",
     ) -> None:
         """Publishes a fire-and-forget event (Audit/Logging)."""
-        import json
         # Ensure exchange exists
         self._channel.exchange_declare(exchange=exchange_name, exchange_type="topic", durable=True)
         
@@ -225,7 +225,6 @@ class RabbitMQRpcClient:
         content_type: str = "application/json",
     ) -> None:
         """Publishes a fire-and-forget event (Audit/Logging)."""
-        import json
         # Ensure exchange exists
         self._channel.exchange_declare(exchange=exchange_name, exchange_type="topic", durable=True)
         
