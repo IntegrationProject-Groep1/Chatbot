@@ -807,6 +807,13 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
     for loop_idx in range(MAX_LOOPS):
         messages = session_store.get(session_id)
 
+        # Guard: if the session has no messages the DB was unavailable during init_session.
+        # Sending an empty list to NVIDIA causes a 400. Emit a clear error instead.
+        if not messages:
+            _log.error("run_agent: session %s has no context (DB unavailable during session init?)", session_id)
+            await emit({"type": "error", "message": "Sessie data niet beschikbaar — ververs de pagina om opnieuw te verbinden.", "recoverable": False})
+            return
+
         # Inject live date into the system message for this call — never stored, always fresh
         now = datetime.now(_TZ)
         week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")

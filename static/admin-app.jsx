@@ -1412,21 +1412,29 @@ function App() {
     // Fetch stored messages from backend
     try {
       const res = await fetch(`/api/session/${entry.sessionId}/messages`);
-      const data = await res.json();
-      if (Array.isArray(data.messages) && data.messages.length > 0) {
-        setMessages(data.messages.map((m, i) => ({
-          id: `hist-${i}-${entry.sessionId}`,
-          kind: m.role === "user" ? "user" : "assistant",
-          text: m.text,
-          streaming: false,
-          cardEvents: [],
-          suggestions: [],
-        })));
+      if (!res.ok) {
+        addToast(`Kon sessie niet laden (HTTP ${res.status}). Je kan wel verder chatten.`, "error");
+      } else {
+        const data = await res.json();
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(data.messages.map((m, i) => ({
+            id: `hist-${i}-${entry.sessionId}`,
+            kind: m.role === "user" ? "user" : "assistant",
+            text: m.text,
+            streaming: false,
+            cardEvents: [],
+            suggestions: [],
+          })));
+        } else {
+          addToast("Geen berichtengeschiedenis gevonden voor dit gesprek.", "info");
+        }
       }
-    } catch {}
+    } catch (err) {
+      addToast("Sessie laden mislukt. Je kan wel verder chatten.", "error");
+    }
     // Reconnect with the old session_id (backend will restore context)
     if (identity?.identity_uuid) initWS(identity.identity_uuid);
-  }, [history, identity, initWS]);
+  }, [history, identity, initWS, addToast]);
 
   const onPin = useCallback((id) => {
     const entry = history.find(h => h.id === id);

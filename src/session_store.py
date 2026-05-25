@@ -398,6 +398,15 @@ def get_identity_uuid(session_id: str) -> str:
 def append(session_id: str, message: dict) -> None:
     session = _load_from_db(session_id)
     if not session:
+        # Session not in DB — the pool was likely unavailable during init_session.
+        # Try to auto-recover: extract identity_uuid from the message if present
+        # (only user messages carry it indirectly via the WS identify flow, so we
+        # can't recover here). Log the drop so it appears in server logs.
+        _log.warning(
+            "append: session %s not found in DB (pool failure during init?), "
+            "message dropped: role=%s",
+            session_id, message.get("role"),
+        )
         return
     msgs = session["messages"]
     msgs.append(message)
