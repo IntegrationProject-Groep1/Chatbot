@@ -439,7 +439,7 @@ function LogPanel({ svc, logs, allLogs, now, isLive }) {
             {shown.map((e, idx) => {
               const fresh = now - e.tsRaw < 60000;
               return (
-                <div key={e.id || idx} className={`log-line ${e.level} ${fresh && isLive ? "fresh" : ""}`}
+                <div key={`${e.id}-${idx}`} className={`log-line ${e.level} ${fresh && isLive ? "fresh" : ""}`}
                   style={{ alignItems: "flex-start" }}>
                   <span className="log-ts mono" style={{ flexShrink: 0 }}>{e.ts}</span>
                   <span className={`log-lvl ${e.level}`} style={{ flexShrink: 0 }}>{e.level}</span>
