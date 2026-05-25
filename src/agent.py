@@ -26,7 +26,7 @@ import logging
 
 _log = logging.getLogger(__name__)
 
-MAX_LOOPS = 6
+MAX_LOOPS = 10
 
 import re
 import hashlib
@@ -689,6 +689,30 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
         _log.warning("Malformed tool arguments JSON for %s: %r", tool_call["function"]["name"], raw_args)
         args = {}
 
+    # Coerce string values to their declared types — some models output "10" instead of 10
+    try:
+        tool_defs = mcp_client.get().get_tool_definitions()
+        schema_props = next(
+            (t["function"]["parameters"].get("properties", {})
+             for t in tool_defs if t["function"]["name"] == name),
+            {},
+        )
+        for param, schema in schema_props.items():
+            if param in args and isinstance(args[param], str):
+                t = schema.get("type")
+                if t == "integer":
+                    try:
+                        args[param] = int(args[param])
+                    except (ValueError, TypeError):
+                        pass
+                elif t == "number":
+                    try:
+                        args[param] = float(args[param])
+                    except (ValueError, TypeError):
+                        pass
+    except Exception:
+        pass  # schema lookup is best-effort
+
     await emit({"type": "tool_start", "tool": name, "label": name.replace("_", " ").title(), "call_id": call_id, "arguments": args})
     t0 = time.time()
     identity_uuid = session_store.get_identity_uuid(session_id)
@@ -980,6 +1004,7 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 return_exceptions=True,
             )
 
+            tool_contents: list[str] = []
             for tc, result in zip(tool_calls, results):
                 if isinstance(result, Exception):
                     call_id = tc["id"]
@@ -993,6 +1018,45 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                     "name": tc["function"]["name"],
                     "content": content,
                 })
+                tool_contents.append(content)
+
+            # If every tool in this round returned an error/unavailable, inject a
+            # one-time directive so the model stops calling tools and summarises instead.
+            def _is_error_content(c: str) -> bool:
+                try:
+                    d = json.loads(c)
+                    return bool(d.get("error") or d.get("status") == "error")
+                except Exception:
+                    return False
+
+            if tool_contents and all(_is_error_content(c) for c in tool_contents):
+                messages_next = session_store.get(session_id) + [{
+                    "role": "system",
+                    "content": (
+                        "STOP: all tools returned errors. Do NOT call any more tools. "
+                        "Report the error(s) to the admin in one or two sentences and end your response."
+                    ),
+                }]
+                await emit({"type": "status", "status": "thinking", "step": loop_idx + 2})
+                try:
+                    response_msg = await _call_llama(messages_next, emit=emit)
+                except Exception as exc:
+                    await emit({"type": "error", "message": f"AI error: {exc}", "recoverable": True})
+                    return
+                final_text = (response_msg.get("content") or "").strip()
+                if not final_text:
+                    errors = []
+                    for c in tool_contents:
+                        try:
+                            errors.append(json.loads(c).get("error", "unknown error"))
+                        except Exception:
+                            pass
+                    final_text = "Service unavailable: " + "; ".join(e[:120] for e in errors[:3])
+                    await _stream_text(final_text, emit)
+                session_store.append(session_id, {"role": "assistant", "content": final_text})
+                await emit({"type": "suggestions", "items": _build_suggestions(session_id)})
+                await emit({"type": "done"})
+                return
 
             continue
 
