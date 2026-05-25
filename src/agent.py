@@ -317,7 +317,11 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
     call_id = tool_call["id"]
 
     raw_args = tool_call["function"].get("arguments", "{}")
-    args = json.loads(raw_args) if raw_args else {}
+    try:
+        args = json.loads(raw_args) if raw_args else {}
+    except json.JSONDecodeError:
+        _log.warning("Malformed tool arguments JSON for %s: %r", tool_call["function"]["name"], raw_args)
+        args = {}
 
     await emit({"type": "tool_start", "tool": name, "label": name.replace("_", " ").title(), "call_id": call_id, "arguments": args})
     t0 = time.time()
@@ -539,8 +543,11 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                 tc = write_calls[0]
                 name = tc["function"]["name"]
                 call_id = tc["id"]
-                args = json.loads(tc["function"].get("arguments", "{}"))
-                
+                try:
+                    args = json.loads(tc["function"].get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    args = {}
+
                 # Persist pending write to DB (stateless)
                 session_store.set_pending_write(session_id, tc)
                 _log.info("WRITE BLOCKED pending confirmation: tool=%s session=%s", name, session_id)
