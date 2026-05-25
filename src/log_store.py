@@ -304,6 +304,27 @@ def cleanup_old_logs(hours: int = 168):
         _log.error("cleanup_old_logs failed: %s", e)
 
 
+def clear_all_logs() -> int:
+    """Delete all rows from chatbot_logs. Returns the number of deleted rows."""
+    pool = _get_pool()
+    if pool is None:
+        return 0
+    try:
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM chatbot_logs")
+                deleted = cur.rowcount
+            conn.commit()
+            _log.info("clear_all_logs: deleted %d rows", deleted)
+            return deleted
+        finally:
+            pool.putconn(conn)
+    except Exception as e:
+        _log.error("clear_all_logs failed: %s", e)
+        return 0
+
+
 try:
     init_db()
 except Exception as e:

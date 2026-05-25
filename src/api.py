@@ -605,6 +605,14 @@ async def cached_logs(limit: int = 100, service: str = None):
     }
 
 
+@app.delete("/api/logs/clear")
+async def clear_logs():
+    """Delete all locally cached logs from the database."""
+    import log_store
+    deleted = log_store.clear_all_logs()
+    return {"deleted": deleted, "message": f"Cleared {deleted} log entries from local cache."}
+
+
 # ── Service metadata — previously hardcoded in admin-flow.jsx ────────────────
 _SERVICE_METADATA = {
     "chatbot":           { "host": "chatbot.shift.be",          "port": 8000,  "deps": ["nvidia-api", "rabbitmq", "mcp-servers"] },
@@ -703,6 +711,25 @@ async def list_mcp_tools():
 # Based on XML/XSD Contract v2.3 + confirmed by actual Elasticsearch log messages.
 # ES action field values: registration, payment, session, calendar, invoice, email,
 #   user, wallet, badge, refund, xml_validation, system_error
+_INTER_SERVICE_KEYWORDS = (
+    "published",
+    "received",
+    "sent ",
+    "consumed",
+    "processed:",
+)
+
+
+def _is_inter_service_message(msg: str) -> bool:
+    """Return True only if the log message describes actual inter-service messaging.
+
+    Startup logs, internal pollers, and status lines share action names with
+    real message-passing actions but contain none of these keywords.
+    """
+    m = msg.lower()
+    return any(k in m for k in _INTER_SERVICE_KEYWORDS)
+
+
 _FLOW_ROUTES: dict[tuple[str, str], list[str]] = {
     # ── Kassa → outgoing ───────────────────────────────────────────────────────
     ("kassa",            "registration"):    ["crm"],
@@ -808,7 +835,15 @@ async def monitoring_message_flow(hours: float = 1.0, limit: int = 500):
         if src and ts > service_last_ts.get(src, ""):
             service_last_ts[src] = ts
 
-        destinations = _FLOW_ROUTES.get((src, action), [])
+        # Only classify as inter-service if the message text shows actual message
+        # passing between services (Published/Sent/Received/processed:).
+        # Startup logs, internal pollers, etc. use the same action names but
+        # contain no inter-service keyword — they should not become flow edges.
+        destinations = (
+            _FLOW_ROUTES.get((src, action), [])
+            if _is_inter_service_message(msg)
+            else []
+        )
         if len(recent_events) < 300:
             recent_events.append({
                 "source": src, "action": action, "level": level,
