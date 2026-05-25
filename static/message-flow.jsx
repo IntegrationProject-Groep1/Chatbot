@@ -1138,12 +1138,14 @@ function MessageFlowScreen() {
           return;
         }
 
-        // Live mode: accumulate new events, deduplicate
+        // Live mode: accumulate new events, deduplicate.
+        // Only keep events that have a known destination so that the
+        // "berichten" counter stays consistent with "flows actief".
         const incoming = (d.recent_events || []).filter(e => {
           const k = eventKey(e);
           if (seenKeys.current.has(k)) return false;
           seenKeys.current.add(k);
-          return true;
+          return (e.destinations || []).length > 0;
         });
         if (incoming.length > 0) {
           const cutoff15m = Date.now() - 15 * 60 * 1000;
