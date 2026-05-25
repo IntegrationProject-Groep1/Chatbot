@@ -2364,7 +2364,7 @@ button.mon-row:focus-visible {
 }
 .inv-row {
   display: grid;
-  grid-template-columns: 90px 1fr auto auto;
+  grid-template-columns: minmax(90px, max-content) 1fr auto auto;
   gap: 12px;
   align-items: center;
   background: var(--surface-2);
@@ -2376,6 +2376,7 @@ button.mon-row:focus-visible {
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--muted);
+  white-space: nowrap;
 }
 .inv-row .who {
   display: flex; flex-direction: column;
