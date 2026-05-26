@@ -286,41 +286,55 @@ function ToolDetailModal({ tool, serverLabel, onClose }) {
       style={{
         position: "fixed", inset: 0, zIndex: 9999,
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: "rgba(0,0,0,.45)", backdropFilter: "blur(3px)",
+        background: "rgba(0,0,0,.5)", backdropFilter: "blur(4px)",
       }}
       onClick={onClose}
     >
       <div
         style={{
-          background: "var(--surface-1, #1a1a1f)", border: "1px solid var(--line, #2a2a32)",
-          borderRadius: 12, padding: "20px 22px", maxWidth: 480, width: "calc(100vw - 40px)",
-          maxHeight: "80vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.5)",
+          background: "var(--surface)",
+          border: "1px solid var(--line-2)",
+          borderRadius: "var(--r-md)",
+          padding: "22px 24px",
+          maxWidth: 500,
+          width: "calc(100vw - 40px)",
+          maxHeight: "80vh",
+          overflowY: "auto",
+          boxShadow: "var(--shadow-lg)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
         }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)", marginBottom: 4, textTransform: "capitalize" }}>
-              {serverLabel} MCP
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10, color: "var(--muted-2)", fontFamily: "var(--font-mono)", marginBottom: 5, textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
+              {serverLabel} · MCP
             </div>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--fg)", wordBreak: "break-all" }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 700, color: "var(--ink)", wordBreak: "break-all", lineHeight: 1.3 }}>
               {tool.name}
             </div>
           </div>
           <button
             onClick={onClose}
             style={{
-              background: "none", border: "none", cursor: "pointer",
-              color: "var(--muted-2)", fontSize: 18, lineHeight: 1,
-              flexShrink: 0, padding: "2px 4px", borderRadius: 4,
+              background: "var(--surface-3)", border: "1px solid var(--line)", cursor: "pointer",
+              color: "var(--muted)", fontSize: 14, lineHeight: 1,
+              flexShrink: 0, padding: "5px 8px", borderRadius: "var(--r-sm)",
+              transition: "background .12s, color .12s",
             }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--hot-soft)"; e.currentTarget.style.color = "var(--hot)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "var(--surface-3)"; e.currentTarget.style.color = "var(--muted)"; }}
           >✕</button>
         </div>
 
         {tool.description && (
           <div style={{
-            fontSize: 12, color: "var(--muted-1, #aaa)", lineHeight: 1.55,
-            marginBottom: paramList.length ? 16 : 0,
+            fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6,
+            background: "var(--surface-2)", border: "1px solid var(--line)",
+            borderRadius: "var(--r-sm)", padding: "10px 12px",
           }}>
             {tool.description}
           </div>
@@ -328,31 +342,33 @@ function ToolDetailModal({ tool, serverLabel, onClose }) {
 
         {paramList.length > 0 && (
           <div>
-            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted-2)", marginBottom: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted-2)", marginBottom: 8 }}>
               Parameters
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {paramList.map(([pname, pdef]) => (
                 <div key={pname} style={{
-                  background: "var(--surface-2, #22222a)", borderRadius: 7,
-                  padding: "8px 10px", border: "1px solid var(--line, #2a2a32)",
+                  background: "var(--surface-2)",
+                  borderRadius: "var(--r-sm)",
+                  padding: "9px 12px",
+                  border: "1px solid var(--line)",
                 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: pdef.description ? 4 : 0 }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--fg)", fontWeight: 500 }}>{pname}</span>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--primary, #a78bfa)", background: "rgba(167,139,250,.12)", padding: "1px 5px", borderRadius: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: pdef.description ? 5 : 0, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink)", fontWeight: 600 }}>{pname}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--primary)", background: "var(--primary-soft)", padding: "1px 6px", borderRadius: "var(--r-xs)", fontWeight: 500 }}>
                       {pdef.type || "any"}
                     </span>
                     {required.has(pname) && (
-                      <span style={{ fontSize: 10, color: "#f87171", fontWeight: 600 }}>required</span>
+                      <span style={{ fontSize: 10, color: "var(--hot)", fontWeight: 700, background: "var(--hot-soft)", padding: "1px 6px", borderRadius: "var(--r-xs)" }}>required</span>
                     )}
                   </div>
                   {pdef.description && (
-                    <div style={{ fontSize: 11, color: "var(--muted-2)", lineHeight: 1.45 }}>{pdef.description}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>{pdef.description}</div>
                   )}
                   {pdef.enum && (
-                    <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    <div style={{ marginTop: 5, display: "flex", flexWrap: "wrap", gap: 4 }}>
                       {pdef.enum.map(v => (
-                        <span key={v} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-1)", background: "var(--surface-1, #1a1a1f)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 5px" }}>{String(v)}</span>
+                        <span key={v} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-3)", background: "var(--surface-3)", border: "1px solid var(--line)", borderRadius: "var(--r-xs)", padding: "1px 6px" }}>{String(v)}</span>
                       ))}
                     </div>
                   )}
@@ -363,7 +379,7 @@ function ToolDetailModal({ tool, serverLabel, onClose }) {
         )}
 
         {!tool.description && paramList.length === 0 && (
-          <div style={{ fontSize: 11, color: "var(--muted-2)" }}>No description or parameters available.</div>
+          <div style={{ fontSize: 12, color: "var(--muted-2)", fontStyle: "italic" }}>No description or parameters available.</div>
         )}
       </div>
     </div>
@@ -463,7 +479,6 @@ function MCPServerList() {
                         className="srv-tool mono"
                         title="Click for details"
                         onClick={() => setSelectedTool({ tool: toolObj, serverLabel: s.id })}
-                        style={{ cursor: "pointer", textAlign: "left", background: "none", border: "none", padding: 0, font: "inherit", color: "inherit" }}
                       >
                         {fmtTool(toolName)}
                       </button>
