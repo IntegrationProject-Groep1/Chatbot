@@ -904,6 +904,18 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
         session_store.append(session_id, {
             "role": "tool", "tool_call_id": call_id, "name": name, "content": result
         })
+        # If the confirmed write failed, stop immediately — never auto-retry destructive operations.
+        try:
+            result_data = json.loads(result)
+        except Exception:
+            result_data = {}
+        if result_data.get("status") == "error" or (
+            not result_data.get("success", True) and result_data.get("error")
+        ):
+            error_msg = result_data.get("error", "Unknown error")
+            await emit({"type": "text", "text": f"De actie kon niet worden uitgevoerd: {error_msg}\n\nProbeer het later opnieuw of neem contact op met de beheerder."})
+            await emit({"type": "done"})
+            return
         # Fall through — LLM summarises the result in the main loop
     elif not _has_confirmation(session_id):
         # Clear any stale pending write (user changed topic or typed "nee")

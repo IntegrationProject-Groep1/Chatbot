@@ -517,6 +517,9 @@ async def mcp_servers_detail():
     return {"servers": servers, "timestamp": datetime.utcnow().isoformat() + "Z"}
 
 
+_LIVE_WINDOW_HOURS = 0.25  # ≤15 min → MCP; >15 min → DB only
+
+
 @app.get("/api/logs/query")
 async def logs_query(
     service: str = None,
@@ -527,51 +530,79 @@ async def logs_query(
     hours: float = None,
     limit: int = 200,
 ):
-    """Unified log query: live (recent) or historical (time range). Falls back to DB cache."""
+    """Unified log query.
+
+    Live path  (hours ≤ 0.25 or unset): MCP/Elasticsearch → write-through DB cache →
+                                         DB fallback when MCP is down.
+    Historical path (hours > 0.25):     DB only — never hits MCP so results are stable
+                                         and consistent regardless of ES availability.
+    """
     import log_store
     from datetime import datetime, timedelta, timezone
 
     limit = min(max(int(limit or 200), 1), 500)
 
-    # Derive `since` from `hours` if not given explicitly
+    # Derive `since` from `hours` when not given explicitly
     if since is None and hours is not None and hours > 0:
         since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
 
-    mcp_args_extra: dict = {}
-    if service:
-        mcp_args_extra["service"] = service
-    if level:
-        mcp_args_extra["level"] = level
-    if action:
-        mcp_args_extra["action"] = action
+    is_live = (hours is None) or (hours <= _LIVE_WINDOW_HOURS)
 
-    raw: list = []
+    entries: list = []
+    from_live = False
     error: str | None = None
 
-    if since:
-        end = until or (datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
-        mcp_result = await _call_mcp("monitoring__get_logs_in_timerange", {
-            "start": since, "end": end, "limit": limit,
-            **{k: v for k, v in mcp_args_extra.items() if k in ("level", "service")},
-        })
+    if is_live:
+        # ── Live path: MCP → store in DB → DB fallback ──────────────────────
+        mcp_args_extra: dict = {}
+        if service:
+            mcp_args_extra["service"] = service
+        if level:
+            mcp_args_extra["level"] = level
+        if action:
+            mcp_args_extra["action"] = action
+
+        if since:
+            end = until or (datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+            mcp_result = await _call_mcp("monitoring__get_logs_in_timerange", {
+                "start": since, "end": end, "limit": limit,
+                **{k: v for k, v in mcp_args_extra.items() if k in ("level", "service")},
+            })
+        else:
+            mcp_result = await _call_mcp("monitoring__get_recent_logs", {
+                "limit": limit, **mcp_args_extra,
+            })
+
+        raw: list = []
+        if isinstance(mcp_result, dict):
+            raw = mcp_result.get("logs") or []
+            error = mcp_result.get("error")
+
+        from_live = bool(raw)
+        entries = [
+            _normalize_log_entry(e) for e in raw
+            if isinstance(e, dict) and not _is_http_transport_success(e)
+        ]
+        if entries:
+            log_store.store_logs_batch(entries)
+
+        if not entries:
+            # MCP down or returned nothing — serve DB cache for the same window
+            cached = log_store.get_logs_by_filter(
+                since=since, until=until,
+                service=service, level=level if level else None,
+                action=action, limit=limit,
+            )
+            for c in cached:
+                if not c.get("@timestamp") and c.get("timestamp"):
+                    c["@timestamp"] = c["timestamp"]
+            entries = cached
+            if entries:
+                _log.warning("logs_query(live): MCP unavailable, serving %d cached rows", len(entries))
+                error = "Showing cached logs (live MCP unavailable)"
+
     else:
-        mcp_result = await _call_mcp("monitoring__get_recent_logs", {
-            "limit": limit, **mcp_args_extra,
-        })
-
-    if isinstance(mcp_result, dict):
-        raw = mcp_result.get("logs") or []
-        error = mcp_result.get("error")
-
-    from_live = bool(raw)  # MCP returned data (even if all filtered out as noise)
-    entries = [
-        _normalize_log_entry(e) for e in raw
-        if isinstance(e, dict) and not _is_http_transport_success(e)
-    ]
-    if entries:
-        log_store.store_logs_batch(entries)
-
-    if not entries:
+        # ── Historical path: DB only ─────────────────────────────────────────
         cached = log_store.get_logs_by_filter(
             since=since, until=until,
             service=service, level=level if level else None,
@@ -581,11 +612,9 @@ async def logs_query(
             if not c.get("@timestamp") and c.get("timestamp"):
                 c["@timestamp"] = c["timestamp"]
         entries = cached
-        if entries:
-            _log.info("logs_query: MCP returned no entries, serving %d cached rows (since=%s)", len(entries), since)
-            error = "Showing cached logs (live MCP unavailable)"
+        _log.debug("logs_query(historical hours=%.2f): %d rows from DB", hours or 0, len(entries))
 
-    # Apply action filter post-fetch when MCP doesn't support it natively
+    # Apply action filter post-fetch when the source doesn't support it natively
     if action and entries:
         entries = [e for e in entries if (e.get("action") or "").lower() == action.lower()]
 
@@ -1111,6 +1140,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             try:
                 raw = await websocket.receive_text()
                 data = json.loads(raw)
+            except RuntimeError as exc:
+                if "not connected" in str(exc).lower():
+                    raise WebSocketDisconnect() from exc
+                raise
             except json.JSONDecodeError:
                 _log.warning("WS malformed JSON: session=%s", session_id)
                 await emit({"type": "error", "message": "Invalid JSON", "recoverable": True})
@@ -1155,8 +1188,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     except asyncio.TimeoutError:
         _log.warning("WS auth timeout: session=%s", session_id)
         await emit({"type": "error", "message": "Authentication timeout.", "recoverable": False})
-    except WebSocketDisconnect:
-        _log.info("WS disconnected: session=%s", session_id)
+    except (WebSocketDisconnect, RuntimeError) as exc:
+        if isinstance(exc, RuntimeError) and "not connected" not in str(exc).lower():
+            _log.exception("WS error: session=%s", session_id)
+        else:
+            _log.info("WS disconnected: session=%s", session_id)
     except Exception as exc:
         _log.exception("WS error: session=%s", session_id)
         try:

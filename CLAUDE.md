@@ -151,6 +151,84 @@ XSD contracts are in `xsd/`.
 - `SESSION_TTL_SECONDS` (default: `3600`)
 - `NVIDIA_MODEL` (default: `meta/llama-3.1-8b-instruct`)
 
+## Admin Console — Logs & Monitoring
+
+### Log query flow (`GET /api/logs/query`)
+
+The endpoint has two hard paths determined by the `hours` parameter.
+The split point is **15 minutes** (`_LIVE_WINDOW_HOURS = 0.25`).
+
+#### Live path (`hours ≤ 0.25`)
+
+Used by the **Live** and **15 min** buttons in the UI.
+
+```
+Frontend → GET /api/logs/query?hours=0.25
+  → monitoring__get_logs_in_timerange (MCP / Elasticsearch)
+      ↓ on success
+    normalize + deduplicate entries
+    write-through: store_logs_batch() → local SQLite DB
+    return entries, source="live"
+      ↓ if MCP returns nothing (server down / no data)
+    get_logs_by_filter(since=now-15min) → local DB
+    return cached entries, source="cache", error="Showing cached logs…"
+```
+
+The live path **always** tries MCP first so the DB stays warm. Every
+successful live poll feeds the local cache — this is the only way
+historical data enters the DB.
+
+#### Historical path (`hours > 0.25`)
+
+Used by the **1 uur**, **4 uur**, **7 uur** buttons.
+
+```
+Frontend → GET /api/logs/query?hours=1   (or 4, or 7)
+  → get_logs_by_filter(since=now-Xh) → local SQLite DB only
+    return entries, source="cache"
+```
+
+MCP/Elasticsearch is **never called** for historical queries. Results
+are therefore consistent regardless of whether the monitoring MCP server
+is up or down. The tradeoff: the DB only contains what the live polls
+have captured since the chatbot server started — if the server was
+restarted an hour ago, `7h` shows at most one hour of data.
+
+### Time-filter buttons
+
+All buttons show a **lookback window from now going back** — they are
+not slices between two points.
+
+| Button | `hours` sent | Source | Shows |
+|--------|-------------|--------|-------|
+| **Live** | `0.25` | MCP → DB fallback | Last 15 min, auto-refresh every 10 s |
+| **15 min** | `0.25` | MCP → DB fallback | Last 15 min, one-shot |
+| **1 uur** | `1` | DB only | Last 60 min (includes the 15-min window) |
+| **4 uur** | `4` | DB only | Last 4 hours (includes the 1-hour window) |
+| **7 uur** | `7` | DB only | Last 7 hours (includes the 4-hour window) |
+
+"Live" and "15 min" show the exact same data. The difference is that
+"Live" polls every 10 seconds and "15 min" fetches once.
+
+### MCP tool sidebar (`GET /api/mcp/tools`)
+
+Returns all tools currently loaded from connected MCP servers. Each
+tool includes its `name`, `description`, and `inputSchema` (parameter
+names, types, descriptions, required flags, enums). The sidebar in the
+admin UI polls `/api/mcp/status` every 5 seconds for connection state
+and fetches the full tool list once on mount.
+
+Clicking a tool in the sidebar opens a detail modal that shows the
+description and a structured parameter list rendered from `inputSchema`.
+
+### Service metadata (`GET /api/services/metadata`)
+
+Merges the hardcoded `_SERVICE_METADATA` dict in `api.py` (host, port,
+dependency list) with live heartbeat data from the monitoring MCP. Any
+service reported by monitoring that is not in `_SERVICE_METADATA` is
+included with placeholder host/port. This is the data source for the
+Overview dashboard service cards.
+
 ## CI/CD
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
