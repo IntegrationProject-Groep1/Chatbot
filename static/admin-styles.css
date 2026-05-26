@@ -1487,6 +1487,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: var(--surface);
   border: 1px solid var(--line);
   color: var(--ink-3);
+  transition: background .12s, border-color .12s, color .12s;
+}
+button.srv-tool {
+  cursor: pointer;
+}
+button.srv-tool:hover {
+  background: var(--svc-soft, rgba(167,139,250,.12));
+  border-color: var(--svc, var(--primary));
+  color: var(--fg);
 }
 
 .fnode-html {

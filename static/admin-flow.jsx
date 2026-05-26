@@ -274,12 +274,109 @@ function fmtTool(name) {
   return name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function ToolDetailModal({ tool, serverLabel, onClose }) {
+  if (!tool) return null;
+  const schema = tool.inputSchema || {};
+  const props = schema.properties || {};
+  const required = new Set(schema.required || []);
+  const paramList = Object.entries(props);
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "rgba(0,0,0,.45)", backdropFilter: "blur(3px)",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "var(--surface-1, #1a1a1f)", border: "1px solid var(--line, #2a2a32)",
+          borderRadius: 12, padding: "20px 22px", maxWidth: 480, width: "calc(100vw - 40px)",
+          maxHeight: "80vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.5)",
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono)", marginBottom: 4, textTransform: "capitalize" }}>
+              {serverLabel} MCP
+            </div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--fg)", wordBreak: "break-all" }}>
+              {tool.name}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "var(--muted-2)", fontSize: 18, lineHeight: 1,
+              flexShrink: 0, padding: "2px 4px", borderRadius: 4,
+            }}
+          >✕</button>
+        </div>
+
+        {tool.description && (
+          <div style={{
+            fontSize: 12, color: "var(--muted-1, #aaa)", lineHeight: 1.55,
+            marginBottom: paramList.length ? 16 : 0,
+          }}>
+            {tool.description}
+          </div>
+        )}
+
+        {paramList.length > 0 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted-2)", marginBottom: 8 }}>
+              Parameters
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {paramList.map(([pname, pdef]) => (
+                <div key={pname} style={{
+                  background: "var(--surface-2, #22222a)", borderRadius: 7,
+                  padding: "8px 10px", border: "1px solid var(--line, #2a2a32)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: pdef.description ? 4 : 0 }}>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--fg)", fontWeight: 500 }}>{pname}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--primary, #a78bfa)", background: "rgba(167,139,250,.12)", padding: "1px 5px", borderRadius: 4 }}>
+                      {pdef.type || "any"}
+                    </span>
+                    {required.has(pname) && (
+                      <span style={{ fontSize: 10, color: "#f87171", fontWeight: 600 }}>required</span>
+                    )}
+                  </div>
+                  {pdef.description && (
+                    <div style={{ fontSize: 11, color: "var(--muted-2)", lineHeight: 1.45 }}>{pdef.description}</div>
+                  )}
+                  {pdef.enum && (
+                    <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {pdef.enum.map(v => (
+                        <span key={v} style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted-1)", background: "var(--surface-1, #1a1a1f)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 5px" }}>{String(v)}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!tool.description && paramList.length === 0 && (
+          <div style={{ fontSize: 11, color: "var(--muted-2)" }}>No description or parameters available.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MCPServerList() {
   const [servers, setServers] = useState([]);
   const [liveStatus, setLiveStatus] = useState({});
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState({});
   const [lastPoll, setLastPoll] = useState(null);
+  const [selectedTool, setSelectedTool] = useState(null); // { tool, serverLabel }
 
   const fetchTools = () =>
     fetch("/api/mcp/tools")
@@ -323,6 +420,13 @@ function MCPServerList() {
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {selectedTool && (
+        <ToolDetailModal
+          tool={selectedTool.tool}
+          serverLabel={selectedTool.serverLabel}
+          onClose={() => setSelectedTool(null)}
+        />
+      )}
       <div className="srv-status-bar">
         <span className="srv-status-pill ok">{online} online</span>
         {offline > 0 && <span className="srv-status-pill hot">{offline} offline</span>}
@@ -350,9 +454,21 @@ function MCPServerList() {
 
               {open && (
                 <div className="srv-tools">
-                  {(s.tools || []).map((t) => (
-                    <span key={t} className="srv-tool mono">{fmtTool(t)}</span>
-                  ))}
+                  {(s.tools || []).map((t) => {
+                    const toolName = typeof t === "string" ? t : t.name;
+                    const toolObj  = typeof t === "string" ? { name: t, description: "", inputSchema: {} } : t;
+                    return (
+                      <button
+                        key={toolName}
+                        className="srv-tool mono"
+                        title="Click for details"
+                        onClick={() => setSelectedTool({ tool: toolObj, serverLabel: s.id })}
+                        style={{ cursor: "pointer", textAlign: "left", background: "none", border: "none", padding: 0, font: "inherit", color: "inherit" }}
+                      >
+                        {fmtTool(toolName)}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
