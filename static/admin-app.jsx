@@ -1409,7 +1409,17 @@ function App() {
 
   const loadConversations = useCallback(() => {
     fetch("/api/conversations")
-      .then(r => r.ok ? r.json() : { conversations: [] })
+      .then(r => {
+        if (r.status === 401) {
+          // Cookie expired — sessionStorage still has identity but the 8h auth cookie is gone.
+          // Force a full re-login so the user gets a fresh cookie.
+          console.warn("conversations: session cookie expired, forcing re-login");
+          sessionStorage.removeItem("admin_identity");
+          handleLogout();
+          return { conversations: [] };
+        }
+        return r.ok ? r.json() : { conversations: [] };
+      })
       .then(d => {
         const convs = (d.conversations || []).map(c => ({
           id: c.session_id,
@@ -1422,7 +1432,7 @@ function App() {
         setHistory(convs);
       })
       .catch(() => {});
-  }, []);
+  }, [handleLogout]);
 
   const onPick = useCallback(async (id) => {
     const entry = history.find(h => h.id === id);
