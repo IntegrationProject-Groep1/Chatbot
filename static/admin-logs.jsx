@@ -20,7 +20,7 @@ const TIME_MODES = [
   { id: "live", label: "Live",   hours: null  },
   { id: "15m",  label: "15 min", hours: 0.25  },
   { id: "1h",   label: "1 uur",  hours: 1     },
-  { id: "6h",   label: "6 uur",  hours: 6     },
+  { id: "4h",   label: "4 uur",  hours: 4     },
   { id: "7h",   label: "7 uur",  hours: 7     },
 ];
 
