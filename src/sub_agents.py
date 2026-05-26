@@ -127,7 +127,7 @@ async def _call_sub_llm(messages: list[dict], tools: list[dict]) -> dict:
         "model": _MODEL,
         "messages": sanitized,
         "temperature": 0.2,
-        "max_tokens": 2048,
+        "max_tokens": 1024,
         "stream": True,
     }
     if tools:
