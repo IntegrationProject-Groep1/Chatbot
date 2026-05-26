@@ -26,6 +26,11 @@ _pool_lock = threading.Lock()
 _pool_next_retry: float = 0.0
 _RETRY_COOLDOWN = 60.0
 
+# In-memory cache of the last clear timestamp (persisted to DB).
+# store_logs_batch() skips any entry whose @timestamp predates this value
+# so Elasticsearch re-polling never re-surfaces cleared entries.
+_cleared_at: float = 0.0
+
 
 def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
     global _pool, _pool_next_retry
@@ -80,6 +85,55 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool | None:
 
 def init_db():
     _get_pool()
+    _load_cleared_at()
+
+
+def _load_cleared_at():
+    """Read the persisted cleared_at value from DB into memory on startup."""
+    global _cleared_at
+    pool = _get_pool()
+    if pool is None:
+        return
+    try:
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT last_refresh FROM chatbot_log_refresh WHERE service = '__cleared__'"
+                )
+                row = cur.fetchone()
+                if row:
+                    _cleared_at = row[0]
+        finally:
+            pool.putconn(conn)
+    except Exception as e:
+        _log.error("_load_cleared_at failed: %s", e)
+
+
+def get_cleared_at() -> float:
+    return _cleared_at
+
+
+def set_cleared_at(ts: float):
+    global _cleared_at
+    _cleared_at = ts
+    pool = _get_pool()
+    if pool is None:
+        return
+    try:
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO chatbot_log_refresh (service, last_refresh)
+                    VALUES ('__cleared__', %s)
+                    ON CONFLICT (service) DO UPDATE SET last_refresh = EXCLUDED.last_refresh
+                """, (ts,))
+            conn.commit()
+        finally:
+            pool.putconn(conn)
+    except Exception as e:
+        _log.error("set_cleared_at failed: %s", e)
 
 
 
@@ -97,6 +151,7 @@ def store_logs_batch(entries: list):
     pool = _get_pool()
     if pool is None:
         return
+    cutoff = _cleared_at  # entries with @timestamp before this are suppressed
     try:
         conn = pool.getconn()
         try:
@@ -104,6 +159,16 @@ def store_logs_batch(entries: list):
             with conn.cursor() as cur:
                 for e in entries:
                     ts     = e.get("@timestamp") or e.get("timestamp") or datetime.utcnow().isoformat() + "Z"
+                    # Skip entries that predate the last cache clear.
+                    if cutoff > 0:
+                        try:
+                            entry_epoch = datetime.fromisoformat(ts.rstrip("Z")).replace(
+                                tzinfo=__import__("datetime").timezone.utc
+                            ).timestamp()
+                            if entry_epoch < cutoff:
+                                continue
+                        except Exception:
+                            pass  # unparseable timestamp → keep the entry
                     src    = e.get("source", "").lower()
                     action = e.get("action", "").lower()
                     msg    = e.get("message") or e.get("log_message", "")
@@ -305,7 +370,11 @@ def cleanup_old_logs(hours: int = 168):
 
 
 def clear_all_logs() -> int:
-    """Delete all rows from chatbot_logs. Returns the number of deleted rows."""
+    """Delete all rows from chatbot_logs and record the clear timestamp.
+
+    Any Elasticsearch entries with @timestamp before this moment will be
+    silently dropped by store_logs_batch() on subsequent live polls.
+    """
     pool = _get_pool()
     if pool is None:
         return 0
@@ -317,6 +386,7 @@ def clear_all_logs() -> int:
                 deleted = cur.rowcount
             conn.commit()
             _log.info("clear_all_logs: deleted %d rows", deleted)
+            set_cleared_at(time.time())
             return deleted
         finally:
             pool.putconn(conn)

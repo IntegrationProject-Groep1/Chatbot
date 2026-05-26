@@ -231,8 +231,8 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
   const [liveError, setLiveError] = React.useState(null);
   const [dataSource, setDataSource] = React.useState("live");
   const [clearing, setClearing]   = React.useState(false);
-  // After "Cache wissen": only show entries that arrived AFTER this timestamp.
-  // MCP/ES will return the same logs on the next poll — we filter them out here.
+  // After "Cache wissen": hide entries older than this timestamp until the next poll.
+  // Immediate visual feedback only — the DB-side cleared_at is the durable filter.
   const clearedAt = React.useRef(0);
 
   const buildUrl = React.useCallback(() => {
