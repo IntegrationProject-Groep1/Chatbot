@@ -404,7 +404,7 @@ async def _batch_crm_lookup(tool_name: str, arg_key: str, values: list[str]) -> 
     return json.dumps({"members": members, "count": len(members), "errors": errors})
 
 
-async def _handle_local_tool(name: str, args: dict, session_id: str = "") -> str | None:
+async def _handle_local_tool(name: str, args: dict, session_id: str = "", emit: Callable | None = None) -> str | None:
     # ── Sub-agent dispatch ────────────────────────────────────────────────────
     if name.startswith("ask_"):
         label = name[4:]  # "ask_frontend" → "frontend"
@@ -414,7 +414,7 @@ async def _handle_local_tool(name: str, args: dict, session_id: str = "") -> str
             return json.dumps({"error": "query is required", "service": label})
         from sub_agents import run_sub_agent
         _log.info("Dispatching to sub-agent [%s]: query=%r context=%r", label, query[:80], context[:40])
-        result = await run_sub_agent(label, query, context)
+        result = await run_sub_agent(label, query, context, emit=emit)
         return json.dumps({"result": result, "service": label})
 
     if name == "get_current_date":
@@ -887,7 +887,7 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
     identity_uuid = session_store.get_identity_uuid(session_id)
 
     try:
-        local_result = await _handle_local_tool(name, args, session_id)
+        local_result = await _handle_local_tool(name, args, session_id, emit=emit)
         if local_result is not None:
             duration = int((time.time() - t0) * 1000)
             await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": local_result[:120]})
