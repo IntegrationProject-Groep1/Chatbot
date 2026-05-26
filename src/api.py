@@ -1140,6 +1140,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             try:
                 raw = await websocket.receive_text()
                 data = json.loads(raw)
+            except RuntimeError as exc:
+                if "not connected" in str(exc).lower():
+                    raise WebSocketDisconnect() from exc
+                raise
             except json.JSONDecodeError:
                 _log.warning("WS malformed JSON: session=%s", session_id)
                 await emit({"type": "error", "message": "Invalid JSON", "recoverable": True})
@@ -1184,8 +1188,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     except asyncio.TimeoutError:
         _log.warning("WS auth timeout: session=%s", session_id)
         await emit({"type": "error", "message": "Authentication timeout.", "recoverable": False})
-    except WebSocketDisconnect:
-        _log.info("WS disconnected: session=%s", session_id)
+    except (WebSocketDisconnect, RuntimeError) as exc:
+        if isinstance(exc, RuntimeError) and "not connected" not in str(exc).lower():
+            _log.exception("WS error: session=%s", session_id)
+        else:
+            _log.info("WS disconnected: session=%s", session_id)
     except Exception as exc:
         _log.exception("WS error: session=%s", session_id)
         try:
