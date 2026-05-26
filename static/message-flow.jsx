@@ -884,13 +884,14 @@ function LeftRail({ nodes, edgeIdx, liveEvents, errCount, selected, onSelect, ho
 // ─── Feed item ────────────────────────────────────────────────────────────────
 function FeedItem({ ev, onSelect, edgeIdx, onOpenOverlay }) {
   const sN = NODES[ev.source];
-  const dst = ev.destinations?.[0];
-  const tN = dst ? NODES[dst] : null;
+  const destinations = ev.destinations || [];
+  const tN = destinations[0] ? NODES[destinations[0]] : null;
   const isNew = !ev.isCached && (Date.now() - new Date(ev.timestamp).getTime()) < 2500;
 
   const handleClick = () => {
     if (onSelect) {
-      if (ev.source && dst) {
+      if (ev.source && destinations.length > 0) {
+        const dst = destinations[0];
         const key = `${ev.source}->${dst}`;
         onSelect({ type: "edge", key, from: ev.source, to: dst, data: (edgeIdx || {})[key] || {} });
       } else if (ev.source && NODES[ev.source]) {
@@ -899,7 +900,9 @@ function FeedItem({ ev, onSelect, edgeIdx, onOpenOverlay }) {
     }
     if (onOpenOverlay && ev.message) {
       const titleParts = [sN?.label || ev.source];
-      if (tN) titleParts.push(` → ${tN.label}`);
+      if (destinations.length > 0) {
+        titleParts.push(" → " + destinations.map(d => NODES[d]?.label || d).join(", "));
+      }
       if (ev.action) titleParts.push(` · ${ACTION_NL[ev.action] || ev.action}`);
       onOpenOverlay({
         title: titleParts.join(""),
@@ -912,12 +915,14 @@ function FeedItem({ ev, onSelect, edgeIdx, onOpenOverlay }) {
     <div className={`mf-fi lvl-${ev.level}${isNew ? " entering" : ""}${ev.isCached ? " cached" : ""}`}
       style={{ "--svc-c": nc(sN), "--svc-c-dst": nc(tN), cursor: onSelect ? "pointer" : "default" }}
       onClick={handleClick}
-      title={dst ? `Selecteer: ${sN?.label || ev.source} → ${tN?.label || dst}` : undefined}>
+      title={destinations.length > 0 ? `Selecteer: ${sN?.label || ev.source} → ${destinations.map(d => NODES[d]?.label || d).join(", ")}` : undefined}>
       <div className="mf-fi-top">
         <span className="mf-fi-src">{sN?.label || ev.source}</span>
-        {tN && <>
+        {destinations.length > 0 && <>
           <span className="mf-fi-arrow">→</span>
-          <span className="mf-fi-dst">{tN.label}</span>
+          <span className="mf-fi-dst">
+            {destinations.map(d => NODES[d]?.label || d).join(", ")}
+          </span>
         </>}
         <span className="mf-fi-action">{ACTION_NL[ev.action] || ev.action}</span>
         <span className="mf-fi-ts">
@@ -986,12 +991,12 @@ function Feed({ events, rate, connected, paused, onTogglePause, onSelect, edgeId
     const q = search.trim().toLowerCase();
     return displayEvents.filter(e => {
       if (selected?.type === "node") {
-        const dst = e.destinations?.[0];
-        if (e.source !== selected.id && dst !== selected.id) return false;
+        const destinations = e.destinations || [];
+        if (e.source !== selected.id && !destinations.includes(selected.id)) return false;
       }
       if (selected?.type === "edge") {
-        const dst = e.destinations?.[0];
-        if (e.source !== selected.from || dst !== selected.to) return false;
+        const destinations = e.destinations || [];
+        if (e.source !== selected.from || !destinations.includes(selected.to)) return false;
       }
       if (actionFilter && e.action !== actionFilter) return false;
       if (levelFilter  && e.level  !== levelFilter)  return false;
@@ -1189,10 +1194,21 @@ function MessageFlowScreen() {
           );
           // Spawn packets
           const topoSet = new Set(TOPO.map(t => `${t.from}->${t.to}`));
-          const newPkts = incoming
-            .map(e => ({ ...e, to: e.destinations?.[0] }))
-            .filter(e => e.source && e.to && topoSet.has(`${e.source}->${e.to}`))
-            .slice(0, 6)
+          const packetCandidates = [];
+          incoming.forEach(e => {
+            if (!e.source || !e.destinations) return;
+            e.destinations.forEach(dst => {
+              if (topoSet.has(`${e.source}->${dst}`)) {
+                packetCandidates.push({
+                  ...e,
+                  to: dst
+                });
+              }
+            });
+          });
+
+          const newPkts = packetCandidates
+            .slice(0, 12)
             .map((e, i) => ({
               id:    `pkt-${++packetSeq.current}`,
               from:  e.source,
@@ -1202,11 +1218,11 @@ function MessageFlowScreen() {
               level: e.level || "info",
             }));
           if (newPkts.length > 0) {
-            setPackets(prev => [...prev.slice(-20), ...newPkts]);
+            setPackets(prev => [...prev.slice(-30), ...newPkts]);
             newPkts.forEach(pkt => {
               setTimeout(() => {
                 setPulses(prev => [
-                  ...prev.slice(-12),
+                  ...prev.slice(-15),
                   { id: `pu-${++pulseSeq.current}`, nodeId: pkt.to, level: pkt.level },
                 ]);
               }, (pkt.delay || 0) + pkt.dur * 0.62);
