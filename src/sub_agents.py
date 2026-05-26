@@ -38,6 +38,7 @@ _SYSTEM_PROMPTS: dict[str, str] = {
         "Use your tools to answer the query. "
         "When asked for attendees or enrolled users, include their raw master_uuid values in your response — "
         "the orchestrator needs these to resolve real names via the CRM. "
+        "IMPORTANT: When listing sessions, limit your answer to 10 results maximum unless the admin explicitly asks for more. Summarise the rest as '...and X more'. "
         "Return a clean, concise answer. No unnecessary JSON. No technical Drupal field names."
     ),
     "crm": (
@@ -125,7 +126,7 @@ async def _call_sub_llm(messages: list[dict], tools: list[dict]) -> dict:
         "model": _MODEL,
         "messages": sanitized,
         "temperature": 0.2,
-        "max_tokens": 1024,
+        "max_tokens": 512,
         "stream": True,
     }
     if tools:
