@@ -269,9 +269,17 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
     setClearing(true);
     fetch("/api/logs/clear", { method: "DELETE" })
       .then(r => r.json())
-      .then(() => { setClearing(false); fetchLogs(); })
+      .then((d) => {
+        setClearing(false);
+        // Reset the UI immediately — don't refetch right away or MCP will re-fill the cache
+        setLogsBySvc({});
+        setLoading(false);
+        setLiveError(`Cache gewist (${d.deleted ?? 0} entries verwijderd)`);
+        // Clear the info banner after 4 seconds
+        setTimeout(() => setLiveError(null), 4000);
+      })
       .catch(() => setClearing(false));
-  }, [fetchLogs]);
+  }, []);
 
   // Fetch whenever mode or filters change
   React.useEffect(() => {
@@ -413,7 +421,10 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
 
       {/* ── Error banner ── */}
       {liveError && (
-        <div className="logs-error-banner">{liveError}</div>
+        <div className={`logs-error-banner ${liveError.startsWith("Cache") ? "is-success" : ""}`}>
+          <span className="logs-error-icon">{liveError.startsWith("Cache") ? "✓" : "⚠"}</span>
+          {liveError}
+        </div>
       )}
 
       {loading && (
