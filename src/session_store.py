@@ -60,12 +60,15 @@ _SYSTEM_CONTEXT = (
     "`batch_get_crm_members(master_uuids=[...])` and `batch_get_crm_members_by_email(emails=[...])` resolve up to 20 at once. NEVER call crm__get_member in a loop.\n\n"
 
     "## Enrollment queries ('who is enrolled / show me users in sessions')\n"
-    "Multi-step pattern — always follow ALL steps:\n"
-    "1. `frontend__get_enrollment_overview` → get list of sessions with session_ids and enrolled counts.\n"
-    "2. In ONE parallel response: call `frontend__get_session_attendees(session_id=...)` for EVERY session that has enrolled > 0. Do NOT fetch one at a time.\n"
-    "3. Collect all master_uuids from the attendee results, then call `batch_get_crm_members(master_uuids=[...])` to resolve names.\n"
-    "4. Present results as: session name → table of Name, Email per enrolled user.\n"
-    "NEVER stop after step 1 (showing only session counts). The admin asked for users, not sessions.\n\n"
+    "Multi-step pattern — always follow ALL steps in order:\n"
+    "1. `frontend__get_enrollment_overview` → get list of sessions.\n"
+    "2. IMMEDIATELY in the SAME next response: call `frontend__get_session_attendees(session_id=X)` for "
+    "EVERY session_id where enrolled > 0 — all at once, as one batch of parallel tool calls. "
+    "If there are 8 sessions with enrollments, emit 8 tool calls simultaneously. "
+    "Do NOT call one, wait, then call the next. Do NOT ask the admin if they want more.\n"
+    "3. Collect every master_uuid returned across all sessions, call `batch_get_crm_members(master_uuids=[...])` once.\n"
+    "4. Present: session title → Name + Email table per enrolled user.\n"
+    "NEVER ask 'do you want to see other sessions?' — fetch them all upfront.\n\n"
 )
 
 # ── Section 2: Tool call rules ──────────────────────────────────────────────────

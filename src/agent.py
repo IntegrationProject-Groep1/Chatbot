@@ -48,6 +48,10 @@ _CONFIRM_WORDS_SINGLE = frozenset({
 _CONFIRM_PHRASES = frozenset({
     "do it", "doe het", "go ahead", "ga door",
 })
+_NEGATION_WORDS = frozenset({
+    "nee", "neen", "no", "niet", "cancel", "annuleer", "annuleren",
+    "stop", "abort", "nevermind", "nope", "non",
+})
 
 def _is_write_tool(tool_name: str) -> bool:
     bare = tool_name.split("__")[-1].lower()
@@ -929,8 +933,22 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
             return
         # Fall through — LLM summarises the result in the main loop
     elif not _has_confirmation(session_id):
-        # Clear any stale pending write (user changed topic or typed "nee")
+        had_pending = pending_tc is not None
         session_store.set_pending_write(session_id, None)
+        # If the user explicitly cancelled a pending write, emit "cancelled" and stop.
+        # This prevents the LLM from re-proposing the same action in the next round.
+        if had_pending:
+            last_msg = ""
+            for msg in reversed(session_store.get(session_id)):
+                if msg.get("role") == "user":
+                    last_msg = (msg.get("content") or "").lower().strip()
+                    break
+            words = {re.sub(r'[^\w]', '', w) for w in last_msg.split()}
+            if words & _NEGATION_WORDS:
+                session_store.remove_pending_tool_results(session_id)
+                await emit({"type": "text", "text": "Actie geannuleerd."})
+                await emit({"type": "done"})
+                return
 
     # Track (tool_name|normalised_args) to prevent identical retries within one turn
     called_tools: set[str] = set()
@@ -1049,6 +1067,22 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
                     args = json.loads(tc["function"].get("arguments", "{}"))
                 except json.JSONDecodeError:
                     args = {}
+
+                # Validate create_user required fields before showing confirmation.
+                # If any are missing, inject an error result so the LLM asks the admin first.
+                if name == "create_user":
+                    missing = [f for f in ("first_name", "last_name", "user_type") if not args.get(f, "").strip()]
+                    if missing:
+                        for _tc in tool_calls:
+                            session_store.append(session_id, {
+                                "role": "tool", "tool_call_id": _tc["id"], "name": _tc["function"]["name"],
+                                "content": json.dumps({
+                                    "error": f"Missing required fields: {', '.join(missing)}. Ask the admin to provide them before proceeding.",
+                                    "success": False,
+                                }),
+                            })
+                        session_store.set_pending_write(session_id, None)
+                        continue  # re-enter loop so the LLM sees the error and asks for the fields
 
                 # Persist pending write to DB (stateless)
                 session_store.set_pending_write(session_id, tc)
