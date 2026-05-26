@@ -282,6 +282,106 @@ _LOCAL_TOOLS = [
     },
 ]
 
+# ── Sub-agent tool definitions (orchestrator sees these instead of raw MCP tools) ──
+_SUB_AGENT_TOOL_DEFS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_frontend",
+            "description": (
+                "Query the Frontend service (Drupal) for sessions, schedule, enrollments, "
+                "attendees, and website user accounts. "
+                "When asking for attendees, the agent will include master_uuid values in its "
+                "response so you can pass them to batch_get_crm_members to resolve real names."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Full natural language question."},
+                    "context": {"type": "string", "description": "Optional: known identifiers such as master_uuid, session_id, or email."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_crm",
+            "description": (
+                "Query the CRM service (Salesforce) for member profiles, wallet status/balance, "
+                "CRM activity/tasks, and member search. "
+                "Always call this first when you need a user's master_uuid — then pass it as "
+                "context to other sub-agents."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Full natural language question."},
+                    "context": {"type": "string", "description": "Optional: known identifiers such as email or master_uuid."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_kassa",
+            "description": (
+                "Query the Kassa service (Odoo POS) for live wallet balances, POS orders, "
+                "live consumption, and point-of-sale sales. Use for live/current balance only — "
+                "use ask_facturatie for authoritative revenue totals."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Full natural language question."},
+                    "context": {"type": "string", "description": "Optional: known identifiers such as master_uuid."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_facturatie",
+            "description": (
+                "Query the Facturatie service (FossBilling) for invoices, billing accounts, "
+                "authoritative revenue totals, overdue payments, and company billing. "
+                "Use this for all financial totals — NOT Kassa."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Full natural language question."},
+                    "context": {"type": "string", "description": "Optional: known identifiers such as email, client_id."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_monitoring",
+            "description": (
+                "Query the Monitoring service (Elasticsearch) for service health, error logs, "
+                "metrics, heartbeats, and platform stats. Use for technical/operational questions only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Full natural language question."},
+                    "context": {"type": "string", "description": "Optional context to help the agent."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+]
+
 
 async def _batch_crm_lookup(tool_name: str, arg_key: str, values: list[str]) -> str:
     client = mcp_client.get()
@@ -305,6 +405,18 @@ async def _batch_crm_lookup(tool_name: str, arg_key: str, values: list[str]) -> 
 
 
 async def _handle_local_tool(name: str, args: dict, session_id: str = "") -> str | None:
+    # ── Sub-agent dispatch ────────────────────────────────────────────────────
+    if name.startswith("ask_"):
+        label = name[4:]  # "ask_frontend" → "frontend"
+        query = args.get("query", "").strip()
+        context = args.get("context", "").strip()
+        if not query:
+            return json.dumps({"error": "query is required", "service": label})
+        from sub_agents import run_sub_agent
+        _log.info("Dispatching to sub-agent [%s]: query=%r context=%r", label, query[:80], context[:40])
+        result = await run_sub_agent(label, query, context)
+        return json.dumps({"result": result, "service": label})
+
     if name == "get_current_date":
         now = datetime.now(_TZ)
         return json.dumps({
@@ -600,7 +712,7 @@ async def _call_llama(messages: list[dict], emit: Callable | None = None) -> dic
     Tool-call rounds suppress token emission (the model is not producing prose).
     Returns a reconstructed message dict compatible with the old non-streaming shape.
     """
-    tools = _LOCAL_TOOLS + mcp_client.get().get_tool_definitions()
+    tools = _LOCAL_TOOLS + _SUB_AGENT_TOOL_DEFS
 
     # The NVIDIA LLaMA endpoint rejects assistant messages where content is
     # null, empty, or whitespace-only alongside tool_calls.
@@ -882,7 +994,12 @@ def _build_suggestions(session_id: str) -> list[str]:
     for msg in session_store.get(session_id):
         if msg.get("role") == "tool":
             name = msg.get("name", "")
-            ns = name.split("__")[0] if "__" in name else ""
+            if "__" in name:
+                ns = name.split("__")[0]
+            elif name.startswith("ask_"):
+                ns = name[4:]  # "ask_frontend" → "frontend"
+            else:
+                ns = ""
             if ns:
                 used.add(ns)
     suggestions: list[str] = []
