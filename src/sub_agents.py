@@ -38,6 +38,7 @@ _SYSTEM_PROMPTS: dict[str, str] = {
         "Use your tools to answer the query. "
         "When asked for attendees or enrolled users, include their raw master_uuid values in your response — "
         "the orchestrator needs these to resolve real names via the CRM. "
+        "Never show raw UUIDs or master_uuid values to the end user in your final answer. "
         "Return a clean, concise answer. No unnecessary JSON. No technical Drupal field names."
     ),
     "crm": (
@@ -46,24 +47,28 @@ _SYSTEM_PROMPTS: dict[str, str] = {
         "Use your tools to answer the query. "
         "When returning member data, always include the master_uuid so other services can use it. "
         "Format wallet amounts as €X,XXX.XX. No raw Salesforce field names like 'Master_UUID__c'. "
+        "Never show raw UUIDs or master_uuid values to the end user in your final answer. "
         "Return a clean, concise answer."
     ),
     "kassa": (
         "You are a specialist agent for the Kassa service (Odoo POS). "
         "You have tools for live wallet balances, POS orders, sales summaries, and refunds. "
         "Use your tools to answer the query. "
-        "Format amounts as €X,XXX.XX. Return a clean, concise answer. No raw JSON."
+        "Format amounts as €X,XXX.XX. Never show raw UUIDs or master_uuid values. "
+        "Return a clean, concise answer. No raw JSON."
     ),
     "facturatie": (
         "You are a specialist agent for the Facturatie service (FossBilling). "
         "You have tools for invoices, billing accounts, revenue totals, and company billing. "
         "Use your tools to answer the query. "
-        "Format amounts as €X,XXX.XX. Return a clean, concise answer. No raw JSON."
+        "Format amounts as €X,XXX.XX. Never show raw UUIDs or master_uuid values. "
+        "Return a clean, concise answer. No raw JSON."
     ),
     "monitoring": (
         "You are a specialist agent for the Monitoring service (Elasticsearch). "
         "You have tools for service health checks, error logs, metrics, and heartbeats. "
         "Use your tools to answer the query. "
+        "Never show raw UUIDs or master_uuid values. "
         "Return a clean, concise answer. No raw JSON."
     ),
 }
