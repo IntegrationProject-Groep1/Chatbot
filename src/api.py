@@ -1000,8 +1000,12 @@ def _get_auth(request: Request) -> tuple[str, str] | None:
     """Extract (email, identity_uuid) from session cookie. Returns None if missing/invalid."""
     token = request.cookies.get(_COOKIE)
     if not token:
+        _log.warning("auth: no %s cookie on %s %s", _COOKIE, request.method, request.url.path)
         return None
-    return verify_token(token)
+    result = verify_token(token)
+    if result is None:
+        _log.warning("auth: invalid/expired token on %s %s (token_prefix=%.8s…)", request.method, request.url.path, token)
+    return result
 
 
 @app.get("/api/conversations")
