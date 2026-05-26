@@ -39,7 +39,8 @@ _SYSTEM_CONTEXT = (
     "Monitoring numbers = event counts, NOT money. Use Facturatie for all financial totals.\n\n"
 
     "## Key routing rules (non-obvious only)\n"
-    "- **MASTER UUID FIRST:** The `master_uuid` is the universal key across all systems. If you have a user's `master_uuid` (e.g. from Kassa or invoice results), ALWAYS prioritize using master_uuid-based tools (like `crm__get_member` or `kassa__get_wallet_by_master_uuid`) rather than querying by email or name. NEVER guess or invent email addresses (like appending '@shiftfestival.be' to a name fragment).\n"
+    "- **MASTER UUID FIRST & ONLY:** The `master_uuid` is the absolute primary key and is identical across all systems (CRM, Kassa, Facturatie, Drupal). If you have a user's `master_uuid` (e.g. from Kassa wallet list, recent orders, or invoice results), ALWAYS prioritize using master_uuid-based tools (like `crm__get_member` or `kassa__get_wallet_by_master_uuid`) rather than querying by email or name. NEVER call email-based or name-based lookup tools if you already have their `master_uuid`!\n"
+    "- **NEVER FABRICATE OR GUESS EMAILS:** Under no circumstances should you guess, fabricate, or construct email addresses (e.g., do NOT append '@shiftfestival.be' or any other domain to a person's first name, last name, or name fragments). If you only have a user's name or name fragment, you MUST call `crm__search_members` to find their real master_uuid and profile. Never try to guess their email address.\n"
     "- 'members/users/people/wie is er' → CRM only. Frontend has no member listing.\n"
     "- 'create user' → `create_user` local tool ONLY (links Identity + CRM + Drupal). NEVER call crm__create_member + frontend__create_user separately.\n"
     "- 'delete user' → `delete_user` local tool ONLY (cascade across all services).\n"
@@ -50,8 +51,8 @@ _SYSTEM_CONTEXT = (
     "- 'company/bedrijf': billing → Facturatie; profiles → CRM.\n\n"
 
     "## Wallet balance — check status\n"
-    "1. Check the wallet status using the results of `crm__get_member` or `crm__get_member_by_email`. You do NOT need to call `crm__get_member_wallet` if you already have the `Wallet_Status__c` field from a previous tool call.\n"
-    "2. If `Wallet_Status__c` is `'Leased'`: you MUST immediately query the live balance via `kassa__get_wallet_by_master_uuid`. NEVER show CRM cached balance as current when Leased. If not leased, use the CRM balance directly.\n\n"
+    "- **NEVER USE REDUNDANT WALLET CALLS:** The profile lookup tools (`crm__get_member` and `crm__get_member_by_email`) already return the full member profile including `Wallet_Balance__c` and `Wallet_Status__c`. Therefore, you must NEVER call `crm__get_member_wallet` if you have already called or plan to call one of those profile lookup tools.\n"
+    "- **AUTOMATIC LIVE KASSA QUERY FOR LEASED WALLETS:** If `Wallet_Status__c` is `'Leased'`, the CRM balance is stale. You MUST immediately and automatically call `kassa__get_wallet_by_master_uuid` in the same turn/sequence to fetch the live POS balance and present it to the user. Do NOT wait for the user to ask for the live balance; proactively look it up and show it.\n\n"
 
     "## Batch tools — use instead of loops\n"
     "`batch_get_crm_members(master_uuids=[...])` and `batch_get_crm_members_by_email(emails=[...])` resolve up to 20 at once. NEVER call crm__get_member in a loop.\n\n"
@@ -71,10 +72,10 @@ _SYSTEM_ROUTING = (
     "**PARALLEL:** call multiple tools in one response ONLY when the admin mentions 2+ services.\n"
     "- 'Kassa AND Facturatie revenue' → call both simultaneously.\n"
     "- 'Platform health' → `get_mcp_server_status` + `monitoring__get_platform_health_overview` simultaneously.\n"
-    "- 'Member profile + wallet' → `crm__get_member` + `crm__get_member_wallet` simultaneously.\n\n"
+    "- 'Member profile and Drupal enrollments' → `crm__get_member_by_email` + `frontend__get_user_enrollments` simultaneously.\n\n"
 
     "**SEQUENTIAL:** only when result A is needed as input to B.\n"
-    "- Resolve master_uuid via `crm__get_member_by_email` or other lookup tools before querying wallet or Kassa (if you do not have the master_uuid yet). If you already have the master_uuid, use it directly without a resolution step.\n"
+    "- Resolve master_uuid via `crm__get_member_by_email` or `crm__search_members` (if you do not have the master_uuid yet). If you already have the master_uuid, use it directly without a resolution step.\n"
     "- Resolve client_id via `facturatie__get_company_billing_account` before getting invoices.\n"
     "- Resolve session_id before getting attendees.\n\n"
 
