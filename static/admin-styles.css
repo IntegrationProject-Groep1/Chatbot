@@ -1493,9 +1493,10 @@ button.srv-tool {
   cursor: pointer;
 }
 button.srv-tool:hover {
-  background: var(--svc-soft, rgba(167,139,250,.12));
+  background: var(--svc-soft, var(--primary-soft));
   border-color: var(--svc, var(--primary));
-  color: var(--fg);
+  color: var(--svc, var(--primary));
+  font-weight: 500;
 }
 
 .fnode-html {
@@ -1826,8 +1827,8 @@ button.srv-tool:hover {
   flex-direction: column;
   gap: 1px;
 }
-.mcp-svc-info b { font-size: 12px; color: var(--text); font-weight: 600; }
-.mcp-svc-info span { font-size: 10px; color: var(--muted-2); }
+.mcp-svc-info b { font-size: 12px; color: var(--ink); font-weight: 600; }
+.mcp-svc-info span { font-size: 10px; color: var(--muted-2); font-family: var(--font-mono); }
 
 .mon-kpis {
   display: grid;
@@ -2821,15 +2822,32 @@ button.mon-row:focus-visible {
 .logs-unknown-chip b { color: var(--warn); }
 .logs-unknown-hint { margin-left: auto; font-size: 9.5px; color: var(--muted-2); font-style: italic; }
 
-/* Error banner */
+/* Error / info banner */
 .logs-error-banner {
   flex-shrink: 0;
-  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
   background: var(--warn-soft);
   color: var(--warn);
-  font-size: 11px;
+  font-size: 11.5px;
   font-family: var(--font-mono);
-  border-bottom: 1px solid #F3D9AC;
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border-left: 3px solid var(--warn);
+  font-weight: 500;
+  letter-spacing: .01em;
+  transition: background .2s, color .2s;
+}
+.logs-error-banner.is-success {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-bottom-color: color-mix(in srgb, var(--ok) 30%, transparent);
+  border-left-color: var(--ok);
+}
+.logs-error-icon {
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 /* Service panel grid */
@@ -4498,9 +4516,9 @@ body[data-density="loose"] .tool-call { padding: 14px 16px; }
   border-radius: 3px;
   text-align: center;
 }
-.infra-log-lvl.ok  { background: #D1FAE5; color: #065F46; }
-.infra-log-lvl.warn{ background: #FEF3C7; color: #92400E; }
-.infra-log-lvl.hot { background: #FEE2E2; color: #991B1B; }
+.infra-log-lvl.ok  { background: var(--ok-soft); color: var(--ok); }
+.infra-log-lvl.warn{ background: var(--warn-soft); color: var(--warn); }
+.infra-log-lvl.hot { background: var(--hot-soft); color: var(--hot); }
 
 .infra-log-src  { color: var(--primary); font-weight: 600; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .infra-log-act  { color: var(--muted);   font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
