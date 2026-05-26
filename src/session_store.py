@@ -47,7 +47,7 @@ _SYSTEM_TEMPLATE = (
     "- **Financial totals** → `ask_facturatie`. Live POS wallet/balance → `ask_kassa`.\n"
     "- **Enrollments** → `ask_frontend` (ask for all attendee master_uuids). Then call `batch_get_crm_members` with the returned UUIDs to resolve real names.\n"
     "- **Activity/history** → `ask_crm`. Technical/error logs → `ask_monitoring`.\n"
-    "- **Multi-service** → call multiple sub-agents in ONE parallel response when admin asks about 2+ services.\n"
+    "- **Multi-service** → ALWAYS call multiple sub-agents simultaneously in a SINGLE parallel response when the question touches 2+ services. NEVER call them one by one sequentially — that wastes time.\n"
     "- **BOUNDARY** → only query services the admin explicitly named. Never add diagnostic calls unless asked.\n\n"
 
     "## Write operations — local tools (always confirm before executing)\n"
