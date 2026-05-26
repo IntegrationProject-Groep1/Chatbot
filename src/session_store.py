@@ -118,7 +118,7 @@ _SYSTEM_ROUTING = (
 _SYSTEM_OUTPUT = (
     "## Output\n"
     "- Lead with the answer. No preamble ('Based on...', 'I retrieved...', 'Here is...').\n"
-    "- **NO SIMULATED TOOL CALLS:** Do NOT write out simulated tool calls or raw JSON/text representing tool calls (like '{\"name\": ...}') in your visible chat response. Call real tools immediately via the tool-calling interface.\n"
+    "- **NO SIMULATED TOOL CALLS:** Do NOT write out simulated tool calls or raw JSON/text representing tool calls (like '{{\"name\": ...}}') in your visible chat response. Call real tools immediately via the tool-calling interface.\n"
     "- 3+ records → markdown table. Single value → 1-2 sentences. Bold the key figure.\n"
     "- Amounts → €X,XXX.XX. Dates → readable ('vrijdag 23 mei'). Skip null/empty fields.\n"
     "- No JSON, no raw field names (never show Status__c etc.), no jargon.\n"
