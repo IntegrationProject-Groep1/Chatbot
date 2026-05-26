@@ -24,7 +24,7 @@ import mcp_client
 
 _log = logging.getLogger(__name__)
 _TZ = ZoneInfo("Europe/Brussels")
-_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+_MODEL = os.getenv("SUB_AGENT_MODEL", os.getenv("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct"))
 _API_URL = os.getenv("NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
 _API_KEY = os.getenv("NVIDIA_API_KEY", "")
 _HEADERS = {"Authorization": f"Bearer {_API_KEY}", "Content-Type": "application/json"}
