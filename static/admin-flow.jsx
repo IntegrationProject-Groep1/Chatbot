@@ -4,29 +4,29 @@
    ============================================================ */
 const { useEffect, useMemo, useRef, useState } = React;
 
-// MCP server node ids — used to detect "disconnected" state
+// MCP server node ids — used to detect "disconnected" state (sub-agents are internal, not here)
 const MCP_NODE_IDS = new Set(["frontend", "facturatie", "crm", "kassa", "monitoring"]);
 
 const NODE_W = 130;
 const NODE_H = 44;
-// Backend node for each MCP server — included when that server is active
+// Extra nodes to show per active MCP server: [sub-agent, backend]
 const _BACKEND_MAP = {
-  frontend:   "drupal",
-  facturatie: "facturatieDb",
-  crm:        "crmDb",
-  kassa:      "kassaDb",
-  monitoring: "elastic",
+  frontend:   ["subFrontend",   "drupal"],
+  facturatie: ["subFacturatie", "facturatieDb"],
+  crm:        ["subCrm",        "crmDb"],
+  kassa:      ["subKassa",      "kassaDb"],
+  monitoring: ["subMonitoring", "elastic"],
 };
-// Tight default: trims the empty SVG space outside the actual node bounds
-const _DEFAULT_VB = { x: 5, y: 10, w: 710, h: 424 };
+// Default viewBox shows the full A2A topology
+const _DEFAULT_VB = { x: 5, y: 5, w: 710, h: 485 };
 
 function _computeTargetVB(activeNodes) {
   if (!activeNodes || activeNodes.size === 0) return _DEFAULT_VB;
-  // Always show user + llama; add backends for active MCP servers
+  // Always show user + orchestrator; add sub-agent + backend for active MCP servers
   const ids = new Set(["user", "llama", ...activeNodes]);
   for (const id of activeNodes) {
-    const b = _BACKEND_MAP[id];
-    if (b) ids.add(b);
+    const extras = _BACKEND_MAP[id];
+    if (extras) for (const e of extras) ids.add(e);
   }
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const id of ids) {
@@ -133,15 +133,33 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges, litNodes, litEdges,
           </linearGradient>
         </defs>
 
-        {/* Group brackets for MCP servers + backends */}
+        {/* Bracket: Sub-agents layer */}
         <g>
-          <rect x="8" y="238" width={FLOW_W - 16} height="192"
+          <rect x="8" y="183" width={FLOW_W - 16} height="75"
+            rx="10" ry="10"
+            fill="rgba(235,240,255,0.45)"
+            stroke="#D0D8F0"
+            strokeDasharray="4 4" />
+          <rect x="22" y="175" width="96" height="16" rx="3" fill="#EEF1FB" />
+          <text x="30" y="186"
+            fontFamily="JetBrains Mono, monospace"
+            fontSize="9.5"
+            letterSpacing="0.12em"
+            fill="#4A5580"
+            fontWeight="600">
+            SUB-AGENTS
+          </text>
+        </g>
+
+        {/* Bracket: MCP servers + backends */}
+        <g>
+          <rect x="8" y="283" width={FLOW_W - 16} height="172"
             rx="14" ry="14"
             fill="rgba(243,244,250,0.55)"
             stroke="#E5E8F0"
             strokeDasharray="4 4" />
-          <rect x="22" y="230" width="92" height="16" rx="3" fill="#F2F4FA" />
-          <text x="30" y="241"
+          <rect x="22" y="275" width="100" height="16" rx="3" fill="#F2F4FA" />
+          <text x="30" y="286"
             fontFamily="JetBrains Mono, monospace"
             fontSize="9.5"
             letterSpacing="0.12em"
@@ -178,7 +196,7 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges, litNodes, litEdges,
         {Object.entries(NODES).map(([id, n]) => {
           const active = activeNodes.has(id);
           const done = (doneNodes.has(id) || (litNodes && litNodes.has(id))) && !active;
-          // MCP server nodes that didn't load are marked disconnected
+          // Only external MCP server nodes can be "disconnected" — sub-agents are internal
           const disconnected = MCP_NODE_IDS.has(id) && connectedServers.size > 0 && !connectedServers.has(id);
           return (
             <foreignObject key={id}
@@ -186,7 +204,7 @@ function FlowTopology({ activeNodes, doneNodes, activeEdges, litNodes, litEdges,
               style={{ overflow: "visible" }}>
               <div
                 xmlns="http://www.w3.org/1999/xhtml"
-                className={`fnode-html ${active ? "is-active" : ""} ${done ? "is-done" : ""} ${n.llama ? "is-llama" : ""}`}
+                className={`fnode-html ${active ? "is-active" : ""} ${done ? "is-done" : ""} ${n.llama ? "is-llama" : ""} ${n.subagent ? "is-subagent" : ""}`}
                 data-svc={n.svc}
                 style={{
                   width: "130px",
