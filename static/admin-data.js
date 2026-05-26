@@ -1,40 +1,64 @@
 /* ============================================================
    Shift Festival — Admin Console data
-   Real MCP topology — matches actual backend services
+   A2A topology — Orchestrator → Sub-agents → MCP servers → Backends
    ============================================================ */
 
 const FLOW_W = 720;
-const FLOW_H = 460;
+const FLOW_H = 495;
 
 const NODES = {
-  user:        { x: 295, y: 25,  label: "Admin",           meta: "",                   icon: "U", svc: "user" },
-  llama:       { x: 295, y: 120, label: "AI Agent",         meta: "Llama 3.3 · 70B",   icon: "L", svc: "llama", llama: true },
+  // ── Layer 1: Admin ──────────────────────────────────────────
+  user:         { x: 295, y: 10,  label: "Admin",             meta: "",                      icon: "U", svc: "user" },
 
-  frontend:    { x: 15,  y: 255, label: "Frontend MCP",    meta: "Sessions · Users",    icon: "W", svc: "frontend" },
-  facturatie:  { x: 155, y: 255, label: "Facturatie MCP",  meta: "Invoicing",           icon: "€", svc: "facturatie" },
-  crm:         { x: 295, y: 255, label: "CRM MCP",         meta: "Members",             icon: "C", svc: "crm" },
-  kassa:       { x: 435, y: 255, label: "Kassa MCP",       meta: "Orders · Sales",      icon: "K", svc: "kassa" },
-  monitoring:  { x: 575, y: 255, label: "Monitoring MCP",  meta: "Health · Logs",       icon: "M", svc: "monitoring" },
+  // ── Layer 2: Orchestrator ───────────────────────────────────
+  llama:        { x: 295, y: 90,  label: "Orchestrator",       meta: "Llama 3.3 · 70B",      icon: "L", svc: "llama", llama: true },
 
-  drupal:      { x: 15,  y: 375, label: "Drupal",          meta: "Content platform",    icon: "D", svc: "frontend" },
-  facturatieDb:{ x: 155, y: 375, label: "FossBilling",     meta: "Billing database",    icon: "B", svc: "facturatie" },
-  crmDb:       { x: 295, y: 375, label: "Salesforce",      meta: "CRM platform",        icon: "S", svc: "crm" },
-  kassaDb:     { x: 435, y: 375, label: "Odoo",            meta: "Point of sale",       icon: "O", svc: "kassa" },
-  elastic:     { x: 575, y: 375, label: "Elasticsearch",   meta: "Search engine",       icon: "E", svc: "monitoring" },
+  // ── Layer 3: Sub-agents (internal — always available) ───────
+  subFrontend:  { x: 15,  y: 200, label: "Frontend Agent",     meta: "Sessions · Users",      icon: "W", svc: "frontend",   subagent: true },
+  subFacturatie:{ x: 155, y: 200, label: "Facturatie Agent",   meta: "Invoicing",             icon: "€", svc: "facturatie", subagent: true },
+  subCrm:       { x: 295, y: 200, label: "CRM Agent",          meta: "Members",               icon: "C", svc: "crm",        subagent: true },
+  subKassa:     { x: 435, y: 200, label: "Kassa Agent",        meta: "Orders · Sales",        icon: "K", svc: "kassa",      subagent: true },
+  subMonitoring:{ x: 575, y: 200, label: "Monitoring Agent",   meta: "Health · Logs",         icon: "M", svc: "monitoring", subagent: true },
+
+  // ── Layer 4: MCP servers (external — can disconnect) ────────
+  frontend:     { x: 15,  y: 300, label: "Frontend MCP",       meta: "port 8006",             icon: "W", svc: "frontend" },
+  facturatie:   { x: 155, y: 300, label: "Facturatie MCP",     meta: "port 8007",             icon: "€", svc: "facturatie" },
+  crm:          { x: 295, y: 300, label: "CRM MCP",            meta: "port 8008",             icon: "C", svc: "crm" },
+  kassa:        { x: 435, y: 300, label: "Kassa MCP",          meta: "port 8004",             icon: "K", svc: "kassa" },
+  monitoring:   { x: 575, y: 300, label: "Monitoring MCP",     meta: "port 8005",             icon: "M", svc: "monitoring" },
+
+  // ── Layer 5: Backends ───────────────────────────────────────
+  drupal:       { x: 15,  y: 395, label: "Drupal",             meta: "Content platform",      icon: "D", svc: "frontend" },
+  facturatieDb: { x: 155, y: 395, label: "FossBilling",        meta: "Billing database",      icon: "B", svc: "facturatie" },
+  crmDb:        { x: 295, y: 395, label: "Salesforce",         meta: "CRM platform",          icon: "S", svc: "crm" },
+  kassaDb:      { x: 435, y: 395, label: "Odoo",               meta: "Point of sale",         icon: "O", svc: "kassa" },
+  elastic:      { x: 575, y: 395, label: "Elasticsearch",      meta: "Search engine",         icon: "E", svc: "monitoring" },
 };
 
 const EDGES = [
-  ["user",       "llama",         "chat"],
-  ["llama",      "frontend",      "MCP"],
-  ["llama",      "facturatie",    "MCP"],
-  ["llama",      "crm",           "MCP"],
-  ["llama",      "kassa",         "MCP"],
-  ["llama",      "monitoring",    "MCP"],
-  ["frontend",   "drupal",        "GET"],
-  ["facturatie", "facturatieDb",  "GET"],
-  ["crm",        "crmDb",         "GET"],
-  ["kassa",      "kassaDb",       "GET"],
-  ["monitoring", "elastic",       "search"],
+  // Admin ↔ Orchestrator
+  ["user",          "llama",          "chat"],
+
+  // Orchestrator → Sub-agents (via ask_* tools)
+  ["llama",         "subFrontend",    "ask_frontend"],
+  ["llama",         "subFacturatie",  "ask_facturatie"],
+  ["llama",         "subCrm",         "ask_crm"],
+  ["llama",         "subKassa",       "ask_kassa"],
+  ["llama",         "subMonitoring",  "ask_monitoring"],
+
+  // Sub-agents → MCP servers (via MCP protocol)
+  ["subFrontend",   "frontend",       "MCP"],
+  ["subFacturatie", "facturatie",     "MCP"],
+  ["subCrm",        "crm",            "MCP"],
+  ["subKassa",      "kassa",          "MCP"],
+  ["subMonitoring", "monitoring",     "MCP"],
+
+  // MCP servers → Backends
+  ["frontend",      "drupal",         "GET"],
+  ["facturatie",    "facturatieDb",   "GET"],
+  ["crm",           "crmDb",          "GET"],
+  ["kassa",         "kassaDb",        "GET"],
+  ["monitoring",    "elastic",        "search"],
 ];
 
 const MCP_SERVERS = [
@@ -45,13 +69,28 @@ const MCP_SERVERS = [
   { id: "monitoring", port: 8005, tools: 34, list: ["get_service_status", "get_recent_logs", "get_heartbeat_timeline", "get_health_scores", "get_platform_health_overview", "+29 more"] },
 ];
 
-// Active nodes per MCP server (tool name prefix → nodes to highlight)
+// Active nodes/edges per MCP server — includes sub-agent layer
 const SERVER_FLOW = {
-  frontend:   { nodes: ["user", "llama", "frontend", "drupal"],         edges: ["user->llama", "llama->frontend", "frontend->drupal"] },
-  facturatie: { nodes: ["user", "llama", "facturatie", "facturatieDb"], edges: ["user->llama", "llama->facturatie", "facturatie->facturatieDb"] },
-  crm:        { nodes: ["user", "llama", "crm", "crmDb"],               edges: ["user->llama", "llama->crm", "crm->crmDb"] },
-  kassa:      { nodes: ["user", "llama", "kassa", "kassaDb"],           edges: ["user->llama", "llama->kassa", "kassa->kassaDb"] },
-  monitoring: { nodes: ["user", "llama", "monitoring", "elastic"],      edges: ["user->llama", "llama->monitoring", "monitoring->elastic"] },
+  frontend:   {
+    nodes: ["user", "llama", "subFrontend",   "frontend",   "drupal"],
+    edges: ["user->llama", "llama->subFrontend",   "subFrontend->frontend",   "frontend->drupal"],
+  },
+  facturatie: {
+    nodes: ["user", "llama", "subFacturatie", "facturatie", "facturatieDb"],
+    edges: ["user->llama", "llama->subFacturatie", "subFacturatie->facturatie", "facturatie->facturatieDb"],
+  },
+  crm:        {
+    nodes: ["user", "llama", "subCrm",        "crm",        "crmDb"],
+    edges: ["user->llama", "llama->subCrm",        "subCrm->crm",        "crm->crmDb"],
+  },
+  kassa:      {
+    nodes: ["user", "llama", "subKassa",      "kassa",      "kassaDb"],
+    edges: ["user->llama", "llama->subKassa",      "subKassa->kassa",      "kassa->kassaDb"],
+  },
+  monitoring: {
+    nodes: ["user", "llama", "subMonitoring", "monitoring", "elastic"],
+    edges: ["user->llama", "llama->subMonitoring", "subMonitoring->monitoring", "monitoring->elastic"],
+  },
 };
 
 const SUGGESTIONS_INITIAL = [
