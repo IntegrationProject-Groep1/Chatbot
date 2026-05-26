@@ -300,7 +300,7 @@ async def _batch_crm_lookup(tool_name: str, arg_key: str, values: list[str]) -> 
     return json.dumps({"members": members, "count": len(members), "errors": errors})
 
 
-async def _handle_local_tool(name: str, args: dict) -> str | None:
+async def _handle_local_tool(name: str, args: dict, session_id: str = "") -> str | None:
     if name == "get_current_date":
         now = datetime.now(_TZ)
         return json.dumps({
@@ -344,6 +344,17 @@ async def _handle_local_tool(name: str, args: dict) -> str | None:
             return json.dumps({"error": "master_uuid is required", "success": False})
         if not reason:
             return json.dumps({"error": "reason is required", "success": False})
+        # Hard guard: never allow deleting the currently logged-in admin's own account.
+        admin_uuid = session_store.get_identity_uuid(session_id) if session_id else ""
+        if admin_uuid and master_uuid == admin_uuid:
+            _log.error(
+                "BLOCKED delete_user: attempted to delete admin's own account uuid=%s session=%s",
+                master_uuid, session_id,
+            )
+            return json.dumps({
+                "error": "Cannot delete the currently logged-in administrator's own account.",
+                "success": False,
+            })
         from downstream_tools import delete_identity_user, DownstreamConfig
         cfg = DownstreamConfig()
         loop = asyncio.get_event_loop()
@@ -760,7 +771,7 @@ async def _execute_tool(tool_call: dict, session_id: str, emit: Callable) -> tup
     identity_uuid = session_store.get_identity_uuid(session_id)
 
     try:
-        local_result = await _handle_local_tool(name, args)
+        local_result = await _handle_local_tool(name, args, session_id)
         if local_result is not None:
             duration = int((time.time() - t0) * 1000)
             await emit({"type": "tool_complete", "tool": name, "duration_ms": duration, "call_id": call_id, "result_preview": local_result[:120]})
@@ -1006,6 +1017,30 @@ async def run_agent(session_id: str, user_message: str, emit: Callable) -> None:
 
             # ── Write-tool gate: require explicit admin confirmation ─────────────────
             write_calls = [tc for tc in tool_calls if _is_write_tool(tc["function"]["name"])]
+
+            # Pre-flight guard: block delete_user if the LLM accidentally targets the admin's own UUID.
+            # The assistant message was already appended above, so we just inject tool results + stop.
+            admin_uuid = session_store.get_identity_uuid(session_id)
+            for wtc in write_calls:
+                if wtc["function"]["name"] == "delete_user":
+                    try:
+                        wtc_args = json.loads(wtc["function"].get("arguments", "{}"))
+                    except json.JSONDecodeError:
+                        wtc_args = {}
+                    if admin_uuid and wtc_args.get("master_uuid", "").strip() == admin_uuid:
+                        _log.error(
+                            "BLOCKED confirm: LLM attempted to delete admin's own UUID=%s session=%s",
+                            admin_uuid, session_id,
+                        )
+                        for _tc in tool_calls:
+                            session_store.append(session_id, {
+                                "role": "tool", "tool_call_id": _tc["id"], "name": _tc["function"]["name"],
+                                "content": json.dumps({"error": "Cannot delete the currently logged-in administrator's own account.", "success": False}),
+                            })
+                        await emit({"type": "error", "message": "Beveiligingsblokkade: de ingelogde administrator kan zijn eigen account niet verwijderen.", "recoverable": True})
+                        await emit({"type": "done"})
+                        return
+
             if write_calls and not _has_confirmation(session_id):
                 tc = write_calls[0]
                 name = tc["function"]["name"]
