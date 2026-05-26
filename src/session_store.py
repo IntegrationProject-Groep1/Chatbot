@@ -405,13 +405,21 @@ def upsert_conversation(session_id: str, identity_uuid: str, label: str) -> None
         conn = pool.getconn()
         try:
             with conn.cursor() as cur:
+                # Atomically deactivate all other conversations for this user
+                cur.execute("""
+                    UPDATE chatbot_conversations
+                    SET active = FALSE
+                    WHERE identity_uuid = %s
+                """, (identity_uuid,))
+                # Insert or update the current conversation and mark it as active
                 cur.execute("""
                     INSERT INTO chatbot_conversations
-                        (session_id, identity_uuid, label, created_at, last_active, pinned)
-                    VALUES (%s, %s, %s, %s, %s, FALSE)
+                        (session_id, identity_uuid, label, created_at, last_active, pinned, active)
+                    VALUES (%s, %s, %s, %s, %s, FALSE, TRUE)
                     ON CONFLICT (session_id) DO UPDATE SET
                         label       = EXCLUDED.label,
-                        last_active = EXCLUDED.last_active
+                        last_active = EXCLUDED.last_active,
+                        active      = TRUE
                 """, (session_id, identity_uuid, label, now, now))
             conn.commit()
         finally:

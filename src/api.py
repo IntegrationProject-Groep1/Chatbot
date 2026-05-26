@@ -1098,6 +1098,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
         try:
             session_store.init_session(session_id, identity_uuid)
+            # Proactively mark this session as active in the database upon successful connect/reconnect
+            session_store.set_active(session_id, identity_uuid)
         except ValueError:
             await emit({"type": "error", "message": "Session belongs to a different user.", "recoverable": False})
             return
