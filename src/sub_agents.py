@@ -110,7 +110,7 @@ def _parse_inline_tool_calls(content: str) -> list[dict]:
 
 
 async def _call_sub_llm(messages: list[dict], tools: list[dict]) -> dict:
-    """Non-streaming LLM call for a sub-agent with basic retry logic."""
+    """Streaming LLM call for a sub-agent — accumulates tokens, returns a complete message dict."""
     sanitized = []
     for m in messages:
         if m.get("role") == "assistant" and m.get("tool_calls"):
@@ -123,7 +123,7 @@ async def _call_sub_llm(messages: list[dict], tools: list[dict]) -> dict:
         "messages": sanitized,
         "temperature": 0.2,
         "max_tokens": 2048,
-        "stream": False,
+        "stream": True,
     }
     if tools:
         payload["tools"] = tools
@@ -131,20 +131,48 @@ async def _call_sub_llm(messages: list[dict], tools: list[dict]) -> dict:
 
     backoff = 1.0
     for attempt in range(3):
+        full_content = ""
+        tool_calls_acc: dict[int, dict] = {}
         try:
-            async with httpx.AsyncClient(timeout=60.0) as http:
-                resp = await http.post(_API_URL, json=payload, headers=_HEADERS)
-                if (resp.status_code == 429 or resp.status_code >= 500) and attempt < 2:
-                    await asyncio.sleep(backoff)
-                    backoff *= 2.0
-                    continue
-                resp.raise_for_status()
-                data = resp.json()
-                choice = data["choices"][0]["message"]
-                result: dict = {"content": choice.get("content") or None}
-                if choice.get("tool_calls"):
-                    result["tool_calls"] = choice["tool_calls"]
-                return result
+            async with httpx.AsyncClient(timeout=120.0) as http:
+                async with http.stream("POST", _API_URL, json=payload, headers=_HEADERS) as resp:
+                    if (resp.status_code == 429 or resp.status_code >= 500) and attempt < 2:
+                        await resp.aread()
+                        await asyncio.sleep(backoff)
+                        backoff *= 2.0
+                        continue
+                    resp.raise_for_status()
+                    async for raw in resp.aiter_lines():
+                        if not raw.startswith("data: "):
+                            continue
+                        chunk_str = raw[6:].strip()
+                        if chunk_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(chunk_str)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        if delta.get("content"):
+                            full_content += delta["content"]
+                        for tc in delta.get("tool_calls", []):
+                            idx = tc.get("index", 0)
+                            if idx not in tool_calls_acc:
+                                tool_calls_acc[idx] = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                            if tc.get("id"):
+                                tool_calls_acc[idx]["id"] = tc["id"]
+                            fn = tc.get("function", {})
+                            if fn.get("name"):
+                                tool_calls_acc[idx]["function"]["name"] += fn["name"]
+                            if fn.get("arguments"):
+                                tool_calls_acc[idx]["function"]["arguments"] += fn["arguments"]
+            result: dict = {"content": full_content or None}
+            if tool_calls_acc:
+                result["tool_calls"] = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
+            return result
         except (httpx.HTTPError, asyncio.TimeoutError) as exc:
             if attempt < 2:
                 _log.warning("Sub-agent LLM attempt %d failed: %s", attempt + 1, exc)
@@ -156,7 +184,12 @@ async def _call_sub_llm(messages: list[dict], tools: list[dict]) -> dict:
     raise RuntimeError("Sub-agent LLM call failed after retries")
 
 
-async def run_sub_agent(label: str, query: str, context: str = "") -> str:
+async def run_sub_agent(
+    label: str,
+    query: str,
+    context: str = "",
+    emit=None,
+) -> str:
     """
     Run a stateless sub-agent for a specific MCP label.
 
@@ -164,10 +197,20 @@ async def run_sub_agent(label: str, query: str, context: str = "") -> str:
         label:   MCP server label (e.g. 'frontend', 'crm', 'kassa')
         query:   Natural language question from the orchestrator
         context: Optional key facts the orchestrator already knows (e.g. master_uuid, email)
+        emit:    Optional async callable to send events to the WebSocket client for live progress
 
     Returns:
         Natural language answer string. The orchestrator appends this to its context.
     """
+    import time as _time
+
+    async def _emit(event: dict) -> None:
+        if emit:
+            try:
+                await emit(event)
+            except Exception:
+                pass  # never let emit errors kill the sub-agent
+
     tools = _get_tools_for_label(label)
     if not tools:
         return f"The {label} service has no available tools — it may be disconnected or not configured."
@@ -189,6 +232,8 @@ async def run_sub_agent(label: str, query: str, context: str = "") -> str:
     called: set[str] = set()
 
     for loop_idx in range(_MAX_LOOPS):
+        await _emit({"type": "status", "status": f"sub_agent_{label}", "step": loop_idx + 1})
+
         try:
             response = await _call_sub_llm(messages, tools)
         except Exception as exc:
@@ -228,10 +273,28 @@ async def run_sub_agent(label: str, query: str, context: str = "") -> str:
             else:
                 called.add(key)
                 _log.debug("Sub-agent [%s] calling tool: %s args=%s", label, name, args)
+                # Emit tool_start so the flow graph and event log light up
+                call_id = tc.get("id", name)
+                await _emit({
+                    "type": "tool_start",
+                    "tool": name,
+                    "label": name.replace("__", " › ").replace("_", " ").title(),
+                    "call_id": call_id,
+                    "arguments": args,
+                })
+                t0 = _time.time()
                 try:
                     result_str = await client.call_tool(name, args)
                 except Exception as exc:
                     result_str = json.dumps({"error": str(exc), "status": "error"})
+                duration = int((_time.time() - t0) * 1000)
+                await _emit({
+                    "type": "tool_complete",
+                    "tool": name,
+                    "duration_ms": duration,
+                    "call_id": call_id,
+                    "result_preview": result_str[:120] if isinstance(result_str, str) else "",
+                })
 
             messages.append({
                 "role": "tool",
