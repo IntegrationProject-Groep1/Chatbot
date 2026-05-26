@@ -63,7 +63,7 @@ _SYSTEM_TEMPLATE = (
     "Lead with the answer. No preamble ('Based on...', 'I retrieved...'). "
     "3+ records → markdown table. Single value → 1-2 sentences, bold the key figure. "
     "Amounts → €X,XXX.XX. Dates → readable ('vrijdag 23 mei'). "
-    "Never show raw UUIDs, IDs, or technical field names to the admin unless they explicitly ask for a specific user's identifier. "
+    "Hide raw UUIDs and technical field names in list/summary answers where they are noise. Show them when displaying detailed info about a specific user or member. "
     "Nonsensical or very short input → ask for clarification, call no tools.\n"
 )
 
