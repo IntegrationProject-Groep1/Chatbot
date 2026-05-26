@@ -19,6 +19,7 @@ def _env(name: str, default: str) -> str:
 @dataclass(frozen=True)
 class DownstreamConfig:
     identity_queue: str          = _env("IDENTITY_RPC_QUEUE", "identity.user.lookup.email.request")
+    identity_uuid_queue: str     = _env("IDENTITY_UUID_RPC_QUEUE", "identity.user.lookup.uuid.request")
     identity_create_queue: str   = _env("IDENTITY_CREATE_QUEUE", "identity.user.create.request")
     identity_delete_queue: str   = _env("IDENTITY_DELETE_QUEUE", "identity.user.delete.request")
     rpc_timeout: float           = float(os.getenv("RPC_TIMEOUT", "10.0"))
@@ -62,7 +63,7 @@ def resolve_identity_by_email(email: str, cfg: DownstreamConfig) -> IdentityUser
 
 def resolve_identity_by_uuid(identity_uuid: str, cfg: DownstreamConfig) -> IdentityUser:
     xml = build_identity_lookup_by_uuid_request(identity_uuid)
-    response = _rpc_call(cfg.identity_queue, xml, cfg.rpc_timeout)
+    response = _rpc_call(cfg.identity_uuid_queue, xml, cfg.rpc_timeout)
     return parse_identity_response(response)
 
 

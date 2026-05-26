@@ -705,10 +705,14 @@ async def list_mcp_tools():
     """All loaded MCP tools grouped by server label, with live connection status."""
     client = mcp_client.get()
     server_status = client.get_server_status()
-    servers: dict[str, list[str]] = {}
+    servers: dict[str, list[dict]] = {}
     for namespaced, (_c, tool, orig) in client._registry.items():
         label = namespaced.split("__")[0]
-        servers.setdefault(label, []).append(orig)
+        servers.setdefault(label, []).append({
+            "name": orig,
+            "description": tool.description or "",
+            "inputSchema": tool.inputSchema if tool.inputSchema else {"type": "object", "properties": {}},
+        })
     return {
         "servers": [
             {
