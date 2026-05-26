@@ -231,6 +231,9 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
   const [liveError, setLiveError] = React.useState(null);
   const [dataSource, setDataSource] = React.useState("live");
   const [clearing, setClearing]   = React.useState(false);
+  // After "Cache wissen": only show entries that arrived AFTER this timestamp.
+  // MCP/ES will return the same logs on the next poll — we filter them out here.
+  const clearedAt = React.useRef(0);
 
   const buildUrl = React.useCallback(() => {
     const p = new URLSearchParams();
@@ -271,12 +274,13 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
       .then(r => r.json())
       .then((d) => {
         setClearing(false);
-        // Reset the UI immediately — don't refetch right away or MCP will re-fill the cache
+        // Record the clear timestamp — all entries with tsRaw < clearedAt will be hidden,
+        // even if MCP re-returns them from Elasticsearch on the next live poll.
+        clearedAt.current = Date.now();
         setLogsBySvc({});
         setLoading(false);
-        setLiveError(`Cache gewist (${d.deleted ?? 0} entries verwijderd)`);
-        // Clear the info banner after 4 seconds
-        setTimeout(() => setLiveError(null), 4000);
+        setLiveError(`Cache gewist \u2014 toont alleen nieuwe entries vanaf nu`);
+        setTimeout(() => setLiveError(null), 5000);
       })
       .catch(() => setClearing(false));
   }, []);
@@ -303,6 +307,8 @@ function LogsScreen({ levelFilter, setLevelFilter, query, setQuery }) {
 
   const filterEntries = (entries) =>
     entries.filter(e => {
+      // Hide any entry older than the last "cache wissen" action
+      if (clearedAt.current > 0 && e.tsRaw > 0 && e.tsRaw < clearedAt.current) return false;
       if (levelFilter !== "any" && e.level !== levelFilter) return false;
       if (query && !e.msg.toLowerCase().includes(query.toLowerCase()) &&
           !e.action.toLowerCase().includes(query.toLowerCase())) return false;
